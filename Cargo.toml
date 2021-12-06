@@ -1,0 +1,14 @@
+[workspace]
+members = [
+    "ecdna-evo",
+    "ecdna",
+]
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[workspace.metadata]
+name = "ecdna"
+version = "0.1.0"
+

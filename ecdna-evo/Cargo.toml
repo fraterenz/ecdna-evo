@@ -1,0 +1,22 @@
+[package]
+name = "ecdna-evo"
+version = "0.1.0"
+edition = "2021"
+authors = ["Francesco Terenzi"]
+description = "Evolutionary models of extrachromosomal DNA (ecDNA)."
+readme = "README.md"
+keywords = ["bayesian-inference", "gillespie", "stochastic-simulation", "ecdna"]
+
+[dependencies]
+rand = { version = "0.8.0", features = ["small_rng"]}
+rand_distr = "0.4.0"
+approx = "0.4.0"
+indicatif = {version = "*", features = ["rayon"]}
+chrono = "0.4"
+rayon = "1.5"
+anyhow = "1.0"
+flate2 = "1.0"
+tar = "0.4"
+kolmogorov_smirnov = "1.1.0"
+enum_dispatch = "0.3.7"
+derive_builder = "0.10.2"

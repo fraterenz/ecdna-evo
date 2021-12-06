@@ -1,0 +1,11 @@
+[package]
+name = "ecdna"
+version = "0.1.0"
+edition = "2021"
+authors = ["Francesco Terenzi"]
+description = "Command line interface to configure and run ecdna-evo"
+readme = "README.md"
+
+[dependencies]
+ecdna-evo = { path = "../ecdna-evo" }
+clap= { version = "3.0.4", features = ["cargo"]}
