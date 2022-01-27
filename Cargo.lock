@@ -215,7 +215,7 @@ dependencies = [
 
 [[package]]
 name = "ecdna"
-version = "0.1.2"
+version = "0.1.0"
 dependencies = [
  "clap",
  "ecdna-evo",
@@ -223,7 +223,7 @@ dependencies = [
 
 [[package]]
 name = "ecdna-evo"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "approx",

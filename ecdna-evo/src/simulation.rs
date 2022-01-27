@@ -616,11 +616,7 @@ impl EcDNADistributionNPlus {
         //! `NMinus` cell is born, and the other daughter cell got all the
         //! available ec_dna.
         let idx = self.pick_nplus_cell();
-        let (daughter1, daughter2) = self.dna_segregation(idx);
-
-        // uneven_segregation happens if there is at least one zero and `daughter_1` and
-        // `daughter2` cannot be both equal to 0
-        let uneven_segregation = (daughter1 * daughter2) == 0;
+        let (daughter1, daughter2, uneven_segregation) = self.dna_segregation(idx);
 
         if uneven_segregation {
             self.0[idx] = daughter1 + daughter2; // n + 0 = n = 0 + n
@@ -632,29 +628,41 @@ impl EcDNADistributionNPlus {
         }
     }
 
-    fn dna_segregation(&self, idx: usize) -> (DNACopy, DNACopy) {
-        //! Simulate the proliferation of one `NPlus` cell.
-        //! When a `idx` `NPlus` cell proliferates, we multiply the ec_dna
-        //! present in that cell by the `FITNESS` of the `NPlus` cells
-        //! compared to the `NMinus` cells (e.g. 1 for the neutral
-        //! case). Then, we distribute the multiplied ec_dna material among two
-        //! daughter cells according to a Binomial distribution with number of
-        //! samples equal to the multiplied ec_dna material and the
-        //! probability of 1/2.
-        // Double the number of `NPlus` from the idx cell before proliferation because a
-        // parental cell gives rise to 2 daughter cells. We also multiply by
-        // `FITNESS` for models where `NPlus` cells have an advantage over
-        // `NMinus` cells
-        let available_dna: DNACopy = SPECIES as u64 * self.0[idx];
+    fn dna_segregation(&self, idx: usize) -> (DNACopy, DNACopy, bool) {
+        //! Simulate the proliferation of one `NPlus` cell and returns whether a
+        //! uneven segregation occured (i.e. one daughter cell inherited all
+        //! ecDNA material from mother cells). When a `idx` `NPlus` cell
+        //! proliferates, we multiply the ec_dna present in that cell by the
+        //! `FITNESS` of the `NPlus` cells compared to the `NMinus` cells (e.g.
+        //! 1 for the neutral case). Then, we distribute the multiplied ec_dna
+        //! material among two daughter cells according to a Binomial
+        //! distribution with number of samples equal to the multiplied ec_dna
+        //! material and the probability of 1/2.
+
+        // Double the number of `NPlus` from the idx cell before proliferation
+        // because a parental cell gives rise to 2 daughter cells. We also
+        // multiply by `FITNESS` for models where `NPlus` cells have an
+        // advantage over `NMinus` cells
+        let available_dna: DNACopy = self.0[idx]
+            .checked_add(self.0[idx])
+            .expect("Overflow while segregating DNA into two daughter cells");
         assert_ne!(available_dna, 0);
 
         // draw the ec_dna that will be given to the daughter cells
-        let bin = Binomial::new(available_dna, 0.5).unwrap();
-        let d_1: DNACopy = bin.sample(&mut rand::thread_rng());
+        let bin = Binomial::new(available_dna as u64, 0.5).unwrap();
+        let d_1: DNACopy = bin.sample(&mut rand::thread_rng()).try_into().unwrap();
         let d_2: DNACopy = available_dna - d_1;
         assert_ne!(d_1 + d_2, 0);
+        assert!(
+            d_1.checked_add(d_2).is_some(),
+            "Overflow error while segregating DNA copies during proliferation"
+        );
 
-        (d_1, d_2)
+        // uneven_segregation happens if there is at least one zero and
+        // `daughter_1` and `daughter2` cannot be both equal to 0
+        let uneven = d_1.saturating_mul(d_2) == 0;
+
+        (d_1, d_2, uneven)
     }
 }
 
@@ -673,7 +681,7 @@ impl From<Vec<DNACopy>> for EcDNADistribution {
         let ntot = distr.len() as NbIndividuals;
         let distribution = distr
             .into_iter()
-            .filter(|&copy| copy > 0u64)
+            .filter(|&copy| copy > 0u16)
             .collect::<Vec<DNACopy>>();
 
         EcDNADistribution {
@@ -723,7 +731,7 @@ impl EcDNADistribution {
 
     pub fn create_vector_with_nminus_cells(&self) -> Vec<DNACopy> {
         let mut distr_with_nminus = self.distribution.0.clone();
-        distr_with_nminus.append(&mut vec![0u64; self.get_nminus_cells() as usize]);
+        distr_with_nminus.append(&mut vec![0u16; self.get_nminus_cells() as usize]);
         distr_with_nminus
     }
 
@@ -761,10 +769,9 @@ impl EcDNADistribution {
     }
 }
 
-/// Number of ecDNA copies within a cell.
-pub type DNACopy = u64;
-
-const SPECIES: usize = 2;
+/// Number of ecDNA copies within a cell. We assume that a cell cannot have more
+/// than 65535 copies (`u16` is 2^16 - 1 = 65535 copies).
+pub type DNACopy = u16;
 
 /// Type of the individuals simulated.
 #[derive(PartialEq, Debug)]
@@ -812,7 +819,7 @@ impl Default for Parameters {
             nb_runs: 1usize,
             max_cells: 10000,
             max_iter: 3 * 10000,
-            init_copies: 1u64,
+            init_copies: 1u16,
             init_nplus: 1u64,
             init_nminus: 0u64,
             verbosity: 0u8,
@@ -854,7 +861,7 @@ pub fn write2file<T: std::fmt::Display>(
     Ok(())
 }
 
-fn compute_counts(data: &[u64]) -> HashMap<&u64, u64> {
+fn compute_counts(data: &[u16]) -> HashMap<&u16, u64> {
     //! Compute how many times the elements of data appear in data. From
     //! `<https://docs.rs/itertools/latest/itertools/trait.Itertools.html#method.counts>`
     let mut counts = HashMap::new();
@@ -897,7 +904,7 @@ mod tests {
     fn test_ecdna_distribution_from() {
         let p = Parameters {
             max_cells: 10u64,
-            init_copies: 1u64,
+            init_copies: 1u16,
             ..Default::default()
         };
         let ecdna = EcDNADistribution::new(&p);
@@ -910,7 +917,7 @@ mod tests {
     fn test_compute_mean_with_default() {
         let p = Parameters {
             max_cells: 10u64,
-            init_copies: 1u64,
+            init_copies: 1u16,
             ..Default::default()
         };
         assert!((EcDNADistribution::new(&p).compute_mean() - 0f32).abs() < f32::EPSILON);
@@ -920,7 +927,7 @@ mod tests {
     fn test_compute_mean_with_1s() {
         let p = Parameters {
             max_cells: 10u64,
-            init_copies: 1u64,
+            init_copies: 1u16,
             ..Default::default()
         };
         assert!(
@@ -932,7 +939,7 @@ mod tests {
     fn test_compute_mean_with_1s_and_nminus() {
         let p = Parameters {
             max_cells: 10u64,
-            init_copies: 1u64,
+            init_copies: 1u16,
             ..Default::default()
         };
         assert!(
@@ -944,7 +951,7 @@ mod tests {
     fn test_compute_mean_with_no_nminus() {
         let p = Parameters {
             max_cells: 10u64,
-            init_copies: 2u64,
+            init_copies: 2u16,
             ..Default::default()
         };
         let mut distr = EcDNADistribution::new(&p).distribution;
@@ -956,7 +963,7 @@ mod tests {
     fn test_compute_mean_with_nminus() {
         let p = Parameters {
             max_cells: 10u64,
-            init_copies: 1u64,
+            init_copies: 1u16,
             ..Default::default()
         };
         let mut distr = EcDNADistribution::new(&p).distribution;
@@ -975,27 +982,27 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_from_vector() {
-        let original_data = vec![0u64, 2u64, 10u64];
+        let original_data = vec![0u16, 2u16, 10u16];
         let _ = EcDNADistributionNPlus::from(original_data);
     }
 
     #[test]
     fn test_entropy_higher_than_1() {
-        let original_data = vec![1u64, 2u64, 10u64];
+        let original_data = vec![1u16, 2u16, 10u16];
         let distr = EcDNADistribution::from(original_data);
         assert!(distr.compute_entropy() > 0f32);
     }
 
     #[test]
     fn test_entropy_0() {
-        let original_data = vec![1u64, 1u64, 1u64, 1u64];
+        let original_data = vec![1u16, 1u16, 1u16, 1u16];
         let distr = EcDNADistribution::from(original_data);
         assert!((distr.compute_entropy() - 0f32).abs() < f32::EPSILON);
     }
 
     #[test]
     fn test_entropy_05() {
-        let original_data = vec![1u64, 1u64, 2u64, 2u64];
+        let original_data = vec![1u16, 1u16, 2u16, 2u16];
         let distr = EcDNADistribution::from(original_data);
         assert!((distr.compute_entropy() - 1f32).abs() < f32::EPSILON);
     }
@@ -1008,22 +1015,22 @@ mod tests {
 
     #[test]
     fn test_compute_counts_1() {
-        let ones = vec![1u64, 1u64];
-        let result = HashMap::from([(&1u64, 2u64)]);
+        let ones = vec![1u16, 1u16];
+        let result = HashMap::from([(&1u16, 2u64)]);
         assert_eq!(compute_counts(&ones), result);
     }
 
     #[test]
     fn test_compute_counts_1_2() {
-        let data = vec![1u64, 2u64];
-        let result = HashMap::from([(&1u64, 1u64), (&2u64, 1u64)]);
+        let data = vec![1u16, 2u16];
+        let result = HashMap::from([(&1u16, 1u64), (&2u16, 1u64)]);
         assert_eq!(compute_counts(&data), result);
     }
 
     #[test]
     fn test_compute_counts() {
-        let data = vec![1u64, 2u64, 10u64];
-        let result = HashMap::from([(&1u64, 1u64), (&2u64, 1u64), (&10u64, 1u64)]);
+        let data = vec![1u16, 2u16, 10u16];
+        let result = HashMap::from([(&1u16, 1u64), (&2u16, 1u64), (&10u16, 1u64)]);
         assert_eq!(compute_counts(&data), result);
     }
 

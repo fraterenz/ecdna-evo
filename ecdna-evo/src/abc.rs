@@ -403,7 +403,7 @@ where
     <T as std::str::FromStr>::Err: std::fmt::Debug,
 {
     for result in str_data.split(',') {
-        let val = result.parse::<T>().unwrap();
+        let val = result.parse::<T>().expect("Error while parsing csv");
         if result == f32::NAN.to_string() {
             panic!("Found {} in file", result);
         }

@@ -257,7 +257,7 @@ impl Variance {
 
             run.get_ecdna_distr()[..]
                 .iter()
-                .chain(std::iter::repeat(&0u64).take(*nb_nminus as usize))
+                .chain(std::iter::repeat(&0u16).take(*nb_nminus as usize))
                 .map(|value| {
                     let diff = mean - (*value as f32);
                     diff * diff
