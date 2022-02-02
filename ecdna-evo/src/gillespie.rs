@@ -258,20 +258,9 @@ pub type NbIndividuals = u64;
 pub type GillespieTime = f32;
 
 #[derive(PartialEq, Debug, Copy, Clone)]
-pub enum EndRun {
-    /// The event sampled stop the simulation because there are no individual
-    /// left
-    NoIndividualsLeft,
-    /// The event sampled stop the simulation because there the maximal number
-    /// of individual has been reached
-    MaxIndividualsReached,
-    /// The event sampled stop the simulation because there the maximal number
-    /// of iterations has been reached
-    MaxItersReached,
-}
-
-#[derive(PartialEq, Debug, Copy, Clone)]
 pub enum AdvanceRun {
+    /// Init the run
+    Init,
     /// The event sampled create a new individual from the first population
     Proliferate1,
     /// The event sampled create a new individual from the second population
@@ -282,36 +271,15 @@ pub enum AdvanceRun {
     Die2,
 }
 
-/// An event defines the outcome that the simulation must simulate for an
-/// iteration
-#[derive(PartialEq, Debug, Clone)]
-pub enum GillespieEvent {
-    // The initialization event, should be only used in the constructor
-    Init,
-    /// The event avancing the runs
-    Advance(AdvanceRun),
-    /// The event ending the run
-    End(EndRun),
-}
-
 /// The action that will be simulated (reaction in the chemical literature)
 /// determined by Gillespie sampling algorithm.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Event {
     /// The type of action simulated
-    pub kind: GillespieEvent,
+    pub kind: AdvanceRun,
     /// The time of appearance of this event (Gillespie time) relative to the
     /// previous simulated `Event`
     pub time: GillespieTime,
-}
-
-impl Event {
-    pub fn new(gillespie_event: GillespieEvent, gillespie_time: f32) -> Self {
-        Event {
-            kind: gillespie_event,
-            time: gillespie_time,
-        }
-    }
 }
 
 #[enum_dispatch(BirthDeathProcess)]
@@ -321,7 +289,7 @@ pub trait ComputeTimesEvents {
         &self,
         pop1: NbIndividuals,
         pop2: NbIndividuals,
-    ) -> (Vec<GillespieRate>, Vec<GillespieEvent>);
+    ) -> ([GillespieRate; 4], [AdvanceRun; 4]);
 }
 
 #[enum_dispatch(BirthDeathProcess)]
@@ -370,15 +338,19 @@ impl ComputeTimesEvents for PureBirth {
         &self,
         pop1: NbIndividuals,
         pop2: NbIndividuals,
-    ) -> (Vec<GillespieRate>, Vec<GillespieEvent>) {
-        let rates = vec![
+    ) -> ([GillespieRate; 4], [AdvanceRun; 4]) {
+        let rates = [
             exprand(self.r1 * pop1 as f32), /* proliferation rate for pop1 */
             exprand(self.r2 * pop2 as f32), /* proliferation rate for cell
                                              * w/o ecDNA */
+            f32::INFINITY,
+            f32::INFINITY,
         ];
-        let events = vec![
-            GillespieEvent::Advance(AdvanceRun::Proliferate1),
-            GillespieEvent::Advance(AdvanceRun::Proliferate2),
+        let events = [
+            AdvanceRun::Proliferate1,
+            AdvanceRun::Proliferate2,
+            AdvanceRun::Die1,
+            AdvanceRun::Die2,
         ];
         (rates, events)
     }
@@ -396,17 +368,19 @@ impl ComputeTimesEvents for BirthDeath1 {
         &self,
         pop1: NbIndividuals,
         pop2: NbIndividuals,
-    ) -> (Vec<GillespieRate>, Vec<GillespieEvent>) {
-        let rates = vec![
+    ) -> ([GillespieRate; 4], [AdvanceRun; 4]) {
+        let rates = [
             exprand(self.r1 * pop1 as f32), /* proliferation rate for pop1 */
             exprand(self.r2 * pop2 as f32), /* proliferation rate for cell
                                              * w/o ecDNA */
             exprand(self.d1 * pop1 as f32), // death rate for pop1
+            f32::INFINITY,                  // death rate for pop2
         ];
-        let events = vec![
-            GillespieEvent::Advance(AdvanceRun::Proliferate1),
-            GillespieEvent::Advance(AdvanceRun::Proliferate2),
-            GillespieEvent::Advance(AdvanceRun::Die1),
+        let events = [
+            AdvanceRun::Proliferate1,
+            AdvanceRun::Proliferate2,
+            AdvanceRun::Die1,
+            AdvanceRun::Die2,
         ];
         (rates, events)
     }
@@ -424,17 +398,19 @@ impl ComputeTimesEvents for BirthDeath2 {
         &self,
         pop1: NbIndividuals,
         pop2: NbIndividuals,
-    ) -> (Vec<GillespieRate>, Vec<GillespieEvent>) {
-        let rates = vec![
+    ) -> ([GillespieRate; 4], [AdvanceRun; 4]) {
+        let rates = [
             exprand(self.r1 * pop1 as f32), /* proliferation rate for pop1 */
             exprand(self.r2 * pop2 as f32), /* proliferation rate for cell
                                              * w/o ecDNA */
+            f32::INFINITY,                  // death rate for pop1
             exprand(self.d2 * pop2 as f32), // death rate for pop2
         ];
-        let events = vec![
-            GillespieEvent::Advance(AdvanceRun::Proliferate1),
-            GillespieEvent::Advance(AdvanceRun::Proliferate2),
-            GillespieEvent::Advance(AdvanceRun::Die2),
+        let events = [
+            AdvanceRun::Proliferate1,
+            AdvanceRun::Proliferate2,
+            AdvanceRun::Die1,
+            AdvanceRun::Die2,
         ];
         (rates, events)
     }
@@ -452,19 +428,19 @@ impl ComputeTimesEvents for BirthDeath {
         &self,
         pop1: NbIndividuals,
         pop2: NbIndividuals,
-    ) -> (Vec<GillespieRate>, Vec<GillespieEvent>) {
-        let rates = vec![
+    ) -> ([GillespieRate; 4], [AdvanceRun; 4]) {
+        let rates = [
             exprand(self.r1 * pop1 as f32), /* proliferation rate for pop1 */
             exprand(self.r2 * pop2 as f32), /* proliferation rate for cell
                                              * w/o ecDNA */
             exprand(self.d1 * pop1 as f32), // death rate for pop1
             exprand(self.d2 * pop2 as f32), // death rate for pop2
         ];
-        let events = vec![
-            GillespieEvent::Advance(AdvanceRun::Proliferate1),
-            GillespieEvent::Advance(AdvanceRun::Proliferate2),
-            GillespieEvent::Advance(AdvanceRun::Die1),
-            GillespieEvent::Advance(AdvanceRun::Die2),
+        let events = [
+            AdvanceRun::Proliferate1,
+            AdvanceRun::Proliferate2,
+            AdvanceRun::Die1,
+            AdvanceRun::Die2,
         ];
         (rates, events)
     }
@@ -567,47 +543,14 @@ impl BirthDeathProcess {
         }
     }
 
-    fn stop_run(
-        &self,
-        iter: usize,
-        nb_individuals: NbIndividuals,
-        max_iter: usize,
-        max_individuals: NbIndividuals,
-    ) -> Option<GillespieEvent> {
-        if nb_individuals == 0_u64 {
-            return Some(GillespieEvent::End(EndRun::NoIndividualsLeft));
-        };
-        if iter >= max_iter - 1_usize {
-            return Some(GillespieEvent::End(EndRun::MaxItersReached));
-        };
-        if nb_individuals >= max_individuals {
-            return Some(GillespieEvent::End(EndRun::MaxIndividualsReached));
-        }
-        None
-    }
-
-    pub fn gillespie(
-        &self,
-        iter: usize,
-        pop1: NbIndividuals,
-        pop2: NbIndividuals,
-        max_iter: usize,
-        max_individuals: NbIndividuals,
-    ) -> Event {
+    pub fn gillespie(&self, pop1: NbIndividuals, pop2: NbIndividuals) -> Event {
         //! Determine the next `Event` using the Gillespie algorithm.
-        // Compute the `next_event` except if the current iteration `iter` is greater or
-        // equal than maximal number of iterations allowed `self.max_iter` or
-        // `nb_individuals` is greater than the maximal number of simulated
-        // individuals `self.max_individuals` or if there are no individuals
-        // left in the current iteration, that is `nb_individuals == 0`, the latter
-        // being possible only if `BirthDeathProcess` is not `PureBirth`.
-        match self.stop_run(iter, pop1 + pop2, max_iter, max_individuals) {
-            Some(event) => Event::new(event, 0f32),
-            None => self.next_event(pop1, pop2),
-        }
+        assert!((pop1 + pop2) > 0u64);
+        let (kind, time) = self.next_event(pop1, pop2);
+        Event { kind, time }
     }
 
-    fn next_event(&self, pop1: NbIndividuals, pop2: NbIndividuals) -> Event {
+    fn next_event(&self, pop1: NbIndividuals, pop2: NbIndividuals) -> (AdvanceRun, GillespieTime) {
         let (times, events) = self.compute_times_events(pop1, pop2);
 
         // Find the event that will occur next, corresponding to the smaller
@@ -620,7 +563,7 @@ impl BirthDeathProcess {
                 selected_event = idx;
             }
         }
-        Event::new(events[selected_event].clone(), smaller_waiting_time)
+        (events[selected_event], smaller_waiting_time)
     }
 }
 
@@ -638,7 +581,7 @@ fn exprand(lambda: GillespieRate) -> f32 {
 
 pub fn fast_mean_computation(
     previous_mean: f32,
-    event: &GillespieEvent,
+    event: &AdvanceRun,
     ntot: NbIndividuals,
 ) -> Option<f32> {
     //! Function allowing the computation of the ecDNA distirbution mean without
@@ -662,15 +605,14 @@ pub fn fast_mean_computation(
     //! in state from the current iteration, ie self.state.len() - SPECIES
     //! to the end.
     match event {
+        AdvanceRun::Init => panic!("Cannot compute mean with Init event"),
         // The mean will be n_old * mean_old / (n_old + 1)
-        GillespieEvent::Advance(AdvanceRun::Proliferate2) => {
-            Some(previous_mean * ntot as f32 / (ntot as f32 + 1_f32))
-        }
+        AdvanceRun::Proliferate2 => Some(previous_mean * ntot as f32 / (ntot as f32 + 1_f32)),
 
         // If the next event is the death of a NMinus cell there are two possible outcomes based
         // on the number of n cells in the previous iteration: 1. in the previous there was only
         // 1 cell, then put 0 since the next event is death
-        GillespieEvent::Advance(AdvanceRun::Die2) => {
+        AdvanceRun::Die2 => {
             if ntot == 1_u64 {
                 Some(0_f32)
             } else {
@@ -682,12 +624,12 @@ pub fn fast_mean_computation(
 
         // Cannot easily compute the mean; can do that only when the event is
         // Event::{NMinusProliferates,NMinusDies}.
-        GillespieEvent::Advance(AdvanceRun::Proliferate1) => None,
+        AdvanceRun::Proliferate1 => None,
 
         // If the next event is the death of a NPlus cell there are two possible outcomes based
         // on the number of n cells in the previous iteration: 1. in the previous there was only
         // 1 cell, then put 0 since the next event is death
-        GillespieEvent::Advance(AdvanceRun::Die1) => {
+        AdvanceRun::Die1 => {
             if ntot == 1_u64 {
                 Some(0_f32)
             } else {
@@ -695,9 +637,6 @@ pub fn fast_mean_computation(
                 None
             }
         }
-        GillespieEvent::Init => panic!("Should not compute the mean for event `Init`"),
-        // store the mean last iteration as scalar
-        GillespieEvent::End(_) => None,
     }
 }
 
@@ -725,12 +664,12 @@ mod tests {
     fn test_fast_mean_computation() {
         let previous_mean = 1f32;
         let nb_individuals = 1f32;
-        let next_event = GillespieEvent::Advance(AdvanceRun::Proliferate2);
+        let next_event = AdvanceRun::Proliferate2;
         assert_eq!(
             fast_mean_computation(previous_mean, &next_event, nb_individuals as u64),
             Some(0.5f32)
         );
-        let next_event = GillespieEvent::Advance(AdvanceRun::Proliferate1);
+        let next_event = AdvanceRun::Proliferate1;
         assert_eq!(
             fast_mean_computation(previous_mean, &next_event, nb_individuals as u64),
             None
@@ -740,115 +679,40 @@ mod tests {
     // -------------------------------------------------------------------------
     // TEST ONE ITERATION OF GILLESPIE ALGORITHM
     #[test]
-    fn test_gillespie_returns_stop_run_with_max_iters() {
-        let my_process = BirthDeathProcess::new(&Rates::new(&[1.], &[1.], &[0.4], &[0.]));
-        assert_eq!(
-            Event {
-                kind: GillespieEvent::End(EndRun::MaxItersReached),
-                time: 0f32
-            },
-            my_process.gillespie(1, 2, 2, 1, 4),
-        );
-    }
-
-    #[test]
-    fn test_gillespie_returns_stop_run_with_max_individuals() {
-        let my_process = BirthDeathProcess::new(&Rates::new(&[1.], &[1.], &[0.4], &[0.]));
-        assert_eq!(
-            Event {
-                kind: GillespieEvent::End(EndRun::MaxIndividualsReached),
-                time: 0f32
-            },
-            my_process.gillespie(1, 2, 2, 5, 4),
-        );
-    }
-
-    #[test]
-    fn test_gillespie_panics_with_no_individuals_left_pure_birth() {
+    #[should_panic]
+    fn test_gillespie_panics_with_no_individuals_lefth() {
         let my_process = BirthDeathProcess::new(&Rates::new(&[1.], &[1.], &[0.], &[0.]));
-        assert_eq!(
-            Event {
-                kind: GillespieEvent::End(EndRun::MaxIndividualsReached),
-                time: 0f32
-            },
-            my_process.gillespie(1, 4, 0, 5, 4)
-        );
-    }
-
-    #[test]
-    fn test_gillespie_returns_stop_run_with_no_individuals_left() {
-        let my_process = BirthDeathProcess::new(&Rates::new(&[1.], &[1.], &[0.4], &[0.]));
-        assert_eq!(
-            Event {
-                kind: GillespieEvent::End(EndRun::NoIndividualsLeft),
-                time: 0f32
-            },
-            my_process.gillespie(1, 0, 0, 5, 5), // no individuals left
-        );
+        my_process.gillespie(0, 0);
     }
 
     #[test]
     fn test_gillespie_returns_proliferate1() {
         let my_process = BirthDeathProcess::new(&Rates::new(&[1.], &[0.], &[0.], &[0.]));
-        assert_eq!(
-            GillespieEvent::Advance(AdvanceRun::Proliferate1),
-            my_process.gillespie(1, 2, 1, 5, 5).kind
-        );
+        assert_eq!(AdvanceRun::Proliferate1, my_process.gillespie(1, 2).kind);
     }
 
     #[test]
     fn test_gillespie_returns_highly_probably_proliferate1() {
         let my_process = BirthDeathProcess::new(&Rates::new(&[10000.], &[0.], &[0.01], &[0.]));
-        assert_eq!(
-            GillespieEvent::Advance(AdvanceRun::Proliferate1),
-            my_process.gillespie(1, 2, 1, 5, 5).kind
-        );
+        assert_eq!(AdvanceRun::Proliferate1, my_process.gillespie(1, 2).kind);
     }
 
     #[test]
-    fn test_gillespie_returns_proliferate1_or_die1() {
-        let my_process = BirthDeathProcess::new(&Rates::new(&[1.], &[0.], &[0.], &[0.]));
-        assert!(matches!(
-            my_process.gillespie(1, 2, 1, 5, 4).kind,
-            GillespieEvent::Advance(AdvanceRun::Proliferate1)
-                | GillespieEvent::Advance(AdvanceRun::Die1)
-        ));
+    fn test_gillespie_returns_highly_probably_proliferate2() {
+        let my_process = BirthDeathProcess::new(&Rates::new(&[0.], &[1.], &[0.0], &[0.]));
+        assert_eq!(AdvanceRun::Proliferate2, my_process.gillespie(1, 2).kind);
     }
 
     #[test]
-    fn test_gillespie_returns_proliferate2() {
-        let my_process = BirthDeathProcess::new(&Rates::new(&[0.], &[1.], &[0.], &[0.]));
-        assert_eq!(
-            GillespieEvent::Advance(AdvanceRun::Proliferate2),
-            my_process.gillespie(1, 2, 1, 5, 4).kind
-        );
-    }
-
-    #[test]
-    fn test_gillespie_returns_probably_proliferate2() {
-        let my_process = BirthDeathProcess::new(&Rates::new(&[0.01], &[100000.], &[0.01], &[0.01]));
-        assert_eq!(
-            GillespieEvent::Advance(AdvanceRun::Proliferate2),
-            my_process.gillespie(1, 2, 1, 5, 4).kind
-        );
-    }
-
-    #[test]
-    fn test_gillespie_returns_death1() {
+    fn test_gillespie_returns_die1() {
         let my_process = BirthDeathProcess::new(&Rates::new(&[0.], &[0.], &[1.], &[0.]));
-        assert_eq!(
-            GillespieEvent::Advance(AdvanceRun::Die1),
-            my_process.gillespie(1, 2, 1, 5, 4).kind
-        );
+        assert_eq!(my_process.gillespie(1, 2).kind, AdvanceRun::Die1);
     }
 
     #[test]
-    fn test_gillespie_returns_death2() {
+    fn test_gillespie_returns_die2() {
         let my_process = BirthDeathProcess::new(&Rates::new(&[0.], &[0.], &[0.], &[1.]));
-        assert_eq!(
-            GillespieEvent::Advance(AdvanceRun::Die2),
-            my_process.gillespie(1, 2, 1, 5, 4).kind
-        );
+        assert_eq!(AdvanceRun::Die2, my_process.gillespie(1, 2).kind);
     }
 
     #[test]

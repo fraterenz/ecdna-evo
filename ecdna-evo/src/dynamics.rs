@@ -7,9 +7,11 @@
 //! implement the trait `Name` and `Update` and modify `Dynamic::save`.
 
 use crate::gillespie;
-use crate::simulation::{write2file, Name, Run, ToFile};
+use crate::run::InitializedRun;
+use crate::simulation::{write2file, ToFile};
 use crate::{GillespieTime, NbIndividuals, Parameters};
 use enum_dispatch::enum_dispatch;
+use std::ops::{Deref, DerefMut};
 use std::path::Path;
 
 /// The main trait for the `Dynamic` which updates the dynamical measurement
@@ -24,7 +26,8 @@ use std::path::Path;
 /// with any copy of ecDNA per iteration:
 ///
 /// ```no_run
-/// use ecdna_evo::{NbIndividuals, Run, Update};
+/// use ecdna_evo::run::InitializedRun;
+/// use ecdna_evo::{NbIndividuals, Update};
 ///
 /// pub struct NPlus {
 ///     /// Record the number of cells w/ ecDNA for each iteration.
@@ -32,7 +35,7 @@ use std::path::Path;
 /// }
 ///
 /// impl Update for NPlus {
-///     fn update(&mut self, run: &Run) {
+///     fn update(&mut self, run: &InitializedRun) {
 ///         self.nplus_dynamics.push(run.get_nplus());
 ///     }
 /// }
@@ -41,9 +44,49 @@ use std::path::Path;
 #[enum_dispatch]
 pub trait Update {
     /// Update the measurement based on the `run` for each iteration, i.e.
-    /// defines how to interact with `Run` to update the quantity of
-    /// interest for each iteration.
-    fn update(&mut self, run: &Run);
+    /// defines how to interact with `Run` to update the quantity of interest
+    /// for each iteration.
+    fn update(&mut self, run: &InitializedRun);
+}
+
+#[derive(Clone, Default, Debug)]
+pub struct Dynamics(Vec<Dynamic>);
+
+impl Dynamics {
+    pub fn new() -> Dynamics {
+        Dynamics(Vec::with_capacity(6))
+    }
+
+    pub fn names(&self) -> anyhow::Result<String> {
+        //! Create the string "{}_{}" where {} is a timepoint name
+        let mut path = String::new();
+        for t in self.iter() {
+            path.push_str(&format!("{}_", t.get_name()));
+        }
+        // remove last trailing _
+        path.pop().unwrap();
+        Ok(path)
+    }
+}
+
+impl Deref for Dynamics {
+    type Target = Vec<Dynamic>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Dynamics {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl From<Vec<Dynamic>> for Dynamics {
+    fn from(dynamics: Vec<Dynamic>) -> Self {
+        Dynamics(dynamics)
+    }
 }
 
 /// The quantities of interest estimated from the state of the `Run` for each
@@ -83,6 +126,11 @@ impl Dynamic {
     }
 }
 
+#[enum_dispatch]
+pub trait Name {
+    fn get_name(&self) -> &String;
+}
+
 /// Compute the population dynamics of cells w/ ecDNAs.
 #[derive(Clone, Default, Debug)]
 pub struct NPlus {
@@ -99,7 +147,7 @@ impl ToFile for NPlus {
 }
 
 impl Update for NPlus {
-    fn update(&mut self, run: &Run) {
+    fn update(&mut self, run: &InitializedRun) {
         self.nplus_dynamics.push(run.get_nplus());
     }
 }
@@ -113,7 +161,7 @@ impl Name for NPlus {
 impl NPlus {
     pub fn new(parameters: &Parameters) -> Self {
         let mut nplus_dynamics = Vec::with_capacity(parameters.max_cells as usize);
-        nplus_dynamics.push(parameters.init_nplus);
+        nplus_dynamics.push(parameters.init_nplus as u64);
         NPlus {
             nplus_dynamics,
             name: "nplus".to_string(),
@@ -137,7 +185,7 @@ impl ToFile for NMinus {
 }
 
 impl Update for NMinus {
-    fn update(&mut self, run: &Run) {
+    fn update(&mut self, run: &InitializedRun) {
         self.nminus_dynamics.push(*run.get_nminus());
     }
 }
@@ -169,14 +217,14 @@ pub struct MeanDyn {
 impl MeanDyn {
     pub fn new(parameters: &Parameters) -> Self {
         let mut mean = Vec::with_capacity(parameters.max_iter);
-        mean.push(parameters.init_nplus as f32);
+        mean.push((parameters.init_nplus as u16) as f32);
 
         MeanDyn {
             mean,
             name: "mean_dynamics".to_string(),
         }
     }
-    pub fn ecdna_distr_mean(&self, run: &Run) -> f32 {
+    pub fn ecdna_distr_mean(&self, run: &InitializedRun) -> f32 {
         //! The mean of the ecDNA distribution for the current iteration.
         let ntot = run.get_nminus() + run.get_nplus();
         match gillespie::fast_mean_computation(
@@ -186,7 +234,7 @@ impl MeanDyn {
         ) {
             Some(mean) => mean,
             // slow version: traverse the whole vector of the ecDNA distribution
-            None => run.get_ecdna_distr().compute_mean(),
+            None => run.mean_ecdna(),
         }
     }
 }
@@ -199,7 +247,7 @@ impl ToFile for MeanDyn {
 }
 
 impl Update for MeanDyn {
-    fn update(&mut self, run: &Run) {
+    fn update(&mut self, run: &InitializedRun) {
         self.mean.push(self.ecdna_distr_mean(run));
     }
 }
@@ -220,10 +268,10 @@ pub struct Variance {
 }
 
 impl Update for Variance {
-    fn update(&mut self, run: &Run) {
+    fn update(&mut self, run: &InitializedRun) {
         let mean = self.mean.ecdna_distr_mean(run);
         self.mean.update(run);
-        self.variance.push(Self::ecdna_distr_variance(run, mean));
+        self.variance.push(run.variance_ecdna(&mean));
     }
 }
 
@@ -245,27 +293,6 @@ impl Variance {
             name: "var_dynamics".to_string(),
         }
     }
-
-    fn ecdna_distr_variance(run: &Run, mean: f32) -> f32 {
-        //! Compute the variance of the ecDNA distribution, considering cells
-        //! w/o any ecDNA copy for this iteration. Computationally intensive.
-        if run.get_ecdna_distr().is_empty() {
-            panic!("Cannot compute the variance of an empty ecDNA distribution")
-        } else {
-            let nb_nplus = run.get_nplus();
-            let nb_nminus = run.get_nminus();
-
-            run.get_ecdna_distr()[..]
-                .iter()
-                .chain(std::iter::repeat(&0u16).take(*nb_nminus as usize))
-                .map(|value| {
-                    let diff = mean - (*value as f32);
-                    diff * diff
-                })
-                .sum::<f32>()
-                / ((nb_nminus + nb_nplus) as f32)
-        }
-    }
 }
 
 impl ToFile for Variance {
@@ -284,7 +311,7 @@ pub struct GillespieT {
 }
 
 impl Update for GillespieT {
-    fn update(&mut self, run: &Run) {
+    fn update(&mut self, run: &InitializedRun) {
         self.time
             .push(self.time.last().unwrap() + run.get_gillespie_event().time);
     }

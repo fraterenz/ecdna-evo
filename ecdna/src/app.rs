@@ -1,12 +1,9 @@
 use crate::clap_app::clap_app;
 use clap::ArgMatches;
 use ecdna_evo::abc::PatientPathsBuilder;
-use ecdna_evo::{
-    dynamics, timepoints, DNACopy, Dynamic, NbIndividuals, Parameters, Patient, Quantities,
-    QuantitiesBuilder, Rates, Timepoint,
-};
+use ecdna_evo::{DNACopy, Dynamic, Dynamics, NbIndividuals, Parameters, Patient, Rates};
 
-pub fn build_app() -> (Parameters, Rates, Option<Quantities>, Option<Patient>) {
+pub fn build_app() -> (Parameters, Rates, Option<Dynamics>, Option<Patient>) {
     //! Build the app by parsing CL arguments with `clap` to build the structs
     //! required by `Simulation` to run the stochastic simulation.
     let matches = clap_app().get_matches();
@@ -37,42 +34,29 @@ pub fn build_app() -> (Parameters, Rates, Option<Quantities>, Option<Patient>) {
         max_cells,
         max_iter,
         init_copies,
-        init_nplus,
+        init_nplus: init_nplus != 0,
         init_nminus,
         verbosity,
+        init_iter: 0usize,
+        init_time: 0f32,
     };
 
     // Then other arguments based on the subcomand used
-    let (q, rates, patient_data) = match matches.subcommand() {
+    let (d, rates, patient_data) = match matches.subcommand() {
         Some(("simulate", simulate_matches)) => {
             // Quantities of interest that changes for each iteration
             let d = create_dynamics(simulate_matches, &parameters);
-            // Quantities of interest computed at the end of the run
-            let t = create_timepoints(simulate_matches, &parameters);
             // Rates of the two-type stochastic birth-death process
             let r = rates_from_args(simulate_matches);
 
             if verbosity > 0 {
                 println!("dynamics is some {}", d.is_some());
-                println!("timepoints is some {}", t.is_some());
+                if verbosity > 1 {
+                    println!("dynamics: {:#?}", d);
+                }
             }
 
-            if verbosity > 1 {
-                println!("dynamics: {:#?}", d);
-                println!("timepoints: {:#?}", t);
-            }
-
-            assert!(d.is_some() || t.is_some());
-
-            let q = Some(
-                QuantitiesBuilder::default()
-                    .timepoints(t)
-                    .dynamics(d)
-                    .build()
-                    .unwrap(),
-            );
-
-            (q, r, None)
+            (d, r, None)
         }
         Some(("abc", abc_matches)) => {
             // Rates of the two-type stochastic birth-death process
@@ -87,40 +71,10 @@ pub fn build_app() -> (Parameters, Rates, Option<Quantities>, Option<Patient>) {
     };
 
     println!("Successfully created App");
-    (parameters, rates, q, patient_data)
+    (parameters, rates, d, patient_data)
 }
 
-pub fn create_timepoints(
-    matches: &ArgMatches,
-    parameters: &Parameters,
-) -> Option<timepoints::Timepoints> {
-    //! Create timepoints parsing the CL arguments. Modify this function when
-    //! adding new type of `Timepoint`.
-    if parameters.verbosity > 1 {
-        println!("{:#?}", matches)
-    }
-    // Assume upper bound on the number different timepoints (see variants of
-    // `Timepoint`)
-    let mut timepoints = timepoints::Timepoints::new();
-    match matches.values_of("timepoints") {
-        None => return None,
-        Some(kind) => {
-            for k in kind {
-                if parameters.verbosity > 0 {
-                    println!("Adding {} to timepoints", k);
-                }
-                timepoints.push(Timepoint::new(parameters, k))
-            }
-        }
-    }
-
-    Some(timepoints)
-}
-
-pub fn create_dynamics(
-    matches: &ArgMatches,
-    parameters: &Parameters,
-) -> Option<Vec<dynamics::Dynamic>> {
+pub fn create_dynamics(matches: &ArgMatches, parameters: &Parameters) -> Option<Dynamics> {
     //! Create dynamics parsing the CL arguments. Modify this function when
     //! adding new type of `Dynamic`.
     if parameters.verbosity > 1 {
@@ -139,7 +93,7 @@ pub fn create_dynamics(
         }
     }
 
-    Some(dynamics)
+    Some(dynamics.into())
 }
 
 pub fn create_patient(matches: &ArgMatches, verbosity: u8) -> Option<Patient> {
@@ -189,7 +143,7 @@ pub fn create_patient(matches: &ArgMatches, verbosity: u8) -> Option<Patient> {
         println!("Paths to patient's input data: {:#?}", paths);
     }
 
-    Some(Patient::load(paths.build().unwrap()))
+    Some(Patient::load(paths.build().unwrap(), verbosity))
 }
 
 fn rates_from_args(matches: &ArgMatches) -> Rates {

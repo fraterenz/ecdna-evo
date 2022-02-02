@@ -73,16 +73,6 @@ pub fn clap_app() -> App<'static> {
                 .default_value("0")
                 .help("Death rate value for the NMinus cells w/o ecdna"),
             )
-        .arg(Arg::new("timepoints")
-                .long("timepoints")
-                .takes_value(true)
-                .possible_values(
-                    &["ecdna", "mean", "frequency", "entropy"]
-                )
-                .multiple_values(true)
-                .required_unless_present("dynamics")
-                .help("Quantities computed at the end of the simulation for each run.\n\t- ecdna: compute the ecDNA distribution for the last iteration.\n\t- mean: compute the mean of the ecDNA distribution for the last iteration.\n\t- frequency: compute the frequency of the cells with ecDNA for the last iteration.\n\t- entropy: compute the entropy of ecDNA distribution for the last iteration")
-            )
         .arg(Arg::new("dynamics")
                 .long("dynamics")
                 .takes_value(true)
@@ -90,7 +80,6 @@ pub fn clap_app() -> App<'static> {
                     &["nplus", "nminus", "mean", "variance", "time"]
                 )
                 .multiple_values(true)
-                .required_unless_present("timepoints")
                 .help("Quantities computed for each iteration (dynamical).\n\t- nplus: track the number of cells w/ ecDNA for each iteration.\n\t- nminus: track the number of cells w/o ecDNA for each iteration.\n\t- mean: track the mean of the ecDNA distribution for each iteration (computationally intensive).\n\t- variance: track the variance of the ecDNA distribution for each iteration (computationally intensive).\n\t- time: track the Gillespie time for each iteration.")
             )
     )
