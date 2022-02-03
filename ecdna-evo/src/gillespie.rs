@@ -57,7 +57,10 @@ impl Rate {
             [rate] => Rate::Scalar(rate),
             [min, max] => Rate::Range(Range::new(min, max)),
             _ => {
-                panic!("Cannot create Rate with more than two rates {:#?}", rates)
+                panic!(
+                    "Cannot create Rate with more than two rates {:#?}",
+                    rates
+                )
             }
         }
     }
@@ -106,10 +109,7 @@ struct Range {
 
 impl Default for Range {
     fn default() -> Self {
-        Range {
-            min: 0f32,
-            max: 1f32,
-        }
+        Range { min: 0f32, max: 1f32 }
     }
 }
 
@@ -166,9 +166,7 @@ impl DeathRate {
 impl std::str::FromStr for ProliferationRate {
     type Err = std::num::ParseFloatError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        f32::from_str(s).map(|val| ProliferationRate {
-            0: Rate::Scalar(val),
-        })
+        f32::from_str(s).map(|val| ProliferationRate { 0: Rate::Scalar(val) })
     }
 }
 
@@ -210,9 +208,7 @@ impl Mul for ProliferationRate {
 impl std::str::FromStr for DeathRate {
     type Err = std::num::ParseFloatError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        f32::from_str(s).map(|val| DeathRate {
-            0: Rate::Scalar(val),
-        })
+        f32::from_str(s).map(|val| DeathRate { 0: Rate::Scalar(val) })
     }
 }
 
@@ -519,7 +515,8 @@ impl BirthDeathProcess {
             "Found negative death_rate_nminus should be positive!"
         );
         let death_rate1_found = d1 > 0f32;
-        let exactly_one_death_rate_found = (death_rate1_found).bitxor(d2 > 0_f32);
+        let exactly_one_death_rate_found =
+            (death_rate1_found).bitxor(d2 > 0_f32);
 
         if exactly_one_death_rate_found {
             if death_rate1_found {
@@ -530,12 +527,7 @@ impl BirthDeathProcess {
                 process.into()
             }
         } else if death_rate1_found {
-            let process = BirthDeath {
-                r1: f1,
-                r2: f2,
-                d1,
-                d2,
-            };
+            let process = BirthDeath { r1: f1, r2: f2, d1, d2 };
             process.into()
         } else {
             let process = PureBirth { r1: f1, r2: f2 };
@@ -543,14 +535,22 @@ impl BirthDeathProcess {
         }
     }
 
-    pub fn gillespie(&self, pop1: NbIndividuals, pop2: NbIndividuals) -> Event {
+    pub fn gillespie(
+        &self,
+        pop1: NbIndividuals,
+        pop2: NbIndividuals,
+    ) -> Event {
         //! Determine the next `Event` using the Gillespie algorithm.
         assert!((pop1 + pop2) > 0u64);
         let (kind, time) = self.next_event(pop1, pop2);
         Event { kind, time }
     }
 
-    fn next_event(&self, pop1: NbIndividuals, pop2: NbIndividuals) -> (AdvanceRun, GillespieTime) {
+    fn next_event(
+        &self,
+        pop1: NbIndividuals,
+        pop2: NbIndividuals,
+    ) -> (AdvanceRun, GillespieTime) {
         let (times, events) = self.compute_times_events(pop1, pop2);
 
         // Find the event that will occur next, corresponding to the smaller
@@ -570,7 +570,7 @@ impl BirthDeathProcess {
 fn exprand(lambda: GillespieRate) -> f32 {
     //! Generates a random waiting time using the exponential waiting time with
     //! parameter `lambda` of Poisson StochasticProcess.
-    if abs_diff_eq!(lambda, 0_f32) {
+    if (lambda - 0_f32).abs() < f32::EPSILON {
         f32::INFINITY
     } else {
         // random number between (0, 1)
@@ -607,7 +607,9 @@ pub fn fast_mean_computation(
     match event {
         AdvanceRun::Init => panic!("Cannot compute mean with Init event"),
         // The mean will be n_old * mean_old / (n_old + 1)
-        AdvanceRun::Proliferate2 => Some(previous_mean * ntot as f32 / (ntot as f32 + 1_f32)),
+        AdvanceRun::Proliferate2 => {
+            Some(previous_mean * ntot as f32 / (ntot as f32 + 1_f32))
+        }
 
         // If the next event is the death of a NMinus cell there are two possible outcomes based
         // on the number of n cells in the previous iteration: 1. in the previous there was only
@@ -649,7 +651,7 @@ mod tests {
         let lambda: GillespieRate = 0.3;
         let first = exprand(lambda);
         let second = exprand(lambda);
-        assert_abs_diff_ne!(first, second);
+        assert!((first - second).abs() > f32::EPSILON);
 
         let lambda: GillespieRate = 0_f32;
         let first = exprand(lambda);
@@ -666,12 +668,20 @@ mod tests {
         let nb_individuals = 1f32;
         let next_event = AdvanceRun::Proliferate2;
         assert_eq!(
-            fast_mean_computation(previous_mean, &next_event, nb_individuals as u64),
+            fast_mean_computation(
+                previous_mean,
+                &next_event,
+                nb_individuals as u64
+            ),
             Some(0.5f32)
         );
         let next_event = AdvanceRun::Proliferate1;
         assert_eq!(
-            fast_mean_computation(previous_mean, &next_event, nb_individuals as u64),
+            fast_mean_computation(
+                previous_mean,
+                &next_event,
+                nb_individuals as u64
+            ),
             None
         );
     }
@@ -681,37 +691,47 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_gillespie_panics_with_no_individuals_lefth() {
-        let my_process = BirthDeathProcess::new(&Rates::new(&[1.], &[1.], &[0.], &[0.]));
+        let my_process =
+            BirthDeathProcess::new(&Rates::new(&[1.], &[1.], &[0.], &[0.]));
         my_process.gillespie(0, 0);
     }
 
     #[test]
     fn test_gillespie_returns_proliferate1() {
-        let my_process = BirthDeathProcess::new(&Rates::new(&[1.], &[0.], &[0.], &[0.]));
+        let my_process =
+            BirthDeathProcess::new(&Rates::new(&[1.], &[0.], &[0.], &[0.]));
         assert_eq!(AdvanceRun::Proliferate1, my_process.gillespie(1, 2).kind);
     }
 
     #[test]
     fn test_gillespie_returns_highly_probably_proliferate1() {
-        let my_process = BirthDeathProcess::new(&Rates::new(&[10000.], &[0.], &[0.01], &[0.]));
+        let my_process = BirthDeathProcess::new(&Rates::new(
+            &[10000.],
+            &[0.],
+            &[0.01],
+            &[0.],
+        ));
         assert_eq!(AdvanceRun::Proliferate1, my_process.gillespie(1, 2).kind);
     }
 
     #[test]
     fn test_gillespie_returns_highly_probably_proliferate2() {
-        let my_process = BirthDeathProcess::new(&Rates::new(&[0.], &[1.], &[0.0], &[0.]));
+        let my_process =
+            BirthDeathProcess::new(&Rates::new(&[0.], &[1.], &[0.0], &[0.]));
         assert_eq!(AdvanceRun::Proliferate2, my_process.gillespie(1, 2).kind);
     }
 
     #[test]
     fn test_gillespie_returns_die1() {
-        let my_process = BirthDeathProcess::new(&Rates::new(&[0.], &[0.], &[1.], &[0.]));
+        let my_process =
+            BirthDeathProcess::new(&Rates::new(&[0.], &[0.], &[1.], &[0.]));
         assert_eq!(my_process.gillespie(1, 2).kind, AdvanceRun::Die1);
     }
 
     #[test]
     fn test_gillespie_returns_die2() {
-        let my_process = BirthDeathProcess::new(&Rates::new(&[0.], &[0.], &[0.], &[1.]));
+        let my_process =
+            BirthDeathProcess::new(&Rates::new(&[0.], &[0.], &[0.], &[1.]));
         assert_eq!(AdvanceRun::Die2, my_process.gillespie(1, 2).kind);
     }
 

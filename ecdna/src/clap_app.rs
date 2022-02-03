@@ -44,7 +44,16 @@ pub fn clap_app() -> App<'static> {
             .global(true)
             .takes_value(true),
         )
+    .arg(Arg::new("undersample")
+            .long("undersample")
+            .short('u')
+            .help("Specify how many cells to consider while subsampling the ecDNA distribution")
+            .takes_value(true)
+            .global(true)
+            .validator(|cells| { if cells.parse::<usize>().unwrap() > 10000_usize { return Err(String::from("The maximal number of cells allowed to perform the ecDNA distribution subsampling must be smaller than 10001")) } Ok(()) } ),        
+        )
     .arg(Arg::new("v")
+            .long("verbosity")
             .short('v')
             .max_occurrences(3)
             .global(true)
@@ -85,21 +94,27 @@ pub fn clap_app() -> App<'static> {
     )
     .subcommand(App::new("abc")
         .about("Infer the most probable fitness and death coefficients from the real data using approximate Bayesian computation (ABC)")
-        .arg(Arg::new("selection_range")
+        .arg(Arg::new("name")
+                .long("name")
+                .required(true)
+                .help("Name of the experiment where to save the results")
+                .takes_value(true),
+        )
+        .arg(Arg::new("selection")
                 .long("selection-range")
                 .max_values(2)
                 .required(true)
                 .help("If one value given, `abc` would not optimize over fitness hence simulations will have fixed fitness parameter. If two values are given, they represent the minimal and maximal value of fitness to test; 1 corresponds to neutral evolution")
                 .takes_value(true),
         )
-        .arg(Arg::new("death1_range")
+        .arg(Arg::new("death1")
                 .long("death1-range")
                 .max_values(2)
                 .required(true)
                 .help("If one value given, `abc` would not optimize over death1 hence simulations will have fixed death1 parameter. If two values are given, they represent the minimal and maximal value of death rate for the NPlus cells w/ ecdna")
                 .takes_value(true),
         )
-        .arg(Arg::new("death2_range")
+        .arg(Arg::new("death2")
                 .long("death2-range")
                 .max_values(2)
                 .required(true)
@@ -107,32 +122,32 @@ pub fn clap_app() -> App<'static> {
                 .takes_value(true),
         )
         .arg(Arg::new("distribution_input")
-                .long("distribution-input")
+                .long("distribution")
                 .value_name("FILE")
                 .help("Distribution of the copy number ecDNA of the patient, input FILE")
                 .takes_value(true)
                 .required(false),
         )
         .arg(Arg::new("mean_input")
-                .long("mean-input")
+                .long("mean")
                 .value_name("FILE")
                 .help("Mean copy number ecDNA of the patient, input FILE")
                 .takes_value(true)
-                .required(false),
+                .required_unless_present_any(&["distribution_input", "frequency_input", "entropy_input"]),
         )
         .arg(Arg::new("frequency_input")
-                .long("frequency-input")
+                .long("frequency")
                 .value_name("FILE")
                 .help("Frequency of ecDNA carrying cells of the patient, input FILE")
                 .takes_value(true)
-                .required(false),
+                .required_unless_present_any(&["distribution_input", "mean_input", "entropy_input"]),
         )
         .arg(Arg::new("entropy_input")
-                .long("entropy-input")
+                .long("entropy")
                 .value_name("FILE")
                 .help("Entropy of ecDNA distribution considering cells w/o any ecDNA copies, input FILE")
                 .takes_value(true)
-                .required(false),
-        )
+                .required_unless_present_any(&["distribution_input", "mean_input", "frequency_input"]),
+        ),
     )
 }

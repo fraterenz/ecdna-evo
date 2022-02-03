@@ -2,90 +2,137 @@
 # coding: utf-8
 
 import argparse
+import pandas as pd
+from collections import UserDict
+from itertools import repeat
 from pathlib import Path
+from dataclasses import dataclass
+from ecdnaevo import plots
 
 
-def build_app() -> (Path, Path, Path, int):
-    """Parse and returns the paths to:
-    1. rates.tar.gz: the tarball where the proliferation and death rates are
-        stored only for the ABC runs that match the patient's data
-    2. all_rates.tar.gz: same as above, but for all runs (not only the
-        matching ones)
-    3. values.tar.gz: the tarball where the distances between the patient's
-        data and the runs are stored, for all runs
-    Returns also an integer representing the percentage for the threshold for
-    the runs accepted (e.g. 5 means plot rates for runs that have
-    a relative distance, stored in values.tar.gz, smaller or equal than 5%)
+@dataclass
+class App:
     """
+    paths: MyPaths
+    thresholds: dict with the statistics as keys ("ecdna", "mean", "frequency", "entropy") and the values are the thresholds. A threshold indicate the minimal required difference between the run and the patient's data to accept the run in ABC. The thresholds for "mean", "frequency" and "entropy" are relative differences (abs(x - x_sim) / x), whereas the ks distance of the ecDNA distribution is absolute.
+    stats: plot several subplots for combinations of statistics
+    """
+
+    abc: Path
+    thresholds: plots.Thresholds
+    path2save: Path
+    stats: bool
+    verbosity: bool
+
+
+def load(path2abc: Path, verbosity: bool) -> pd.DataFrame:
+    abc = pd.read_csv(path2abc, header=0, low_memory=False)
+    abc.drop(abc[abc.idx == "idx"].index, inplace=True)
+    abc.dropna(how="all", inplace=True)
+    abc.loc[:, "idx"] = abc.idx.astype("uint32")
+    # print(abc.loc[abc[abc.columns[0]].isna().index, :])
+    # abc.loc[:, abc.columns[0]] = abc[abc.columns[0]].astype("uint32")
+    for col in abc.columns[2:]:
+        abc[col] = abc[col].astype("float")
+    if verbosity:
+        print(abc.head())
+    return abc
+
+
+def create_path2save(path2dir: Path, filename: Path) -> Path:
+    assert path2dir.is_dir()
+    path = path2dir / filename
+    path.touch(exist_ok=False)
+    return path
+
+
+def run(app: App):
+    """Plot posterior distribution of the fitness coefficient"""
+    abc = load(app.abc, app.verbosity)
+
+    if app.stats:
+        path2save = create_path2save(
+            app.path2save,
+            Path(
+                "{}relative_{}ecdna_fitness_raw_subplots.pdf".format(
+                    app.thresholds["mean"], app.thresholds["ecdna"]
+                )
+            ),
+        )
+        plots.plot_posterior_per_stats(app.thresholds, abc, path2save)
+    else:
+        path2save = create_path2save(
+            app.path2save,
+            Path(
+                "{}relative_{}ecdna_fitness_raw.pdf".format(
+                    app.thresholds["mean"], app.thresholds["ecdna"]
+                )
+            ),
+        )
+        plots.plot_post(app.thresholds, abc, path2save)
+
+
+def build_app() -> App:
+    """Parse and returns the app"""
     # create the top-level parser
     parser = argparse.ArgumentParser(
         description="Plot posterior distribution (histograms) for ABC inference."
     )
+
     parser.add_argument(
-        "path2rates",
-        action="store",
-        metavar="FILE",
-        type=str,
-        help="Path to tarball file rates.tar.gz",
+        "--stats",
+        dest="stats",
+        required=False,
+        action="store_true",
+        default=False,
+        help="Plot posterior for combinations of statistics",
     )
 
-    subparsers = parser.add_subparsers(title="subcomand")
-
-    # create the parser for the "stats" command
-    parser_stats = subparsers.add_parser(
-        "stats",
-        help="Plot posterior distribution of the fitness coefficient for all combinations of statistics given a relative threshold",
-    )
-
-    parser_stats.add_argument(
-        "threshold",
+    parser.add_argument(
+        "threshold_relative",
         type=int,
-        help="integer specifying the relative difference percentage threshold for which the posterior will be plotted",
+        help="Integer specifying the relative difference percentage threshold for which the posterior will be plotted. This will will be used for the mean, frequency and the entropy not for the ecDNA distribution.",
     )
 
-    parser_stats.add_argument(
-        "--all-rates",
+    parser.add_argument(
+        "threshold_ecdna",
+        type=float,
+        help="Float specifying the distance used to accept runs based on the ks distance of the ecDNA distribution",
+    )
+
+    parser.add_argument(
+        "--abc",
         metavar="FILE",
-        dest="path2all_rates",
+        dest="path2abc",
         required=True,
         type=str,
-        help="Path to tarball file all_rates.tar.gz",
+        help="Path to tarball file abc.tar.gz, where the output of the ABC inference can be found (csv files for each run)",
     )
 
-    parser_stats.add_argument(
-        "--values",
-        dest="path2values",
-        metavar="FILE",
-        type=str,
-        required=True,
-        help="Path to tarball file values.tar.gz",
+    parser.add_argument(
+        "-v",
+        "--verbosity",
+        action="store_true",
+        default=False,
+        help="increase output verbosity",
     )
-
-    # TODO remove?
-    # parser_stats.add_argument(
-    #     "--metadata",
-    #     dest="path2metadata",
-    #     metavar="FILE",
-    #     type=str,
-    #     required=False,
-    #     help="Path to tarball file metadata.tar.gz",
-    # )
 
     args = vars(parser.parse_args())
 
-    try:
-        path2all_rates = Path(args["path2all_rates"])
-    except KeyError:
-        return Path(args["path2rates"]), None, None, None
+    thresholds = UserDict(
+        {
+            k: float(val / 100)
+            for (k, val) in zip(
+                {"mean", "frequency", "entropy"},
+                repeat(int(args["threshold_relative"])),
+            )
+        }
+    )
+    thresholds["ecdna"] = float(args["threshold_ecdna"])
+    abc = Path(args["path2abc"])
+    stats = args["stats"]
+    assert abc.parent.is_dir()
+    # all thresholds are the same except for ecdna distribution
+    assert len({th for (k, th) in thresholds.items() if k != "ecdna"}) == 1
 
-    try:
-        path2values = Path(args["path2values"])
-    except KeyError:
-        raise parser.error("When `stats` is present, `--values` is required")
-
-    try:
-        threshold = int(args["threshold"])
-    except KeyError:
-        raise parser.error("When `stats` is present, the threshold must be specified")
-
-    return Path(args["path2rates"]), path2all_rates, path2values, threshold
+    return App(abc, plots.Thresholds(thresholds), abc.parent, stats, args["verbosity"])

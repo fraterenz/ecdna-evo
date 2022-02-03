@@ -6,9 +6,9 @@
 //! To add a new dynamical quantity, register it in the enum `Dynamic` and
 //! implement the trait `Name` and `Update` and modify `Dynamic::save`.
 
+use crate::data::{write2file, ToFile};
 use crate::gillespie;
-use crate::run::InitializedRun;
-use crate::simulation::{write2file, ToFile};
+use crate::run::{Run, Started};
 use crate::{GillespieTime, NbIndividuals, Parameters};
 use enum_dispatch::enum_dispatch;
 use std::ops::{Deref, DerefMut};
@@ -26,8 +26,9 @@ use std::path::Path;
 /// with any copy of ecDNA per iteration:
 ///
 /// ```no_run
-/// use ecdna_evo::run::InitializedRun;
-/// use ecdna_evo::{NbIndividuals, Update};
+/// use ecdna_evo::dynamics::Update;
+/// use ecdna_evo::run::{Run, Started};
+/// use ecdna_evo::NbIndividuals;
 ///
 /// pub struct NPlus {
 ///     /// Record the number of cells w/ ecDNA for each iteration.
@@ -35,7 +36,7 @@ use std::path::Path;
 /// }
 ///
 /// impl Update for NPlus {
-///     fn update(&mut self, run: &InitializedRun) {
+///     fn update(&mut self, run: &Run<Started>) {
 ///         self.nplus_dynamics.push(run.get_nplus());
 ///     }
 /// }
@@ -46,7 +47,7 @@ pub trait Update {
     /// Update the measurement based on the `run` for each iteration, i.e.
     /// defines how to interact with `Run` to update the quantity of interest
     /// for each iteration.
-    fn update(&mut self, run: &InitializedRun);
+    fn update(&mut self, run: &Run<Started>);
 }
 
 #[derive(Clone, Default, Debug)]
@@ -141,13 +142,13 @@ pub struct NPlus {
 
 impl ToFile for NPlus {
     fn save(&self, path2file: &Path) -> anyhow::Result<()> {
-        write2file(&self.nplus_dynamics, path2file, None)?;
+        write2file(&self.nplus_dynamics, path2file, None, false)?;
         Ok(())
     }
 }
 
 impl Update for NPlus {
-    fn update(&mut self, run: &InitializedRun) {
+    fn update(&mut self, run: &Run<Started>) {
         self.nplus_dynamics.push(run.get_nplus());
     }
 }
@@ -160,12 +161,10 @@ impl Name for NPlus {
 
 impl NPlus {
     pub fn new(parameters: &Parameters) -> Self {
-        let mut nplus_dynamics = Vec::with_capacity(parameters.max_cells as usize);
+        let mut nplus_dynamics =
+            Vec::with_capacity(parameters.max_cells as usize);
         nplus_dynamics.push(parameters.init_nplus as u64);
-        NPlus {
-            nplus_dynamics,
-            name: "nplus".to_string(),
-        }
+        NPlus { nplus_dynamics, name: "nplus".to_string() }
     }
 }
 
@@ -179,13 +178,13 @@ pub struct NMinus {
 
 impl ToFile for NMinus {
     fn save(&self, path2file: &Path) -> anyhow::Result<()> {
-        write2file(&self.nminus_dynamics, path2file, None)?;
+        write2file(&self.nminus_dynamics, path2file, None, false)?;
         Ok(())
     }
 }
 
 impl Update for NMinus {
-    fn update(&mut self, run: &InitializedRun) {
+    fn update(&mut self, run: &Run<Started>) {
         self.nminus_dynamics.push(*run.get_nminus());
     }
 }
@@ -198,12 +197,10 @@ impl Name for NMinus {
 
 impl NMinus {
     pub fn new(parameters: &Parameters) -> Self {
-        let mut nminus_dynamics = Vec::with_capacity(parameters.max_cells as usize);
+        let mut nminus_dynamics =
+            Vec::with_capacity(parameters.max_cells as usize);
         nminus_dynamics.push(parameters.init_nminus);
-        NMinus {
-            nminus_dynamics,
-            name: "nminus".to_string(),
-        }
+        NMinus { nminus_dynamics, name: "nminus".to_string() }
     }
 }
 
@@ -219,12 +216,9 @@ impl MeanDyn {
         let mut mean = Vec::with_capacity(parameters.max_iter);
         mean.push((parameters.init_nplus as u16) as f32);
 
-        MeanDyn {
-            mean,
-            name: "mean_dynamics".to_string(),
-        }
+        MeanDyn { mean, name: "mean_dynamics".to_string() }
     }
-    pub fn ecdna_distr_mean(&self, run: &InitializedRun) -> f32 {
+    pub fn ecdna_distr_mean(&self, run: &Run<Started>) -> f32 {
         //! The mean of the ecDNA distribution for the current iteration.
         let ntot = run.get_nminus() + run.get_nplus();
         match gillespie::fast_mean_computation(
@@ -241,13 +235,13 @@ impl MeanDyn {
 
 impl ToFile for MeanDyn {
     fn save(&self, path2file: &Path) -> anyhow::Result<()> {
-        write2file(&self.mean, path2file, None)?;
+        write2file(&self.mean, path2file, None, false)?;
         Ok(())
     }
 }
 
 impl Update for MeanDyn {
-    fn update(&mut self, run: &InitializedRun) {
+    fn update(&mut self, run: &Run<Started>) {
         self.mean.push(self.ecdna_distr_mean(run));
     }
 }
@@ -268,7 +262,7 @@ pub struct Variance {
 }
 
 impl Update for Variance {
-    fn update(&mut self, run: &InitializedRun) {
+    fn update(&mut self, run: &Run<Started>) {
         let mean = self.mean.ecdna_distr_mean(run);
         self.mean.update(run);
         self.variance.push(run.variance_ecdna(&mean));
@@ -287,17 +281,13 @@ impl Variance {
         variance.push(0f32);
         let mean = MeanDyn::new(parameters);
 
-        Variance {
-            variance,
-            mean,
-            name: "var_dynamics".to_string(),
-        }
+        Variance { variance, mean, name: "var_dynamics".to_string() }
     }
 }
 
 impl ToFile for Variance {
     fn save(&self, path2file: &Path) -> anyhow::Result<()> {
-        write2file(&self.variance, path2file, None)?;
+        write2file(&self.variance, path2file, None, false)?;
         Ok(())
     }
 }
@@ -311,7 +301,7 @@ pub struct GillespieT {
 }
 
 impl Update for GillespieT {
-    fn update(&mut self, run: &InitializedRun) {
+    fn update(&mut self, run: &Run<Started>) {
         self.time
             .push(self.time.last().unwrap() + run.get_gillespie_event().time);
     }
@@ -327,16 +317,13 @@ impl GillespieT {
     pub fn new(parameters: &Parameters) -> Self {
         let mut time = Vec::with_capacity(parameters.max_cells as usize);
         time.push(0f32);
-        GillespieT {
-            time,
-            name: "time".to_string(),
-        }
+        GillespieT { time, name: "time".to_string() }
     }
 }
 
 impl ToFile for GillespieT {
     fn save(&self, path2file: &Path) -> anyhow::Result<()> {
-        write2file(&self.time, path2file, None)?;
+        write2file(&self.time, path2file, None, false)?;
         Ok(())
     }
 }

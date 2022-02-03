@@ -2,19 +2,17 @@
 //! the ecDNA population dynamics, assuming an exponential growing population of
 //! tumour cells in a well-mixed environment. Simulation are carried out using
 //! the Gillespie algorithm.
-use crate::dynamics::{Dynamic, Dynamics, Name};
+use crate::dynamics::{Dynamics, Name};
 use crate::run::Run;
 use crate::{Parameters, Patient, Rates};
 use anyhow::{anyhow, Context};
 use chrono::Utc;
-use enum_dispatch::enum_dispatch;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use indicatif::ParallelProgressIterator;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use std::env;
 use std::fs;
-use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 /// Perform multiple independent simulations of tumour growth in parallel using
@@ -36,8 +34,37 @@ impl<'sim, 'run> Simulation {
         //! must be `Some`
         //!
         //! 2. ABC: `patient` must be `Some` and quantities must be `None`.
-        // If we are in abc, `quantities` will be None (because created from
-        // the data) and `data` will be Some
+        Simulation::info(&parameters);
+
+        // create path: relative path (used to creating the tarball) and
+        // absolute path, for dynamics and abc
+        let experiment = Simulation::create_path(&parameters, &rates);
+        let (abspath, relapath) = (
+            env::current_dir()
+                .unwrap()
+                .join("results")
+                .join(experiment.clone()),
+            PathBuf::from("results").join(experiment),
+        );
+
+        (0..parameters.nb_runs)
+            .into_par_iter()
+            .progress_count(parameters.nb_runs as u64)
+            .for_each(|idx| {
+                Run::new(idx, parameters, &rates)
+                    .simulate(dynamics.clone())
+                    .save(&abspath, &dynamics, &patient)
+                    .unwrap()
+            });
+
+        println!("{} End simulating {} runs", Utc::now(), parameters.nb_runs);
+        println!("{} Results saved in {:#?}", Utc::now(), abspath);
+
+        Simulation::tarballs(&parameters, patient, relapath, dynamics);
+        Ok(())
+    }
+
+    fn info(parameters: &Parameters) {
         println!(
             "{} Simulating with {} cores {} runs, each of them with {} cells and max iterations {}",
             Utc::now(),
@@ -58,124 +85,144 @@ impl<'sim, 'run> Simulation {
                 parameters.nb_runs
             );
         }
+    }
 
-        // create path: relative path (used to creating the tarball) and
-        // absolute path, for dynamics and abc
-        let (relapath, abspath) = Simulation::create_path(&parameters, &rates);
-        let (relapath_d, relapath_abc) = (relapath.join("dynamics"), relapath.join("abc"));
-
-        let saved = (0..parameters.nb_runs)
-            .into_par_iter()
-            .progress_count(parameters.nb_runs as u64)
-            .map(|idx| {
-                Run::new(idx, parameters, &rates)
-                    .simulate(dynamics.clone())
-                    .save(&abspath, &dynamics, &patient)
-                    .is_saved()
-            })
-            .collect::<Vec<bool>>();
-
-        println!("{} End simulating {} runs", Utc::now(), parameters.nb_runs);
-
-        println!(
-            "{} Start compressing {} runs",
-            Utc::now(),
-            parameters.nb_runs
-        );
-
-        // Save tarballs from abc even if there aren't any saved runs for abc
-        if patient.is_some() {
+    fn tarballs(
+        parameters: &Parameters,
+        patient: Option<Patient>,
+        relapath: PathBuf,
+        dynamics: Option<Dynamics>,
+    ) {
+        // ABC
+        if let Some(ref p) = patient {
+            let relapath_abc = relapath.join(p.name.clone());
             if parameters.verbosity > 0 {
                 println!("{} Creating tarball for abc", Utc::now());
             }
-            Simulation::compress_results("all_rates", &relapath_abc, parameters.verbosity)
-                .expect("Cannot compress all rates");
 
-            Simulation::compress_results("metadata", &relapath_abc, parameters.verbosity)
-                .expect("Cannot compress metadata");
+            // subsamples: save the rates and values
+            if parameters.subsample.is_some() {
+                Simulation::tarball_samples(
+                    parameters,
+                    &patient,
+                    &relapath_abc,
+                )
+            } else {
+                Simulation::tarball(parameters, &patient, &relapath_abc, None)
+            }
+        } else {
+            // dynamics
+            if dynamics.is_some() {
+                assert!(
+                    patient.is_none(),
+                    "Cannot have patient and dynamics at the same time"
+                );
+                let relapath_d = relapath.join("dynamics");
+                return Simulation::tarball(
+                    parameters,
+                    &None,
+                    &relapath_d,
+                    dynamics,
+                );
+            }
 
-            Simulation::compress_results("values", &relapath_abc, parameters.verbosity)
-                .expect("Cannot compress metadata values");
+            //subsamples: save the ecdna, mean, frequency and entropy for
+            //each subsample
+            if parameters.subsample.is_some() {
+                Simulation::tarball_samples(parameters, &patient, &relapath);
+            }
+
+            Simulation::tarball(parameters, &None, &relapath, None);
+        }
+    }
+
+    fn tarball_samples(
+        parameters: &Parameters,
+        patient: &Option<Patient>,
+        relapath: &Path,
+    ) {
+        // subsamples extras
+        let path2multiple_samples = relapath.join("samples");
+        Simulation::tarball(parameters, patient, &path2multiple_samples, None);
+    }
+
+    fn tarball(
+        parameters: &Parameters,
+        patient: &Option<Patient>,
+        parent_dir: &Path,
+        dynamics: Option<Dynamics>,
+    ) {
+        if let Some(dynamics) = &dynamics {
+            for d in dynamics.iter() {
+                if parameters.verbosity > 0 {
+                    println!("{} Creating tarball for dynamics", Utc::now());
+                }
+                Simulation::compress_results(
+                    d.get_name(),
+                    parent_dir,
+                    parameters.verbosity,
+                )
+                .expect("Cannot compress dynamics");
+            }
         }
 
-        // compress runs into tarball only if there is at least one saved run
-        if saved.iter().any(|&saved_run| saved_run) {
-            if let Some(dynamics) = &dynamics {
-                for d in dynamics.iter() {
-                    if parameters.verbosity > 0 {
-                        println!("{} Creating tarball for dynamics", Utc::now());
-                    }
-                    Simulation::compress_results(d.get_name(), &relapath_d, parameters.verbosity)
-                        .expect("Cannot compress dynamics");
-                }
-            }
-
-            // data is some means abc subcomand, that is only the rates must
-            // be saved
-            if patient.is_some() {
-                if parameters.verbosity > 0 {
-                    println!("{} Creating tarball for abc", Utc::now());
-                }
-                Simulation::compress_results("rates", &relapath_abc, parameters.verbosity)
-                    .expect("Cannot compress rates");
-            }
+        if patient.is_some() {
+            Simulation::compress_results(
+                "abc",
+                parent_dir,
+                parameters.verbosity,
+            )
+            .expect("Cannot compress abc results");
+        } else {
             for name in ["ecdna", "mean", "frequency", "entropy"] {
                 if parameters.verbosity > 0 {
                     println!("{} Creating tarball", Utc::now());
                 }
 
-                // do not save the ecdna distr when there is a patient (abc)
-                match Simulation::compress_results(name, &relapath, parameters.verbosity) {
-                    Ok(_) => {}
-                    Err(_) => {
-                        if !((name == "ecdna") && patient.is_some()) {
-                            panic!("Cannot compress {}", name);
-                        }
-                    }
-                }
+                Simulation::compress_results(
+                    name,
+                    parent_dir,
+                    parameters.verbosity,
+                )
+                .unwrap();
             }
         }
-
-        println!("{} End compressing {} runs", Utc::now(), parameters.nb_runs);
-
-        println!(
-            "{} {} runs over total of {} were saved",
-            Utc::now(),
-            saved.iter().filter(|&saved_run| *saved_run).count(),
-            parameters.nb_runs
-        );
-        Ok(())
     }
 
-    fn create_path(parameters: &Parameters, rates: &Rates) -> (PathBuf, PathBuf) {
+    fn create_path(parameters: &Parameters, rates: &Rates) -> PathBuf {
         //! Resturns the paths where to store the data. The hashmap has keys as
         //! the quantities stored, and values as the dest and source of where to
         //! compress the data.
-        // create path where to store the results
-        let relative_path =
-            PathBuf::from("results").join(Simulation::create_path_helper(parameters, rates));
-        let abspath = env::current_dir().unwrap().join(&relative_path);
-
-        (relative_path, abspath)
-    }
-
-    fn create_path_helper(parameters: &Parameters, rates: &Rates) -> PathBuf {
         format!(
-            "{}runs_{}cells_{}_{}1_{}2",
-            parameters.nb_runs, parameters.max_cells, rates.fitness1, rates.death1, rates.death2
+            "{}runs_{}cells_{}_{}1_{}2_{}undersample",
+            parameters.nb_runs,
+            parameters.max_cells,
+            rates.fitness1,
+            rates.death1,
+            rates.death2,
+            parameters.subsample.unwrap_or_default()
         )
         .into()
     }
 
-    fn compress_results(kind: &str, basepath: &Path, verbosity: u8) -> anyhow::Result<()> {
+    fn compress_results(
+        kind: &str,
+        basepath: &Path,
+        verbosity: u8,
+    ) -> anyhow::Result<()> {
         let dest = basepath.join(kind);
         let src = env::current_dir().unwrap().join(&dest);
-        Simulation::compress_dir(&dest, &src, verbosity)
-            .with_context(|| format!("Cannot compress {:#?} into {:#?}", &src, &dest))?;
+        Simulation::compress_dir(&dest, &src, verbosity).with_context(
+            || format!("Cannot compress {:#?} into {:#?}", &src, &dest),
+        )?;
         Ok(())
     }
 
-    fn compress_dir(dest_path: &Path, src_path_dir: &Path, verbosity: u8) -> anyhow::Result<()> {
+    fn compress_dir(
+        dest_path: &Path,
+        src_path_dir: &Path,
+        verbosity: u8,
+    ) -> anyhow::Result<()> {
         //! Compress the directory where all runs are saved into tarball at the
         //! same level of the saved runs.
         let mut dest_path_archive = dest_path.to_owned();
@@ -187,7 +234,12 @@ impl<'sim, 'run> Simulation {
             .write(true)
             .create_new(true)
             .open(&dest_path_archive)
-            .with_context(|| format!("Error while opening the stream {:#?}", &dest_path_archive))?;
+            .with_context(|| {
+                format!(
+                    "Error while opening the stream {:#?}",
+                    &dest_path_archive
+                )
+            })?;
         let enc = GzEncoder::new(tar_gz, Compression::default());
         let mut tar = tar::Builder::new(enc);
         // append recursively all the runs into the archive that is first created in the
@@ -221,40 +273,6 @@ pub fn find_nan(val: f32) -> anyhow::Result<f32> {
         return Err(anyhow!("Found NaN value!"));
     }
     Ok(val)
-}
-
-/// Trait to write the data to file
-#[enum_dispatch]
-pub trait ToFile {
-    fn save(&self, path2file: &Path) -> anyhow::Result<()>;
-}
-
-pub fn write2file<T: std::fmt::Display>(
-    data: &[T],
-    path: &Path,
-    header: Option<&str>,
-) -> anyhow::Result<()> {
-    //! Write vector of float into new file with a precision of 4 decimals.
-    //! Write NAN if the slice to write to file is empty.
-    fs::create_dir_all(path.parent().unwrap()).expect("Cannot create dir");
-    let f = fs::OpenOptions::new()
-        .read(true)
-        .append(true)
-        .create(true)
-        .open(path)?;
-    let mut buffer = BufWriter::new(f);
-    if !data.is_empty() {
-        if let Some(h) = header {
-            writeln!(buffer, "{}", h)?;
-        }
-        write!(buffer, "{:.4}", data.first().unwrap())?;
-        for ele in data.iter().skip(1) {
-            write!(buffer, ",{:.4}", ele)?;
-        }
-    } else {
-        write!(buffer, "{}", f32::NAN)?;
-    }
-    Ok(())
 }
 
 #[cfg(test)]

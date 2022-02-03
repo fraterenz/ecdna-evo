@@ -1,7 +1,8 @@
 use crate::clap_app::clap_app;
 use clap::ArgMatches;
 use ecdna_evo::abc::PatientPathsBuilder;
-use ecdna_evo::{DNACopy, Dynamic, Dynamics, NbIndividuals, Parameters, Patient, Rates};
+use ecdna_evo::dynamics::{Dynamic, Dynamics};
+use ecdna_evo::{DNACopy, NbIndividuals, Parameters, Patient, Rates};
 
 pub fn build_app() -> (Parameters, Rates, Option<Dynamics>, Option<Patient>) {
     //! Build the app by parsing CL arguments with `clap` to build the structs
@@ -9,17 +10,18 @@ pub fn build_app() -> (Parameters, Rates, Option<Dynamics>, Option<Patient>) {
     let matches = clap_app().get_matches();
 
     // Global arguments first (valid for all subcomands)
-    let nb_runs: usize = matches.value_of_t("runs").unwrap_or_else(|e| e.exit());
-    let init_copies: DNACopy = matches
-        .value_of_t("init_copies")
-        .unwrap_or_else(|e| e.exit());
-    let init_nplus: NbIndividuals = matches
-        .value_of_t("init_nplus")
-        .unwrap_or_else(|e| e.exit());
-    let init_nminus: NbIndividuals = matches
-        .value_of_t("init_nminus")
-        .unwrap_or_else(|e| e.exit());
-    let max_cells: NbIndividuals = matches.value_of_t("max_cells").unwrap_or_else(|e| e.exit());
+    let nb_runs: usize =
+        matches.value_of_t("runs").unwrap_or_else(|e| e.exit());
+    let init_copies: DNACopy =
+        matches.value_of_t("init_copies").unwrap_or_else(|e| e.exit());
+    let init_nplus: NbIndividuals =
+        matches.value_of_t("init_nplus").unwrap_or_else(|e| e.exit());
+    let init_nminus: NbIndividuals =
+        matches.value_of_t("init_nminus").unwrap_or_else(|e| e.exit());
+    let max_cells: NbIndividuals =
+        matches.value_of_t("max_cells").unwrap_or_else(|e| e.exit());
+    let subsample: Option<NbIndividuals> =
+        matches.value_of_t("undersample").ok();
     let max_iter: usize = 3 * max_cells as usize;
     let verbosity = {
         match matches.occurrences_of("v") {
@@ -29,21 +31,22 @@ pub fn build_app() -> (Parameters, Rates, Option<Dynamics>, Option<Patient>) {
         }
     };
 
-    let parameters = Parameters {
-        nb_runs,
-        max_cells,
-        max_iter,
-        init_copies,
-        init_nplus: init_nplus != 0,
-        init_nminus,
-        verbosity,
-        init_iter: 0usize,
-        init_time: 0f32,
-    };
-
     // Then other arguments based on the subcomand used
-    let (d, rates, patient_data) = match matches.subcommand() {
+    let (d, rates, patient_data, parameters) = match matches.subcommand() {
         Some(("simulate", simulate_matches)) => {
+            let parameters = Parameters {
+                nb_runs,
+                max_cells,
+                max_iter,
+                init_copies,
+                init_nplus: init_nplus != 0,
+                init_nminus,
+                verbosity,
+                init_iter: 0usize,
+                init_time: 0f32,
+                subsample,
+            };
+
             // Quantities of interest that changes for each iteration
             let d = create_dynamics(simulate_matches, &parameters);
             // Rates of the two-type stochastic birth-death process
@@ -56,16 +59,29 @@ pub fn build_app() -> (Parameters, Rates, Option<Dynamics>, Option<Patient>) {
                 }
             }
 
-            (d, r, None)
+            (d, r, None, parameters)
         }
         Some(("abc", abc_matches)) => {
+            let parameters = Parameters {
+                nb_runs,
+                max_cells,
+                max_iter,
+                init_copies,
+                init_nplus: init_nplus != 0,
+                init_nminus,
+                verbosity,
+                init_iter: 0usize,
+                init_time: 0f32,
+                subsample,
+            };
+
             // Rates of the two-type stochastic birth-death process
             let r = rates_from_args(abc_matches);
 
-            let patient = create_patient(abc_matches, parameters.verbosity);
+            let patient = create_patient(abc_matches, verbosity);
 
             // cannot have quantities with abc
-            (None, r, patient)
+            (None, r, patient, parameters)
         }
         _ => unreachable!(),
     };
@@ -74,7 +90,10 @@ pub fn build_app() -> (Parameters, Rates, Option<Dynamics>, Option<Patient>) {
     (parameters, rates, d, patient_data)
 }
 
-pub fn create_dynamics(matches: &ArgMatches, parameters: &Parameters) -> Option<Dynamics> {
+pub fn create_dynamics(
+    matches: &ArgMatches,
+    parameters: &Parameters,
+) -> Option<Dynamics> {
     //! Create dynamics parsing the CL arguments. Modify this function when
     //! adding new type of `Dynamic`.
     if parameters.verbosity > 1 {
@@ -131,42 +150,38 @@ pub fn create_patient(matches: &ArgMatches, verbosity: u8) -> Option<Patient> {
         paths.entropy(e);
     }
 
-    if let Some(_exp) = matches.value_of("exp_input") {
-        if verbosity > 1 {
-            println!("Add exponential to paths");
-        }
-        todo!()
-        // paths.exponential(exp);
-    }
+    // if let Some(_exp) = matches.value_of("exp_input") {
+    //     if verbosity > 1 {
+    //         println!("Add exponential to paths");
+    //     }
+    //     todo!()
+    // }
 
     if verbosity > 0 {
         println!("Paths to patient's input data: {:#?}", paths);
     }
 
-    Some(Patient::load(paths.build().unwrap(), verbosity))
+    let name: String = matches.value_of_t("name").unwrap_or_else(|e| e.exit());
+    let patient = Patient::load(paths.build().unwrap(), &name, verbosity);
+    if verbosity > 0 {
+        println!("Patient: {:#?}", patient);
+    }
+
+    Some(patient)
 }
 
 fn rates_from_args(matches: &ArgMatches) -> Rates {
     // Proliferation rate of the cells w/ ecDNA
-    let fitness1: Vec<f32> = matches.values_of_t("selection").unwrap_or_else(|_| {
-        matches
-            .values_of_t("selection_range")
-            .unwrap_or_else(|e| e.exit())
-    });
+    let fitness1: Vec<f32> =
+        matches.values_of_t("selection").unwrap_or_else(|e| e.exit());
     // Proliferation rate of the cells w/o ecDNA
     let fitness2 = vec![1f32];
 
     // Death rate of cells w/ ecDNA
-    let death1: Vec<f32> = matches.values_of_t("death1").unwrap_or_else(|_| {
-        matches
-            .values_of_t("death1_range")
-            .unwrap_or_else(|e| e.exit())
-    });
-    let death2: Vec<f32> = matches.values_of_t("death2").unwrap_or_else(|_| {
-        matches
-            .values_of_t("death2_range")
-            .unwrap_or_else(|e| e.exit())
-    });
+    let death1: Vec<f32> =
+        matches.values_of_t("death1").unwrap_or_else(|e| e.exit());
+    let death2: Vec<f32> =
+        matches.values_of_t("death2").unwrap_or_else(|e| e.exit());
 
     Rates::new(&fitness1, &fitness2, &death1, &death2)
 }

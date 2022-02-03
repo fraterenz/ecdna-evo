@@ -12,7 +12,8 @@
 //! # Simulation example
 //! The simulation of tumour growth using Gillespie algorithm.
 //! ```no_run
-//! use ecdna_evo::{Dynamic, Dynamics, Parameters, Rates, Simulation};
+//! use ecdna_evo::dynamics::{Dynamic, Dynamics};
+//! use ecdna_evo::{Parameters, Rates, Simulation};
 //!
 //! // Configure the simulation with parameters and rates
 //! // 1. parameters such as the number of iterations, number of cells
@@ -20,7 +21,7 @@
 //! // 2. rates of the process: the neutral dynamics (no selection) by default
 //! let rates = Rates::default();
 //!
-//! // Define the quantities to be simulated
+//! // Define the quantities to be simulated (this is optional)
 //! let dynamics = Dynamics::from(vec![Dynamic::new(&params, "nplus")]);
 //!
 //! // Run the simulation
@@ -42,13 +43,13 @@
 //!
 //! // Load the patient's data used to run ABC, in this case only the ecDNA
 //! // distribution
-//! let verbosity = 0u8;
 //! let patient = Patient::load(
 //!     PatientPathsBuilder::default()
 //!         .distribution("path2ecdna_distribution")
 //!         .build()
 //!         .unwrap(),
-//!     verbosity,
+//!     "PatientName",
+//!     params.verbosity,
 //! );
 //!
 //! // Run the ABC inference to determine the parameters for the `patient`
@@ -64,15 +65,14 @@ pub mod simulation;
 #[doc(inline)]
 pub use crate::abc::Patient;
 #[doc(inline)]
-pub use crate::dynamics::{Dynamic, Dynamics, Update};
-#[doc(inline)]
 pub use crate::gillespie::{GillespieTime, NbIndividuals, Rates};
 #[doc(inline)]
-pub use crate::run::{DNACopy, EcDNADistribution, Parameters, Run};
+pub use crate::run::{DNACopy, Parameters, Run};
 #[doc(inline)]
-pub use crate::simulation::{Simulation, ToFile};
+pub use crate::simulation::Simulation;
 
 #[macro_use]
-extern crate approx;
-#[macro_use]
 extern crate derive_builder;
+#[cfg(test)]
+#[macro_use(quickcheck)]
+extern crate quickcheck_macros;
