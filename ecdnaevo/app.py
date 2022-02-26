@@ -4,7 +4,6 @@
 import argparse
 import pandas as pd
 from collections import UserDict
-from itertools import repeat
 from pathlib import Path
 from dataclasses import dataclass
 from ecdnaevo import plots
@@ -54,8 +53,11 @@ def run(app: App):
         path2save = create_path2save(
             app.path2save,
             Path(
-                "{}relative_{}ecdna_fitness_raw_subplots.pdf".format(
-                    app.thresholds["mean"], app.thresholds["ecdna"]
+                "{}mean_{}frequency_{}entropy_{}ecdna_fitness_raw_subplots.pdf".format(
+                    app.thresholds["mean"],
+                    app.thresholds["frequency"],
+                    app.thresholds["entropy"],
+                    app.thresholds["ecdna"],
                 )
             ),
         )
@@ -89,13 +91,25 @@ def build_app() -> App:
     )
 
     parser.add_argument(
-        "threshold_relative",
+        "mean",
         type=int,
-        help="Integer specifying the relative difference percentage threshold for which the posterior will be plotted. This will will be used for the mean, frequency and the entropy not for the ecDNA distribution.",
+        help="Integer specifying the relative difference percentage in the mean threshold for which the posterior will be plotted.",
     )
 
     parser.add_argument(
-        "threshold_ecdna",
+        "frequency",
+        type=int,
+        help="Integer specifying the relative difference percentage in the frequency threshold for which the posterior will be plotted.",
+    )
+
+    parser.add_argument(
+        "entropy",
+        type=int,
+        help="Integer specifying the relative difference percentage threshold in the entropy for which the posterior will be plotted.",
+    )
+
+    parser.add_argument(
+        "ecdna",
         type=float,
         help="Float specifying the distance used to accept runs based on the ks distance of the ecDNA distribution",
     )
@@ -123,16 +137,14 @@ def build_app() -> App:
         {
             k: float(val / 100)
             for (k, val) in zip(
-                {"mean", "frequency", "entropy"},
-                repeat(int(args["threshold_relative"])),
+                ["mean", "frequency", "entropy"],
+                [int(args["mean"]), int(args["frequency"]), int(args["entropy"])],
             )
         }
     )
-    thresholds["ecdna"] = float(args["threshold_ecdna"])
+    thresholds["ecdna"] = float(args["ecdna"])
     abc = Path(args["path2abc"])
     stats = args["stats"]
     assert abc.parent.is_dir()
-    # all thresholds are the same except for ecdna distribution
-    assert len({th for (k, th) in thresholds.items() if k != "ecdna"}) == 1
 
     return App(abc, plots.Thresholds(thresholds), abc.parent, stats, args["verbosity"])

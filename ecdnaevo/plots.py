@@ -9,7 +9,6 @@ from itertools import combinations
 
 PLOTTING_STATS = {"ecdna": "D", "mean": "M", "frequency": "F", "entropy": "E"}
 MYSHAPE = (len(PLOTTING_STATS), len(PLOTTING_STATS))
-# {"ecdna": float, "mean": float, "frequency", float, "entropy": float}
 Thresholds = NewType("Thresholds", UserDict[str, float])
 
 
