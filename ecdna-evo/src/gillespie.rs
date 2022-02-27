@@ -84,7 +84,7 @@ impl fmt::Display for Rate {
                 }
             }
         };
-        write!(f, "{}", s.replace(".", ""))
+        write!(f, "{}", s.replace('.', ""))
     }
 }
 
@@ -166,7 +166,7 @@ impl DeathRate {
 impl std::str::FromStr for ProliferationRate {
     type Err = std::num::ParseFloatError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        f32::from_str(s).map(|val| ProliferationRate { 0: Rate::Scalar(val) })
+        f32::from_str(s).map(|val| ProliferationRate(Rate::Scalar(val)))
     }
 }
 
@@ -201,14 +201,14 @@ impl fmt::Display for ProliferationRate {
 impl Mul for ProliferationRate {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self {
-        Self { 0: self.0 * rhs.0 }
+        Self(self.0 * rhs.0)
     }
 }
 
 impl std::str::FromStr for DeathRate {
     type Err = std::num::ParseFloatError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        f32::from_str(s).map(|val| DeathRate { 0: Rate::Scalar(val) })
+        f32::from_str(s).map(|val| DeathRate(Rate::Scalar(val)))
     }
 }
 
@@ -243,7 +243,7 @@ impl fmt::Display for DeathRate {
 impl Mul for DeathRate {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self {
-        Self { 0: self.0 * rhs.0 }
+        Self(self.0 * rhs.0)
     }
 }
 
