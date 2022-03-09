@@ -8,23 +8,57 @@ use csv;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// A collection of `Measurement`s representing the data available for a cancer
-/// patient.
+/// A patient is a collection of data associated to one tumour sequenced one or
+/// several times. The timing of the sequencing experiment is referred to by the
+/// number of malignant cells present in the whole tumour at time of sequencing.
 #[derive(Debug)]
 pub struct Patient {
+    name: String,
+    /// Patient's sequencing data, where the keys are the number of tumour cells
+    /// at sequencing.
+    pub data: HashMap<NbIndividuals, SequencingData>,
+}
+
+impl Patient {
+    pub fn load(
+        name: &str,
+        paths: Vec<SamplePaths>,
+        nb_cells: Vec<NbIndividuals>,
+        verbosity: u8,
+    ) -> Self {
+        //! Create a new patient by loading its data for each sequencing experiment
+        assert_eq!(paths.len(), nb_cells.len());
+        let mut data = HashMap::with_capacity(paths.len());
+
+        for (cells, path) in nb_cells.into_iter().zip(paths.into_iter()) {
+            data.insert(cells, SequencingData::load(path, verbosity));
+        }
+
+        Patient { name: name.to_owned(), data }
+    }
+
+    pub fn get_name(&self) -> &str {
+        &self.name
+    }
+}
+
+/// A collection of `Measurement`s representing the data available for a cancer
+/// sample.
+#[derive(Debug)]
+pub struct SequencingData {
     ecdna: Option<EcDNADistribution>,
     mean: Option<Mean>,
     frequency: Option<Frequency>,
     entropy: Option<Entropy>,
-    pub name: String,
 }
 
-impl Patient {
-    pub fn load(paths: PatientPaths, name: &str, verbosity: u8) -> Self {
+impl SequencingData {
+    fn load(paths: SamplePaths, verbosity: u8) -> Self {
         //! Load patient's data from paths
         let mut found_one = false;
 
@@ -118,14 +152,14 @@ impl Patient {
 
         assert!(found_one, "Must provide at least one path to load data");
 
-        Patient { ecdna, mean, frequency, entropy, name: name.to_string() }
+        SequencingData { ecdna, mean, frequency, entropy }
     }
 }
 
-/// Patient's paths to ABC input data
+/// Sample's paths to ABC input data
 #[derive(Builder, Default)]
 #[builder(derive(Debug))]
-pub struct PatientPaths {
+pub struct SamplePaths {
     #[builder(setter(into, strip_option), default)]
     distribution: Option<PathBuf>,
     #[builder(setter(into, strip_option), default)]
@@ -151,12 +185,16 @@ pub struct PatientPaths {
 pub struct ABCRejection;
 
 impl ABCRejection {
-    pub fn run(run: &Run<Ended>, patient: &Patient) -> ABCResults {
+    pub fn run(
+        run: &Run<Ended>,
+        sequencing_sample: &SequencingData,
+        subsample: &Option<NbIndividuals>,
+    ) -> ABCResults {
         //! Run the ABC rejection method by comparing the run against the
         //! patient's data
         let nb_samples = 100usize;
         let mut results = ABCResults(Vec::with_capacity(nb_samples));
-        if let Some(cells) = run.parameters.subsample {
+        if let Some(cells) = subsample {
             // create multiple subsamples of the same run and save the results
             // in the same file `path`. It's ok as long as cells is not too
             // big because deep copies of the ecDNA distribution for each
@@ -164,30 +202,35 @@ impl ABCRejection {
             let mut rng = SmallRng::from_entropy();
             for i in 0usize..nb_samples {
                 // returns new ecDNA distribution with cells NPlus cells (clone)
-                let sampled = run.undersample_ecdna(&cells, &mut rng, i);
-                results.0.push(ABCRejection::run_it(&sampled, patient));
+                let sampled = run.undersample_ecdna(cells, &mut rng, i);
+                results
+                    .0
+                    .push(ABCRejection::run_it(&sampled, sequencing_sample));
             }
         } else {
-            results.0.push(ABCRejection::run_it(run, patient));
+            results.0.push(ABCRejection::run_it(run, sequencing_sample));
         }
         results
     }
 
-    fn run_it(run: &Run<Ended>, patient: &Patient) -> ABCResult {
+    fn run_it(
+        run: &Run<Ended>,
+        sequencing_sample: &SequencingData,
+    ) -> ABCResult {
         let mut builder = ABCResultBuilder::default();
-        if let Some(ecdna) = &patient.ecdna {
+        if let Some(ecdna) = &sequencing_sample.ecdna {
             builder.ecdna(ecdna.distance(run));
         }
 
-        if let Some(mean) = &patient.mean {
+        if let Some(mean) = &sequencing_sample.mean {
             builder.mean(mean.distance(run));
         }
 
-        if let Some(frequency) = &patient.frequency {
+        if let Some(frequency) = &sequencing_sample.frequency {
             builder.frequency(frequency.distance(run));
         }
 
-        if let Some(entropy) = &patient.entropy {
+        if let Some(entropy) = &sequencing_sample.entropy {
             builder.entropy(entropy.distance(run));
         }
 

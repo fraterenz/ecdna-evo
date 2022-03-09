@@ -295,7 +295,7 @@ pub trait GetRates {
 }
 
 /// Process simulating only birth of the individuals for both populations
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct PureBirth {
     r1: f32,
     r2: f32,
@@ -303,7 +303,7 @@ pub struct PureBirth {
 
 /// Process simulating birth of the individuals for both populations and death
 /// only for the first population
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct BirthDeath1 {
     r1: f32,
     r2: f32,
@@ -312,7 +312,7 @@ pub struct BirthDeath1 {
 
 /// Process simulating birth of the individuals for both populations and death
 /// only for the second population
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct BirthDeath2 {
     r1: f32,
     r2: f32,
@@ -321,7 +321,7 @@ pub struct BirthDeath2 {
 
 /// Process simulating birth and death of the individuals for both populations
 /// (the real birth- death process)
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct BirthDeath {
     r1: f32,
     r2: f32,
@@ -450,7 +450,7 @@ impl GetRates for BirthDeath {
 
 /// Two-type stochastic birth-death process.
 #[enum_dispatch]
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum BirthDeathProcess {
     /// Cells cannot die but only proliferate.
     PureBirth,
@@ -462,6 +462,13 @@ pub enum BirthDeathProcess {
     BirthDeath2,
     /// Cells of both types can die and proliferate.
     BirthDeath,
+}
+
+impl Default for BirthDeathProcess {
+    fn default() -> Self {
+        //! By default the pure-birth neutral process, i.e. no cell death and proliferation rates equal to 1.
+        PureBirth { r1: 1f32, r2: 1f32 }.into()
+    }
 }
 
 impl BirthDeathProcess {

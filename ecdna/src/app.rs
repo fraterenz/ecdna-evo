@@ -1,6 +1,6 @@
 use crate::clap_app::clap_app;
 use clap::ArgMatches;
-use ecdna_evo::abc::PatientPathsBuilder;
+use ecdna_evo::abc::SamplePathsBuilder;
 use ecdna_evo::dynamics::{Dynamic, Dynamics};
 use ecdna_evo::{DNACopy, NbIndividuals, Parameters, Patient, Rates};
 
@@ -22,7 +22,6 @@ pub fn build_app() -> (Parameters, Rates, Option<Dynamics>, Option<Patient>) {
         matches.value_of_t("max_cells").unwrap_or_else(|e| e.exit());
     let subsample: Option<NbIndividuals> =
         matches.value_of_t("undersample").ok();
-    let max_iter: usize = 3 * max_cells as usize;
     let verbosity = {
         match matches.occurrences_of("v") {
             0 => 0_u8,
@@ -36,7 +35,6 @@ pub fn build_app() -> (Parameters, Rates, Option<Dynamics>, Option<Patient>) {
         Some(("simulate", simulate_matches)) => {
             let parameters = Parameters {
                 nb_runs,
-                max_cells,
                 max_iter,
                 init_copies,
                 init_nplus: init_nplus != 0,
@@ -45,6 +43,7 @@ pub fn build_app() -> (Parameters, Rates, Option<Dynamics>, Option<Patient>) {
                 init_iter: 0usize,
                 init_time: 0f32,
                 subsample,
+                tumour_sizes,
             };
 
             // Quantities of interest that changes for each iteration
@@ -64,8 +63,6 @@ pub fn build_app() -> (Parameters, Rates, Option<Dynamics>, Option<Patient>) {
         Some(("abc", abc_matches)) => {
             let parameters = Parameters {
                 nb_runs,
-                max_cells,
-                max_iter,
                 init_copies,
                 init_nplus: init_nplus != 0,
                 init_nminus,
@@ -73,6 +70,7 @@ pub fn build_app() -> (Parameters, Rates, Option<Dynamics>, Option<Patient>) {
                 init_iter: 0usize,
                 init_time: 0f32,
                 subsample,
+                tumour_sizes,
             };
 
             // Rates of the two-type stochastic birth-death process

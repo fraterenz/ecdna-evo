@@ -13,7 +13,11 @@ from ecdnaevo import plots
 class App:
     """
     paths: MyPaths
-    thresholds: dict with the statistics as keys ("ecdna", "mean", "frequency", "entropy") and the values are the thresholds. A threshold indicate the minimal required difference between the run and the patient's data to accept the run in ABC. The thresholds for "mean", "frequency" and "entropy" are relative differences (abs(x - x_sim) / x), whereas the ks distance of the ecDNA distribution is absolute.
+    thresholds: dict with the statistics as keys ("ecdna", "mean", "frequency", "entropy")
+    and the values are the thresholds. A threshold indicate the minimal required
+    difference between the run and the patient's data to accept the run in ABC. The
+    thresholds for "mean", "frequency" and "entropy" are relative differences
+    (abs(x - x_sim) / x), whereas the ks distance of the ecDNA distribution is absolute.
     stats: plot several subplots for combinations of statistics
     """
 
@@ -21,11 +25,12 @@ class App:
     thresholds: plots.Thresholds
     path2save: Path
     stats: bool
+    nb_timepoints: int
     verbosity: bool
 
 
 def load(path2abc: Path, verbosity: bool) -> pd.DataFrame:
-    abc = pd.read_csv(path2abc, header=0, low_memory=False)
+    abc: pd.DataFrame = pd.read_csv(path2abc, header=0, low_memory=False)
     abc.drop(abc[abc.idx == "idx"].index, inplace=True)
     abc.dropna(how="all", inplace=True)
     abc.loc[:, "idx"] = abc.idx.astype("uint32")
@@ -61,7 +66,7 @@ def run(app: App):
                 )
             ),
         )
-        plots.plot_posterior_per_stats(app.thresholds, abc, path2save)
+        plots.plot_posterior_per_stats(app.thresholds, abc, path2save, app.nb_timepoints)
     else:
         path2save = create_path2save(
             app.path2save,
@@ -71,7 +76,7 @@ def run(app: App):
                 )
             ),
         )
-        plots.plot_post(app.thresholds, abc, path2save)
+        plots.plot_post(app.thresholds, abc, path2save, app.nb_timepoints)
 
 
 def build_app() -> App:
@@ -115,6 +120,14 @@ def build_app() -> App:
     )
 
     parser.add_argument(
+        "--timepoints",
+        required=False,
+        default=1,
+        type=int,
+        help="Optional int specifying the number of sequencing timepoints available for the patient's sample. Default 1."
+    )
+
+    parser.add_argument(
         "--abc",
         metavar="FILE",
         dest="path2abc",
@@ -147,4 +160,4 @@ def build_app() -> App:
     stats = args["stats"]
     assert abc.parent.is_dir()
 
-    return App(abc, plots.Thresholds(thresholds), abc.parent, stats, args["verbosity"])
+    return App(abc, plots.Thresholds(thresholds), abc.parent, stats, args["timepoints"], args["verbosity"])

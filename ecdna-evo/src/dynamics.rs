@@ -116,14 +116,15 @@ impl Default for Dynamic {
 
 impl Dynamic {
     pub fn new(params: &Parameters, kind: &str) -> Self {
-        match kind {
-            "nplus" => Dynamic::NPlus(NPlus::new(params)),
-            "nminus" => Dynamic::NMinus(NMinus::new(params)),
-            "mean" => Dynamic::MeanDyn(MeanDyn::new(params)),
-            "variance" => Dynamic::Variance(Variance::new(params)),
-            "time" => Dynamic::GillespieT(GillespieT::new(params)),
-            _ => panic!("Cannot create time from {}", kind),
-        }
+        todo!()
+        // match kind {
+        // "nplus" => Dynamic::NPlus(NPlus::new(params)),
+        // "nminus" => Dynamic::NMinus(NMinus::new(params)),
+        // "mean" => Dynamic::MeanDyn(MeanDyn::new(params)),
+        // "variance" => Dynamic::Variance(Variance::new(params)),
+        // "time" => Dynamic::GillespieT(GillespieT::new(params)),
+        // _ => panic!("Cannot create time from {}", kind),
+        // }
     }
 }
 
@@ -160,10 +161,12 @@ impl Name for NPlus {
 }
 
 impl NPlus {
-    pub fn new(parameters: &Parameters) -> Self {
-        let mut nplus_dynamics =
-            Vec::with_capacity(parameters.max_cells as usize);
-        nplus_dynamics.push(parameters.init_nplus as u64);
+    pub fn new(
+        init_nplus: &NbIndividuals,
+        tumour_size: &NbIndividuals,
+    ) -> Self {
+        let mut nplus_dynamics = Vec::with_capacity(*tumour_size as usize);
+        nplus_dynamics.push(*init_nplus as u64);
         NPlus { nplus_dynamics, name: "nplus".to_string() }
     }
 }
@@ -196,10 +199,12 @@ impl Name for NMinus {
 }
 
 impl NMinus {
-    pub fn new(parameters: &Parameters) -> Self {
-        let mut nminus_dynamics =
-            Vec::with_capacity(parameters.max_cells as usize);
-        nminus_dynamics.push(parameters.init_nminus);
+    pub fn new(
+        init_nminus: &NbIndividuals,
+        tumour_size: &NbIndividuals,
+    ) -> Self {
+        let mut nminus_dynamics = Vec::with_capacity(*tumour_size as usize);
+        nminus_dynamics.push(*init_nminus);
         NMinus { nminus_dynamics, name: "nminus".to_string() }
     }
 }
@@ -212,12 +217,16 @@ pub struct MeanDyn {
 }
 
 impl MeanDyn {
-    pub fn new(parameters: &Parameters) -> Self {
-        let mut mean = Vec::with_capacity(parameters.max_iter);
-        mean.push((parameters.init_nplus as u16) as f32);
+    pub fn new(
+        init_nplus: &NbIndividuals,
+        tumour_size: &NbIndividuals,
+    ) -> Self {
+        let mut mean = Vec::with_capacity(3usize * (*tumour_size as usize));
+        mean.push((*init_nplus as u16) as f32);
 
         MeanDyn { mean, name: "mean_dynamics".to_string() }
     }
+
     pub fn ecdna_distr_mean(&self, run: &Run<Started>) -> f32 {
         //! The mean of the ecDNA distribution for the current iteration.
         let ntot = run.get_nminus() + run.get_nplus();
@@ -276,10 +285,14 @@ impl Name for Variance {
 }
 
 impl Variance {
-    pub fn new(parameters: &Parameters) -> Self {
-        let mut variance = Vec::with_capacity(parameters.max_iter);
+    pub fn new(
+        init_nplus: &NbIndividuals,
+        tumour_size: &NbIndividuals,
+    ) -> Self {
+        let mut variance =
+            Vec::with_capacity(3usize * (*tumour_size as usize));
         variance.push(0f32);
-        let mean = MeanDyn::new(parameters);
+        let mean = MeanDyn::new(init_nplus, tumour_size);
 
         Variance { variance, mean, name: "var_dynamics".to_string() }
     }
@@ -314,8 +327,8 @@ impl Name for GillespieT {
 }
 
 impl GillespieT {
-    pub fn new(parameters: &Parameters) -> Self {
-        let mut time = Vec::with_capacity(parameters.max_cells as usize);
+    pub fn new(tumour_size: NbIndividuals) -> Self {
+        let mut time = Vec::with_capacity(tumour_size as usize);
         time.push(0f32);
         GillespieT { time, name: "time".to_string() }
     }

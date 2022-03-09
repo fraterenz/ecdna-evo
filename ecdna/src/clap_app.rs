@@ -5,7 +5,7 @@ pub fn clap_app() -> App<'static> {
     App::new("ecdna")
     .version(crate_version!())
     .author(crate_authors!())
-    .about("Evolutionary models of extrachromosomal DNA (ecDNA).\nSimulate quantities related to ecDNA using agent-based stochastic simulations and infer the most probable fitness coefficient from the data using Bayesian inference.") 
+    .about("Evolutionary models of extrachromosomal DNA (ecDNA).\nSimulate quantities related to ecDNA using agent-based stochastic simulations and infer the most probable fitness coefficient from the data using Bayesian inference.")
     .global_setting(AppSettings::DeriveDisplayOrder)
     .setting(AppSettings::SubcommandRequired)
     .arg(Arg::new("runs")
@@ -50,7 +50,7 @@ pub fn clap_app() -> App<'static> {
             .help("Specify how many cells to consider while subsampling the ecDNA distribution")
             .takes_value(true)
             .global(true)
-            .validator(|cells| { if cells.parse::<usize>().unwrap() > 10000_usize { return Err(String::from("The maximal number of cells allowed to perform the ecDNA distribution subsampling must be smaller than 10001")) } Ok(()) } ),        
+            .validator(|cells| { if cells.parse::<usize>().unwrap() > 10000_usize { return Err(String::from("The maximal number of cells allowed to perform the ecDNA distribution subsampling must be smaller than 10001")) } Ok(()) } ),
         )
     .arg(Arg::new("v")
             .long("verbosity")
@@ -148,6 +148,11 @@ pub fn clap_app() -> App<'static> {
                 .help("Entropy of ecDNA distribution considering cells w/o any ecDNA copies, input FILE")
                 .takes_value(true)
                 .required_unless_present_any(&["distribution_input", "mean_input", "frequency_input"]),
+        )
+        .arg(Arg::new("timepoints")
+                .long("timepoints")
+                .help("Multiple values for longitudinal samples specifying the number of cells at which the tumour has been sampled and sequenced.")
+                .takes_value(true),
         ),
     )
 }

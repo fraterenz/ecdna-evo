@@ -302,6 +302,7 @@ pub fn euclidean_distance(val1: f32, val2: f32) -> f32 {
     f32::abs(val1 - val2)
 }
 
+#[derive(Clone, Debug)]
 pub struct Data {
     pub ecdna: EcDNADistribution,
     pub mean: Mean,
@@ -494,6 +495,19 @@ impl From<Vec<DNACopy>> for EcDNADistribution {
 }
 
 impl EcDNADistribution {
+    pub fn into_vec_no_minus(mut self) -> Vec<DNACopy> {
+        //! Transform the distribution of ecDNA from the histogram representation
+        //! to the single-cell vector, removing `NMinus` cells.
+        let mut vec_ecdna = Vec::with_capacity(self.nplus_cells() as usize);
+        self.distribution.remove(&0u16);
+        for (dna_copy, cells) in self.distribution.into_iter() {
+            for _ in 0..cells {
+                vec_ecdna.push(dna_copy);
+            }
+        }
+        vec_ecdna
+    }
+
     pub fn ks_distance(&self, ecdna: &EcDNADistribution) -> (f32, bool) {
         //! The ks distance represents the maximal absolute distance between the
         //! empirical cumulative distributions of two `EcDNADistribution`s.
@@ -638,6 +652,14 @@ impl EcDNADistribution {
     pub fn nb_cells(&self) -> NbIndividuals {
         self.distribution.values().sum::<NbIndividuals>()
     }
+
+    pub fn nplus_cells(&self) -> NbIndividuals {
+        self.ntot - *self.distribution.get(&0u16).unwrap_or(&0u64)
+    }
+
+    pub fn get_nminus_cells(&self) -> &NbIndividuals {
+        self.distribution.get(&0u16).unwrap_or(&0u64)
+    }
 }
 
 #[cfg(test)]
@@ -711,13 +733,6 @@ mod tests {
     fn ecdna_frequency_empty() {
         EcDNADistribution::from(vec![]).frequency().unwrap();
     }
-
-    // #[test_case(vec![0u16, 1u16, 2u16] => Mean(1f32)  ; "Balanced input")]
-    // #[test_case(vec![1u16, 1u16, 1u16] => Mean(1f32)  ; "Constant input")]
-    // #[test_case(vec![0u16, 2u16] => Mean(1f32)  ; "Unbalanced input")]
-    // fn ecdna_mean_1(ecdna: Vec<u16>) -> Mean {
-    //     EcDNADistribution::from(ecdna).mean()
-    // }
 
     #[test]
     #[should_panic]

@@ -36,9 +36,11 @@ impl<'sim, 'run> Simulation {
         //! 2. ABC: `patient` must be `Some` and quantities must be `None`.
         Simulation::info(&parameters);
 
-        // create path: relative path (used to creating the tarball) and
-        // absolute path, for dynamics and abc
-        let experiment = Simulation::create_path(&parameters, &rates);
+        let (experiment, patient_name) = (
+            Simulation::create_path(&parameters, &rates),
+            &patient.as_ref().map(|p| p.get_name()),
+        );
+
         let (abspath, relapath) = (
             env::current_dir()
                 .unwrap()
@@ -51,27 +53,53 @@ impl<'sim, 'run> Simulation {
             .into_par_iter()
             .progress_count(parameters.nb_runs as u64)
             .for_each(|idx| {
-                Run::new(idx, parameters, &rates)
-                    .simulate(dynamics.clone())
-                    .save(&abspath, &dynamics, &patient)
-                    .unwrap()
+                // simulate the first timepoint
+                let nb_cells =
+                    parameters.tumour_sizes.all_sizes.first().unwrap();
+                let seq_data =
+                    patient.as_ref().map(|p| p.data.get(nb_cells).unwrap());
+                let mut run = Run::new(idx, &parameters, &rates)
+                    .simulate(dynamics.clone(), nb_cells)
+                    .save(
+                        &abspath,
+                        &dynamics,
+                        &seq_data,
+                        &parameters.subsample,
+                        patient_name,
+                    )
+                    .unwrap();
+
+                // simulate other timepoints if present
+                for t in parameters.tumour_sizes.all_sizes.iter().skip(1) {
+                    run = run
+                        .continue_simulation(t)
+                        .save(
+                            &abspath,
+                            &dynamics,
+                            &patient.as_ref().map(|p| p.data.get(t).unwrap()),
+                            &parameters.subsample,
+                            patient_name,
+                        )
+                        .unwrap();
+                }
             });
 
-        println!("{} End simulating {} runs", Utc::now(), parameters.nb_runs);
+        println!("{} End simulating {} runs", Utc::now(), &parameters.nb_runs);
         println!("{} Results saved in {:#?}", Utc::now(), abspath);
 
-        Simulation::tarballs(&parameters, patient, relapath, dynamics);
+        Simulation::tarballs(&parameters, patient_name, relapath, dynamics);
         Ok(())
     }
 
     fn info(parameters: &Parameters) {
         println!(
-            "{} Simulating with {} cores {} runs, each of them with {} cells and max iterations {}",
+            "{} Simulating with {} cores {} runs, each of them with {} cells and max iterations {} and {:#?} timpoints",
             Utc::now(),
             rayon::current_num_threads(),
             parameters.nb_runs,
-            parameters.max_cells,
-            parameters.max_iter
+            parameters.final_tumour_size(),
+            parameters.max_iter,
+            parameters.tumour_sizes.all_sizes,
         );
 
         if parameters.verbosity > 1 {
@@ -89,66 +117,64 @@ impl<'sim, 'run> Simulation {
 
     fn tarballs(
         parameters: &Parameters,
-        patient: Option<Patient>,
+        patient_name: &Option<&str>,
         relapath: PathBuf,
         dynamics: Option<Dynamics>,
     ) {
         // ABC
-        if let Some(ref p) = patient {
-            let relapath_abc = relapath.join(p.name.clone());
-            if parameters.verbosity > 0 {
-                println!("{} Creating tarball for abc", Utc::now());
-            }
-
-            // subsamples: save the rates and values
-            if parameters.subsample.is_some() {
-                Simulation::tarball_samples(
-                    parameters,
-                    &patient,
-                    &relapath_abc,
-                )
-            } else {
-                Simulation::tarball(parameters, &patient, &relapath_abc, None)
-            }
-        } else {
-            // dynamics
-            if dynamics.is_some() {
+        let relapath2save = {
+            if let Some(name) = patient_name {
+                if parameters.verbosity > 0 {
+                    println!("{} Creating tarball for abc", Utc::now());
+                }
+                relapath.join(name)
+            } else if dynamics.is_some() {
                 assert!(
-                    patient.is_none(),
+                    patient_name.is_none(),
                     "Cannot have patient and dynamics at the same time"
                 );
-                let relapath_d = relapath.join("dynamics");
-                return Simulation::tarball(
-                    parameters,
-                    &None,
-                    &relapath_d,
-                    dynamics,
-                );
+                relapath.join("dynamics")
+            } else {
+                relapath
             }
-
-            //subsamples: save the ecdna, mean, frequency and entropy for
-            //each subsample
-            if parameters.subsample.is_some() {
-                Simulation::tarball_samples(parameters, &patient, &relapath);
-            }
-
-            Simulation::tarball(parameters, &None, &relapath, None);
+        };
+        // subsamples: save the rates and values
+        if parameters.subsample.is_some() {
+            Simulation::tarball_samples(
+                parameters,
+                patient_name,
+                &relapath2save,
+            )
+        } else {
+            Simulation::tarball(
+                parameters,
+                patient_name,
+                &relapath2save,
+                dynamics,
+            )
         }
+
+        Simulation::tarball(parameters, &None, &relapath2save, None);
     }
 
     fn tarball_samples(
         parameters: &Parameters,
-        patient: &Option<Patient>,
+        patient_name: &Option<&str>,
         relapath: &Path,
     ) {
         // subsamples extras
         let path2multiple_samples = relapath.join("samples");
-        Simulation::tarball(parameters, patient, &path2multiple_samples, None);
+        Simulation::tarball(
+            parameters,
+            patient_name,
+            &path2multiple_samples,
+            None,
+        );
     }
 
     fn tarball(
         parameters: &Parameters,
-        patient: &Option<Patient>,
+        patient_name: &Option<&str>,
         parent_dir: &Path,
         dynamics: Option<Dynamics>,
     ) {
@@ -166,7 +192,7 @@ impl<'sim, 'run> Simulation {
             }
         }
 
-        if patient.is_some() {
+        if patient_name.is_some() {
             Simulation::compress_results(
                 "abc",
                 parent_dir,
@@ -193,16 +219,22 @@ impl<'sim, 'run> Simulation {
         //! Resturns the paths where to store the data. The hashmap has keys as
         //! the quantities stored, and values as the dest and source of where to
         //! compress the data.
-        format!(
+        // longitudinal studies are carried out when there are several sequencing
+        // data available for the same tumour at different timepoints.
+        let mut my_path = format!(
             "{}runs_{}cells_{}_{}1_{}2_{}undersample",
             parameters.nb_runs,
-            parameters.max_cells,
+            parameters.tumour_sizes.final_size,
             rates.fitness1,
             rates.death1,
             rates.death2,
             parameters.subsample.unwrap_or_default()
-        )
-        .into()
+        );
+
+        for sizes in parameters.tumour_sizes.all_sizes.iter() {
+            my_path.push_str(&format!("_{}timepoint", sizes));
+        }
+        my_path.into()
     }
 
     fn compress_results(
