@@ -2,6 +2,7 @@
 members = [
     "ecdna-evo",
     "ecdna",
+    "preprocess",
 ]
 
 [profile.release]

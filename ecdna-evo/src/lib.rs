@@ -59,13 +59,14 @@ pub mod abc;
 pub mod data;
 pub mod dynamics;
 mod gillespie;
+pub mod patient;
 pub mod run;
 pub mod simulation;
 
 #[doc(inline)]
-pub use crate::abc::Patient;
-#[doc(inline)]
 pub use crate::gillespie::{GillespieTime, NbIndividuals, Rates};
+#[doc(inline)]
+pub use crate::patient::Patient;
 #[doc(inline)]
 pub use crate::run::{DNACopy, Parameters, Run};
 #[doc(inline)]

@@ -1,6 +1,7 @@
 //! Perform the approximate Bayesian computation to infer the most probable
 //! fitness and death coefficients from the data.
 use crate::data::{Distance, EcDNADistribution, Entropy, Frequency, Mean};
+use crate::patient::SequencingData;
 use crate::run::{Ended, Run};
 use crate::NbIndividuals;
 use anyhow::Context;
@@ -11,132 +12,6 @@ use serde::Serialize;
 use std::convert::TryFrom;
 use std::fs;
 use std::path::{Path, PathBuf};
-
-/// A collection of `Measurement`s representing the data available for a cancer
-/// patient.
-#[derive(Debug)]
-pub struct Patient {
-    ecdna: Option<EcDNADistribution>,
-    mean: Option<Mean>,
-    frequency: Option<Frequency>,
-    entropy: Option<Entropy>,
-    pub name: String,
-}
-
-impl Patient {
-    pub fn load(paths: PatientPaths, name: &str, verbosity: u8) -> Self {
-        //! Load patient's data from paths
-        let mut found_one = false;
-
-        let ecdna = {
-            match paths.distribution {
-                Some(path) => {
-                    found_one = true;
-                    if verbosity > 0u8 {
-                        println!("Loading ecdna distribution");
-                    }
-                    Some(EcDNADistribution::try_from(&path)
-                            .with_context(|| {
-                                format!(
-                                    "Cannot load the ecDNA distribution from {:#?}",
-                                    path
-                                )
-                            })
-                            .unwrap(),
-                    )
-                }
-
-                None => None,
-            }
-        };
-
-        let mean = {
-            match paths.mean {
-                Some(path) => {
-                    found_one = true;
-                    if verbosity > 0u8 {
-                        println!("Loading mean");
-                    }
-                    Some(
-                        Mean::try_from(&path)
-                            .with_context(|| {
-                                format!(
-                                    "Cannot load the mean from {:#?}",
-                                    path
-                                )
-                            })
-                            .unwrap(),
-                    )
-                }
-                None => None,
-            }
-        };
-
-        let frequency = {
-            match paths.frequency {
-                Some(path) => {
-                    found_one = true;
-                    if verbosity > 0u8 {
-                        println!("Loading frequency");
-                    }
-                    Some(
-                        Frequency::try_from(&path)
-                            .with_context(|| {
-                                format!(
-                                    "Cannot load the frequency from {:#?}",
-                                    path
-                                )
-                            })
-                            .unwrap(),
-                    )
-                }
-                None => None,
-            }
-        };
-
-        let entropy = {
-            match paths.entropy {
-                Some(path) => {
-                    found_one = true;
-                    if verbosity > 0u8 {
-                        println!("Loading entropy");
-                    }
-                    Some(
-                        Entropy::try_from(&path)
-                            .with_context(|| {
-                                format!(
-                                    "Cannot load the entropy from {:#?}",
-                                    path
-                                )
-                            })
-                            .unwrap(),
-                    )
-                }
-                None => None,
-            }
-        };
-
-        assert!(found_one, "Must provide at least one path to load data");
-
-        Patient { ecdna, mean, frequency, entropy, name: name.to_string() }
-    }
-}
-
-/// Patient's paths to ABC input data
-#[derive(Builder, Default)]
-#[builder(derive(Debug))]
-pub struct PatientPaths {
-    #[builder(setter(into, strip_option), default)]
-    distribution: Option<PathBuf>,
-    #[builder(setter(into, strip_option), default)]
-    mean: Option<PathBuf>,
-    #[builder(setter(into, strip_option), default)]
-    frequency: Option<PathBuf>,
-    #[builder(setter(into, strip_option), default)]
-    entropy: Option<PathBuf>,
-    // #[builder(setter(into, strip_option), default)]
-    // exponential: Option<PathBuf>,
-}
 
 /// Perform the ABC rejection algorithm for one run to infer the most probable
 /// values of the rates based on the patient's data.
@@ -151,12 +26,12 @@ pub struct PatientPaths {
 pub struct ABCRejection;
 
 impl ABCRejection {
-    pub fn run(run: &Run<Ended>, patient: &Patient) -> ABCResults {
+    pub fn run(run: &Run<Ended>, sample: &SequencingData) -> ABCResults {
         //! Run the ABC rejection method by comparing the run against the
         //! patient's data
         let nb_samples = 100usize;
         let mut results = ABCResults(Vec::with_capacity(nb_samples));
-        if let Some(cells) = run.parameters.subsample {
+        if let Some(true) = sample.is_undersampled() {
             // create multiple subsamples of the same run and save the results
             // in the same file `path`. It's ok as long as cells is not too
             // big because deep copies of the ecDNA distribution for each
@@ -164,30 +39,34 @@ impl ABCRejection {
             let mut rng = SmallRng::from_entropy();
             for i in 0usize..nb_samples {
                 // returns new ecDNA distribution with cells NPlus cells (clone)
-                let sampled = run.undersample_ecdna(&cells, &mut rng, i);
-                results.0.push(ABCRejection::run_it(&sampled, patient));
+                let sampled = run.undersample_ecdna(
+                    &sample.sample_size().unwrap(), // safe to unwrap because of the if let
+                    &mut rng,
+                    i,
+                );
+                results.0.push(ABCRejection::run_it(&sampled, sample));
             }
         } else {
-            results.0.push(ABCRejection::run_it(run, patient));
+            results.0.push(ABCRejection::run_it(run, sample));
         }
         results
     }
 
-    fn run_it(run: &Run<Ended>, patient: &Patient) -> ABCResult {
+    fn run_it(run: &Run<Ended>, sample: &SequencingData) -> ABCResult {
         let mut builder = ABCResultBuilder::default();
-        if let Some(ecdna) = &patient.ecdna {
+        if let Some(ecdna) = &sample.ecdna {
             builder.ecdna(ecdna.distance(run));
         }
 
-        if let Some(mean) = &patient.mean {
+        if let Some(mean) = &sample.mean {
             builder.mean(mean.distance(run));
         }
 
-        if let Some(frequency) = &patient.frequency {
+        if let Some(frequency) = &sample.frequency {
             builder.frequency(frequency.distance(run));
         }
 
-        if let Some(entropy) = &patient.entropy {
+        if let Some(entropy) = &sample.entropy {
             builder.entropy(entropy.distance(run));
         }
 

@@ -1,9 +1,12 @@
 use crate::abc::ABCRejection;
-use crate::data::{Data, EcDNADistribution, Entropy, Frequency, Mean, ToFile};
+use crate::data::{
+    Data, EcDNADistribution, EcDNASummary, Entropy, Frequency, Mean, ToFile,
+};
 use crate::dynamics::{Dynamics, Name, Update};
 use crate::gillespie::{
     AdvanceRun, BirthDeathProcess, Event, GetRates, GillespieTime,
 };
+use crate::patient::SequencingData;
 use crate::{NbIndividuals, Patient, Rates};
 use rand::rngs::SmallRng;
 use rand::{thread_rng, Rng};
@@ -215,14 +218,16 @@ impl Run<Started> {
                         // no cells left, return NAN
                         return Data {
                             ecdna: EcDNADistribution::from(counts),
-                            mean: Mean(f32::NAN),
-                            frequency: Frequency(f32::NAN),
-                            entropy: Entropy(f32::NAN),
+                            summary: EcDNASummary {
+                                mean: Mean(f32::NAN),
+                                frequency: Frequency(f32::NAN),
+                                entropy: Entropy(f32::NAN),
+                            },
                         };
                     }
                     _ => {
                         panic!(
-                                "Found wrong value of ntot: found ntot = 0 but stop condition {:#?} instead of NoIndividualsLeft", 
+                                "Found wrong value of ntot: found ntot = 0 but stop condition {:#?} instead of NoIndividualsLeft",
                                 stop_condition
                                 );
                     }
@@ -231,9 +236,11 @@ impl Run<Started> {
                 // no nplus cells left, return 0
                 return Data {
                     ecdna: EcDNADistribution::from(counts),
-                    mean: Mean(0f32),
-                    frequency: Frequency(0f32),
-                    entropy: Entropy(0f32),
+                    summary: EcDNASummary {
+                        mean: Mean(0f32),
+                        frequency: Frequency(0f32),
+                        entropy: Entropy(0f32),
+                    },
                 };
             }
         } else if ntot == &0 {
@@ -257,7 +264,7 @@ impl Run<Started> {
         let mean = Mean(sum as f32 / ecdna.nb_cells() as f32);
         let frequency = Frequency::try_from(&ecdna).unwrap();
 
-        Data { ecdna, mean, frequency, entropy }
+        Data { ecdna, summary: EcDNASummary { mean, frequency, entropy } }
     }
 
     fn update(&mut self, next_event: Event, dynamics: &mut Option<Dynamics>) {
@@ -282,7 +289,7 @@ impl Run<Ended> {
         self,
         abspath: &Path,
         dynamics: &Option<Dynamics>,
-        patient: &Option<Patient>,
+        sample: &Option<SequencingData>,
     ) -> anyhow::Result<()> {
         //! Save the run the dynamics (updated for each iter) if present and the
         //! other quantities, computed at the end of the run such as the mean,
@@ -294,7 +301,7 @@ impl Run<Ended> {
 
         // 1. dynamics
         if let Some(ref dynamics) = dynamics {
-            assert!(patient.is_none(), "Cannot have patient and dynamics");
+            assert!(sample.is_none(), "Cannot have patient and dynamics");
             for d in dynamics.iter() {
                 let file2path =
                     abspath_d.join(d.get_name()).join(self.filename());
@@ -303,15 +310,16 @@ impl Run<Ended> {
         }
 
         let abspath = {
-            if let Some(patient) = &patient {
-                abspath.join(patient.name.clone())
+            if let Some(sample) = &sample {
+                // abspath.join(sample.name.clone())
+                todo!()
             } else {
                 abspath.to_owned()
             }
         };
 
-        if let Some(patient) = &patient {
-            let results = ABCRejection::run(&self, patient);
+        if let Some(sample) = &sample {
+            let results = ABCRejection::run(&self, sample);
             results.save(&abspath, &self.parameters.subsample)
         } else {
             self.state.data.save(
@@ -368,17 +376,17 @@ impl Run<Ended> {
 
     pub fn get_mean(&self) -> &f32 {
         //! The mean of ecDNA distribution for the last iteration.
-        &self.state.data.mean
+        &self.state.data.summary.mean
     }
 
     pub fn get_frequency(&self) -> &f32 {
         //! The frequency of cells w/ ecDNA for the last iteration.
-        &self.state.data.frequency
+        &self.state.data.summary.frequency
     }
 
     pub fn get_entropy(&self) -> &f32 {
         //! The entropy of the ecDNA distribution for the last iteration.
-        &self.state.data.entropy
+        &self.state.data.summary.entropy
     }
 
     pub fn get_parental_run(&self) -> &Option<usize> {
