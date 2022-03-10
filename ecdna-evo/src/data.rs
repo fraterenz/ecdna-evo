@@ -139,52 +139,12 @@ impl TryFrom<&EcDNADistribution> for Mean {
     }
 }
 
-/// load from file the mean of the ecdna distribution. the mean will be the first entry of the file.
-impl TryFrom<&PathBuf> for Mean {
-    type Error = anyhow::Error;
-
-    fn try_from(path2file: &PathBuf) -> anyhow::Result<Self, Self::Error> {
-        let extension = path2file
-            .extension()
-            .with_context(|| {
-                format!("do not recognize extension of file {:#?}", path2file)
-            })
-            .unwrap();
-
-        match extension.to_str() {
-            Some("csv") => read_csv::<f32>(path2file)
-                .map(|mean| Mean(*mean.first().unwrap())),
-            _ => panic!("extension not recognized: the file must be a csv!"),
-        }
-    }
-}
-
 impl Distance for Mean {
     fn distance(&self, run: &Run<Ended>) -> f32 {
         //! The run and the patient's data differ when the absolute difference
         //! between the means considering `NMinus` cells is greater than a
         //! threshold.
         relative_change(self, run.get_mean())
-    }
-}
-
-/// load from file the mean of the ecdna distribution. the mean will be the first entry of the file.
-impl TryFrom<&PathBuf> for Frequency {
-    type Error = anyhow::Error;
-
-    fn try_from(path2file: &PathBuf) -> anyhow::Result<Self, Self::Error> {
-        let extension = path2file
-            .extension()
-            .with_context(|| {
-                format!("do not recognize extension of file {:#?}", path2file)
-            })
-            .unwrap();
-
-        match extension.to_str() {
-            Some("csv") => read_csv::<f32>(path2file)
-                .map(|frequency| Frequency(*frequency.first().unwrap())),
-            _ => panic!("extension not recognized: the file must be a csv!"),
-        }
     }
 }
 
@@ -214,26 +174,6 @@ impl TryFrom<&EcDNADistribution> for Entropy {
             Err("Entropy only accepts non empty ecDNA distributions")
         } else {
             ecdna.entropy().map_err(|_| stringify!(e))
-        }
-    }
-}
-
-/// Load from file the entropy of the ecDNA distribution, i.e. the first entry of the file.
-impl TryFrom<&PathBuf> for Entropy {
-    type Error = anyhow::Error;
-
-    fn try_from(path2file: &PathBuf) -> anyhow::Result<Self, Self::Error> {
-        let extension = path2file
-            .extension()
-            .with_context(|| {
-                format!("Do not recognize extension of file {:#?}", path2file)
-            })
-            .unwrap();
-
-        match extension.to_str() {
-            Some("csv") => read_csv::<f32>(path2file)
-                .map(|entropy| Entropy(*entropy.first().unwrap())),
-            _ => panic!("Extension not recognized: the file must be a csv!"),
         }
     }
 }
@@ -302,11 +242,15 @@ pub fn euclidean_distance(val1: f32, val2: f32) -> f32 {
     f32::abs(val1 - val2)
 }
 
-pub struct Data {
-    pub ecdna: EcDNADistribution,
+pub struct EcDNASummary {
     pub mean: Mean,
     pub frequency: Frequency,
     pub entropy: Entropy,
+}
+
+pub struct Data {
+    pub ecdna: EcDNADistribution,
+    pub summary: EcDNASummary,
 }
 
 impl TryFrom<&EcDNADistribution> for Data {
@@ -318,10 +262,7 @@ impl TryFrom<&EcDNADistribution> for Data {
                 "Data only accepts non empty ecDNA distributions"
             ))
         } else {
-            let mean = Mean::try_from(ecdna).unwrap();
-            let frequency = Frequency::try_from(ecdna).unwrap();
-            let entropy = Entropy::try_from(ecdna).unwrap();
-            Ok(Data { ecdna: ecdna.clone(), mean, frequency, entropy })
+            Ok(Data { ecdna: ecdna.clone(), summary: ecdna.summarize() })
         }
     }
 }
@@ -354,17 +295,22 @@ impl Data {
 
         let mut mean = file2path.join("mean").join(filename);
         mean.set_extension("csv");
-        self.mean
+        self.summary
+            .mean
             .save(&mean)
             .expect("Cannot save the ecDNA distribution mean");
 
         let mut frequency = file2path.join("frequency").join(filename);
         frequency.set_extension("csv");
-        self.frequency.save(&frequency).expect("Cannot save the frequency");
+        self.summary
+            .frequency
+            .save(&frequency)
+            .expect("Cannot save the frequency");
 
         let mut entropy = file2path.join("entropy").join(filename);
         entropy.set_extension("csv");
-        self.entropy
+        self.summary
+            .entropy
             .save(&entropy)
             .expect("Cannot save the ecDNA distribution entropy");
     }
@@ -404,7 +350,7 @@ impl ToFile for EcDNADistribution {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq, Debug, Default, Deserialize, Serialize)]
 pub struct Mean(pub f32);
 
 impl ToFile for Mean {
@@ -431,7 +377,7 @@ impl_deref!(Frequency);
 impl_deref!(Entropy);
 
 /// The frequency of cells with ecDNA at last iteration
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq, Debug, Default, Deserialize, Serialize)]
 pub struct Frequency(pub f32);
 
 impl Frequency {
@@ -450,7 +396,7 @@ impl ToFile for Frequency {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq, Debug, Default, Deserialize, Serialize)]
 pub struct Entropy(pub f32);
 
 impl Entropy {
@@ -542,6 +488,20 @@ impl EcDNADistribution {
             }
         }
         (distance, false)
+    }
+
+    pub fn summarize(&self) -> EcDNASummary {
+        //! The summary is the mean, the frequency and the entropy.
+        //!
+        //! Panics if `self` is `empty`.
+        let mean =
+            Mean::try_from(self).map_err(|e| anyhow::anyhow!(e)).unwrap();
+        let frequency =
+            Frequency::try_from(self).map_err(|e| anyhow::anyhow!(e)).unwrap();
+        let entropy =
+            Entropy::try_from(self).map_err(|e| anyhow::anyhow!(e)).unwrap();
+
+        EcDNASummary { mean, frequency, entropy }
     }
 
     fn mean(&self) -> anyhow::Result<Mean> {
