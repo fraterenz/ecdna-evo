@@ -68,7 +68,7 @@ pub use crate::gillespie::{GillespieTime, NbIndividuals, Rates};
 #[doc(inline)]
 pub use crate::patient::Patient;
 #[doc(inline)]
-pub use crate::run::{DNACopy, Parameters, Run};
+pub use crate::run::{DNACopy, Run};
 #[doc(inline)]
 pub use crate::simulation::Simulation;
 

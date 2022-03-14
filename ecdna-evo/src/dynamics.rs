@@ -8,8 +8,10 @@
 
 use crate::data::{write2file, ToFile};
 use crate::gillespie;
-use crate::run::{Run, Started};
-use crate::{GillespieTime, NbIndividuals, Parameters};
+use crate::run::{CapacityControl, ConfigControl, DistributionControl};
+use crate::run::{Parameters, Run, Started};
+use crate::{GillespieTime, NbIndividuals};
+use anyhow::Context;
 use enum_dispatch::enum_dispatch;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
@@ -99,7 +101,7 @@ pub enum Dynamic {
     NPlus,
     /// Number of cells w/o any ecDNA copy per iteration
     NMinus,
-    /// The mean ecDNA copy number per iteration
+    /// The mean of the ecDNA copy number distribution per iteration
     MeanDyn,
     /// The variance ecDNA copy number per iteration
     Variance,
@@ -162,8 +164,8 @@ impl Name for NPlus {
 impl NPlus {
     pub fn new(parameters: &Parameters) -> Self {
         let mut nplus_dynamics =
-            Vec::with_capacity(parameters.max_cells as usize);
-        nplus_dynamics.push(parameters.init_nplus as u64);
+            Vec::with_capacity(*parameters.get_capacity());
+        nplus_dynamics.push(parameters.get_distribution().nplus());
         NPlus { nplus_dynamics, name: "nplus".to_string() }
     }
 }
@@ -198,8 +200,8 @@ impl Name for NMinus {
 impl NMinus {
     pub fn new(parameters: &Parameters) -> Self {
         let mut nminus_dynamics =
-            Vec::with_capacity(parameters.max_cells as usize);
-        nminus_dynamics.push(parameters.init_nminus);
+            Vec::with_capacity(*parameters.get_capacity());
+        nminus_dynamics.push(*parameters.get_distribution().get_nminus());
         NMinus { nminus_dynamics, name: "nminus".to_string() }
     }
 }
@@ -213,8 +215,15 @@ pub struct MeanDyn {
 
 impl MeanDyn {
     pub fn new(parameters: &Parameters) -> Self {
-        let mut mean = Vec::with_capacity(parameters.max_iter);
-        mean.push((parameters.init_nplus as u16) as f32);
+        let mut mean = Vec::with_capacity(*parameters.get_capacity());
+        mean.push(
+            parameters
+                .get_distribution()
+                .mean()
+                .with_context(|| "Cannot initialize the mean for the dynamics")
+                .unwrap()
+                .0,
+        );
 
         MeanDyn { mean, name: "mean_dynamics".to_string() }
     }
@@ -277,7 +286,8 @@ impl Name for Variance {
 
 impl Variance {
     pub fn new(parameters: &Parameters) -> Self {
-        let mut variance = Vec::with_capacity(parameters.max_iter);
+        let mut variance =
+            Vec::with_capacity(parameters.get_config().cells as usize);
         variance.push(0f32);
         let mean = MeanDyn::new(parameters);
 
@@ -315,7 +325,7 @@ impl Name for GillespieT {
 
 impl GillespieT {
     pub fn new(parameters: &Parameters) -> Self {
-        let mut time = Vec::with_capacity(parameters.max_cells as usize);
+        let mut time = Vec::with_capacity(*parameters.get_capacity());
         time.push(0f32);
         GillespieT { time, name: "time".to_string() }
     }

@@ -70,11 +70,26 @@ impl SequencingData {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Patient {
     pub name: String,
     pub samples: Vec<SequencingData>,
     verbosity: u8,
+}
+
+impl clap::FromArgMatches for Patient {
+    fn from_arg_matches(
+        matches: &clap::ArgMatches,
+    ) -> Result<Self, clap::error::Error> {
+        todo!()
+    }
+
+    fn update_from_arg_matches(
+        &mut self,
+        matches: &clap::ArgMatches,
+    ) -> Result<(), clap::error::Error> {
+        todo!()
+    }
 }
 
 impl Patient {

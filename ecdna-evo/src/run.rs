@@ -1,4 +1,5 @@
 use crate::abc::ABCRejection;
+use crate::config::Config;
 use crate::data::{
     Data, EcDNADistribution, EcDNASummary, Entropy, Frequency, Mean, ToFile,
 };
@@ -8,6 +9,7 @@ use crate::gillespie::{
 };
 use crate::patient::SequencingData;
 use crate::{NbIndividuals, Patient, Rates};
+use enum_dispatch::enum_dispatch;
 use rand::rngs::SmallRng;
 use rand::{thread_rng, Rng};
 use rand_distr::{Binomial, Distribution};
@@ -25,37 +27,33 @@ pub type DNACopy = u16;
 /// and [`Ended`].
 ///
 /// [typestate pattern]: https://github.com/cbiffle/m4vga-rs/blob/a1e2ba47eaeb4864f0d8b97637611d9460ce5c4d/notes/20190131-typestate.md
+#[derive(Clone)]
 pub struct Run<S: RunState> {
     state: S,
 
     /// Index of the run
     pub idx: usize,
-    /// Parameters to configure the run
-    pub parameters: Parameters,
+    /// Birth-Death process created from some rates.
+    bd_process: BirthDeathProcess,
 }
 
 /// The simulation of the run has started, the stochastic birth-death process
 /// has started looping over the iterations.
 pub struct Started {
-    /// Stochastic process simulating tumour growth
-    process: BirthDeathProcess,
+    /// Start the simulation from this iteration
+    init_iter: usize,
     /// State of the system at one particular iteration
     system: System,
 }
 
 /// The simulation of the run has ended, which is ready to be saved.
 pub struct Ended {
-    #[allow(dead_code)] // TODO restart run with two timepoints
     /// Gillespie time at the end of the run
     gillespie_time: GillespieTime,
-    #[allow(dead_code)] // TODO restart run with two timepoints
-    /// Stopping condition
-    stop: EndRun,
+    /// The iteration number at which the run has stopped
+    last_iter: usize,
     /// Data of interest for the last iteration
     data: Data,
-    /// Rates: the proliferation and death rates of the cells `NPlus` and
-    /// `NMninus` cells respectively.
-    rates: [f32; 4],
     /// The run idx from which the sample was taken.
     sampled_run: Option<usize>,
 }
@@ -64,23 +62,48 @@ pub trait RunState {}
 impl RunState for Started {}
 impl RunState for Ended {}
 
+/// Create a new `Run` continuing from the last simulated event: the run will
+/// start with the data of the ended `Run`.
+impl From<Run<Ended>> for Run<Started> {
+    fn from(run: Run<Ended>) -> Self {
+        let state: Started = run.state.into();
+
+        Run { idx: run.idx, bd_process: run.bd_process, state }
+    }
+}
+
+impl From<Ended> for Started {
+    fn from(state: Ended) -> Self {
+        let nminus = *state.data.ecdna.get_nminus();
+        let ecdna_distr = EcDNADistributionNPlus::from(state.data.ecdna);
+        let event =
+            Event { kind: AdvanceRun::Init, time: state.gillespie_time };
+        let system = System { nminus, ecdna_distr, event };
+
+        Started { system, init_iter: state.last_iter }
+    }
+}
+
 impl Run<Started> {
-    pub fn new(idx: usize, parameters: Parameters, rates: &Rates) -> Self {
+    pub fn new(
+        idx: usize,
+        time: f32,
+        init_iter: usize,
+        parameters: &Parameters,
+        rates: &Rates,
+    ) -> Self {
         //! Use the `parameters` and the `rates` to initialize a realization of
         //! a birth-death stochastic process.
 
         Run {
             idx,
-            parameters,
+            bd_process: BirthDeathProcess::new(rates),
             state: Started {
-                process: BirthDeathProcess::new(rates),
+                init_iter,
                 system: System {
-                    nminus: parameters.init_nminus,
-                    ecdna_distr: EcDNADistributionNPlus::new(&parameters),
-                    event: Event {
-                        kind: AdvanceRun::Init,
-                        time: parameters.init_time,
-                    },
+                    nminus: *parameters.get_distribution().get_nminus(),
+                    ecdna_distr: EcDNADistributionNPlus::new(parameters),
+                    event: Event { kind: AdvanceRun::Init, time },
                 },
             },
         }
@@ -132,20 +155,24 @@ impl Run<Started> {
         &self.state.system.event
     }
 
-    pub fn simulate(mut self, mut dynamics: Option<Dynamics>) -> Run<Ended> {
+    pub fn simulate(
+        mut self,
+        mut dynamics: Option<Dynamics>,
+        max_cells: &NbIndividuals,
+    ) -> Run<Ended> {
         //! Simulate one realisation of the birth-death stochastic process.
         //!
         //! If the some `dynamics` are given, those quantities will be
         //! calculated using the [`Update`] method.
-        let mut iter = self.parameters.init_iter;
-        let mut nplus = self.parameters.init_nplus as u64;
-        let mut nminus = self.parameters.init_nminus;
+        let mut iter = self.state.init_iter;
+        let mut nplus = self.get_nplus();
+        let mut nminus = *self.get_nminus();
 
         let (time, condition) = {
             loop {
                 // Compute the next event using Gillespie algorithm based on the
                 // stochastic process defined by `process`
-                let event = self.state.process.gillespie(nplus, nminus);
+                let event = self.bd_process.gillespie(nplus, nminus);
                 self.update(event, &mut dynamics);
                 nplus = self.get_nplus();
                 nminus = *self.get_nminus();
@@ -163,13 +190,13 @@ impl Run<Started> {
                         EndRun::NoIndividualsLeft,
                     );
                 };
-                if iter >= self.parameters.max_iter - 1usize {
+                if iter >= 3usize * *max_cells as usize - 1usize {
                     break (
                         self.state.system.event.time,
                         EndRun::MaxItersReached,
                     );
                 };
-                if nplus + nminus >= self.parameters.max_cells {
+                if nplus + nminus >= *max_cells {
                     break (
                         self.state.system.event.time,
                         EndRun::MaxIndividualsReached,
@@ -180,24 +207,22 @@ impl Run<Started> {
 
         let ntot = nminus + nplus;
 
-        if let BirthDeathProcess::PureBirth(_) = &self.state.process {
+        if let BirthDeathProcess::PureBirth(_) = &self.bd_process {
             assert!(ntot > 0, "No cells found with PureBirth process")
         }
 
-        let (idx, parameters, rates) =
-            (self.idx, self.parameters, self.state.process.get_rates());
+        let (idx, process) = (self.idx, self.bd_process.clone());
 
         let data = self.create_data(&ntot, &condition);
 
         Run {
             idx,
-            parameters,
+            bd_process: process,
             state: Ended {
                 data,
-                rates,
                 gillespie_time: time,
-                stop: condition,
                 sampled_run: None,
+                last_iter: iter,
             },
         }
     }
@@ -325,7 +350,7 @@ impl Run<Ended> {
             self.state.data.save(
                 &abspath,
                 &self.filename(),
-                &self.parameters.subsample,
+                &parameters.get_distribution().nb_cells(),
             );
             Ok(())
         }
@@ -349,20 +374,20 @@ impl Run<Ended> {
 
         Run {
             idx,
-            parameters: self.parameters,
+            bd_process: self.bd_process.clone(),
             state: Ended {
                 data,
-                rates: self.state.rates,
                 gillespie_time: self.state.gillespie_time,
-                stop: self.state.stop,
+                last_iter: self.state.last_iter,
                 sampled_run: Some(self.idx),
             },
         }
     }
 
-    pub fn get_rates(&self) -> [f32; 4] {
-        //! f1, f2, d1, d2
-        self.state.rates
+    pub fn continue_simulation(self, until: &NbIndividuals) -> Run<Ended> {
+        //! Continue to simulate tumour growth unitl `until` cells are reached.
+        let run: Run<Started> = self.into();
+        run.simulate(None, until)
     }
 
     pub fn get_nb_cells(&self) -> NbIndividuals {
@@ -392,12 +417,6 @@ impl Run<Ended> {
     pub fn get_parental_run(&self) -> &Option<usize> {
         //! The idx for the sampled run
         &self.state.sampled_run
-    }
-
-    pub fn restart(self) -> Run<Started> {
-        //! Restart the simulation of the run setting the initial state to the
-        //! last state of `self`.
-        todo!()
     }
 
     fn filename(&self) -> PathBuf {
@@ -468,16 +487,20 @@ where
     }
 }
 
+/// Convert the histogram representation of the ecDNA distribution into a single-cell
+/// representantion, where each entry is a cell with its ecDNA content. Remove
+/// `NMinus` cells.
+impl From<EcDNADistribution> for EcDNADistributionNPlus {
+    fn from(ecdna: EcDNADistribution) -> Self {
+        EcDNADistributionNPlus(ecdna.into_vec_no_minus())
+    }
+}
+
 impl EcDNADistributionNPlus {
-    pub fn new(parameters: &Parameters) -> Self {
+    pub fn new(parameters: Parameters) -> Self {
         //! Initialize the ecDNA distribution not considering any cell w/o any
-        //! ecDNA copy. The distribution will be empty if the
-        //! `parameters.init_copies` is 0.
-        let mut ecdna = Vec::with_capacity(parameters.max_cells as usize);
-        if parameters.init_copies > 0 {
-            ecdna.push(parameters.init_copies);
-        }
-        EcDNADistributionNPlus(ecdna)
+        //! ecDNA copy.
+        EcDNADistributionNPlus::from(*parameters.get_distribution())
     }
 
     pub fn is_empty(&self) -> bool {
@@ -603,51 +626,105 @@ enum Cell {
     NMinus,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
+#[enum_dispatch]
 /// Parameters used to simulate tumour growth, they are shared across runs.
-pub struct Parameters {
-    /// The number of runs of the simulation
-    pub nb_runs: usize,
-    /// The maximal number of iterations after which one run is stopped, the
-    /// same for each run
-    pub max_cells: NbIndividuals,
-    /// Max time is required when we use cell death in case there is strong cell
-    /// death
-    pub max_iter: usize,
-    /// Initial copies of ecdna in `NPlus` cell for the run
-    /// run
-    pub init_copies: DNACopy,
-    /// Whether to start with one `NPlus` cell for the run
-    pub init_nplus: bool,
-    /// Initial number of `NMinus` cells for the run
-    pub init_nminus: NbIndividuals,
-    /// Initial iteration from which start the simulation (always 0 except some
-    /// data with two measurements at two different timepoints)
-    pub init_iter: usize,
-    /// Initial gillespie time from which start the simulation (always 0 except
-    /// some data with two measurements at two different timepoints)
-    pub init_time: f32,
-    /// How many nplus cells to take while subsampling the ecDNA distribution
-    pub subsample: Option<NbIndividuals>,
-    pub verbosity: u8,
+pub enum Parameters {
+    Dynamical(Dynamical),
+    Abc(Abc),
 }
 
-/// Start the simulation with one cells w/ one copy of ecDNA and no cells w/o
-/// any ecDNA
-impl Default for Parameters {
-    fn default() -> Self {
-        Parameters {
-            nb_runs: 1usize,
-            max_cells: 10000,
-            max_iter: 3 * 10000,
-            init_copies: 1u16,
-            init_nplus: true,
-            init_nminus: 0u64,
-            verbosity: 0u8,
-            init_iter: 0usize,
-            init_time: 0f32,
-            subsample: None,
-        }
+#[enum_dispatch(Parameters)]
+pub trait ConfigControl {
+    fn set_config(&mut self, config: Config);
+    fn get_config(&self) -> &Config;
+}
+
+#[enum_dispatch(Parameters)]
+pub trait DistributionControl {
+    fn set_distribution(&mut self, distribution: EcDNADistribution);
+    fn get_distribution(&self) -> &EcDNADistribution;
+}
+
+#[enum_dispatch(Parameters)]
+pub trait CapacityControl {
+    fn set_capacity(&mut self, capacity: usize);
+    fn get_capacity(&self) -> &usize;
+}
+
+#[derive(Debug, Clone)]
+pub struct Dynamical {
+    /// Configuration for the simulation.
+    pub config: Config,
+    /// The initial ecDNA distribution representing the state of the sytem at time 0.
+    pub distribution: EcDNADistribution,
+    /// The maximal number of iterations correspond to the maximal capacity of the system.
+    capacity: usize,
+}
+
+impl ConfigControl for Dynamical {
+    fn set_config(&mut self, config: Config) {
+        self.config = config;
+    }
+    fn get_config(&self) -> &Config {
+        &self.config
+    }
+}
+
+impl DistributionControl for Dynamical {
+    fn set_distribution(&mut self, distribution: EcDNADistribution) {
+        self.distribution = distribution;
+    }
+    fn get_distribution(&self) -> &EcDNADistribution {
+        &self.distribution
+    }
+}
+
+impl CapacityControl for Dynamical {
+    fn set_capacity(&mut self, capacity: usize) {
+        self.capacity = capacity;
+    }
+    fn get_capacity(&self) -> &usize {
+        &self.capacity
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Abc {
+    /// Configuration for the simulation.
+    pub config: Config,
+    /// The patient for whom the parameters are inferred.
+    pub patient: Patient,
+    /// The initial ecDNA distribution representing the state of the sytem at time 0.
+    pub distribution: EcDNADistribution,
+    /// The maximal number of iterations correspond to the maximal capacity of the system.
+    capacity: usize,
+}
+
+impl ConfigControl for Abc {
+    fn set_config(&mut self, config: Config) {
+        self.config = config;
+    }
+    fn get_config(&self) -> &Config {
+        &self.config
+    }
+}
+
+impl DistributionControl for Abc {
+    fn set_distribution(&mut self, distribution: EcDNADistribution) {
+        self.distribution = distribution;
+    }
+    fn get_distribution(&self) -> &EcDNADistribution {
+        &self.distribution
+    }
+}
+
+impl CapacityControl for Abc {
+    fn set_capacity(&mut self, capacity: usize) {
+        self.capacity = capacity;
+    }
+    fn get_capacity(&self) -> &usize {
+        &self.capacity
     }
 }
 
@@ -674,6 +751,9 @@ pub enum EndRun {
     /// of iterations has been reached
     MaxItersReached,
 }
+
+#[cfg(test)]
+extern crate quickcheck;
 
 #[cfg(test)]
 mod tests {
@@ -869,5 +949,102 @@ mod tests {
         assert!(distr.get_nplus_cells() == 2u64);
         let exp = ((1u64 + (u16::MAX as u64)) as f32) / 3f32;
         assert!((distr.compute_mean(&3) - exp).abs() < f32::EPSILON);
+    }
+
+    #[quickcheck]
+    fn from_ended_to_started_idx(
+        idx: usize,
+        gillespie_time: f32,
+        last_iter: usize,
+    ) -> bool {
+        let data = Data {
+            ecdna: EcDNADistribution::from(HashMap::from([
+                (1u16, 2u64),
+                (0u16, 3u64),
+                (2u16, 1u64),
+            ])),
+            mean: Mean(0.66f32),
+            frequency: Frequency(0.5f32),
+            entropy: Entropy(0.2f32),
+        };
+        let bd_process = BirthDeathProcess::default();
+
+        let run: Run<Started> = Run {
+            idx,
+            bd_process,
+            state: Ended {
+                data,
+                gillespie_time,
+                last_iter,
+                sampled_run: None,
+            },
+        }
+        .into();
+        run.idx == idx
+    }
+
+    #[quickcheck]
+    fn from_ended_to_started_time(
+        idx: usize,
+        gillespie_time: f32,
+        last_iter: usize,
+    ) -> bool {
+        let data = Data {
+            ecdna: EcDNADistribution::from(HashMap::from([
+                (1u16, 2u64),
+                (0u16, 3u64),
+                (2u16, 1u64),
+            ])),
+            mean: Mean(0.66f32),
+            frequency: Frequency(0.5f32),
+            entropy: Entropy(0.2f32),
+        };
+        let bd_process = BirthDeathProcess::default();
+
+        let run: Run<Started> = Run {
+            idx,
+            bd_process,
+            state: Ended {
+                data,
+                gillespie_time,
+                last_iter,
+                sampled_run: None,
+            },
+        }
+        .into();
+        run.state.system.event.time == gillespie_time
+            || gillespie_time.is_nan()
+    }
+
+    #[quickcheck]
+    fn from_ended_to_started_iter(
+        idx: usize,
+        gillespie_time: f32,
+        last_iter: usize,
+    ) -> bool {
+        let data = Data {
+            ecdna: EcDNADistribution::from(HashMap::from([
+                (1u16, 2u64),
+                (0u16, 3u64),
+                (2u16, 1u64),
+            ])),
+            mean: Mean(0.66f32),
+            frequency: Frequency(0.5f32),
+            entropy: Entropy(0.2f32),
+        };
+        let bd_process = BirthDeathProcess::default();
+
+        let run: Run<Started> = Run {
+            idx,
+            bd_process,
+            state: Ended {
+                data,
+                gillespie_time,
+                last_iter,
+                sampled_run: None,
+            },
+        }
+        .into();
+        run.state.init_iter == last_iter
     }
 }

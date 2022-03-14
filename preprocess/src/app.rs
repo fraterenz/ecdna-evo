@@ -6,7 +6,7 @@ use anyhow::Context;
 use clap::ArgMatches;
 use ecdna_evo::data::{EcDNADistribution, Entropy, Frequency, Mean};
 use ecdna_evo::patient::{Patient, SequencingData};
-use ecdna_evo::{DNACopy, NbIndividuals, Parameters, Rates};
+use ecdna_evo::{Config, DNACopy, NbIndividuals, Rates};
 
 pub struct App {
     pub patient_name: String,
