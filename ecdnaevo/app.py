@@ -13,7 +13,11 @@ from ecdnaevo import plots
 class App:
     """
     paths: MyPaths
-    thresholds: dict with the statistics as keys ("ecdna", "mean", "frequency", "entropy") and the values are the thresholds. A threshold indicate the minimal required difference between the run and the patient's data to accept the run in ABC. The thresholds for "mean", "frequency" and "entropy" are relative differences (abs(x - x_sim) / x), whereas the ks distance of the ecDNA distribution is absolute.
+    thresholds: dict with the statistics as keys ("ecdna", "mean", "frequency", "entropy")
+    and the values are the thresholds. A threshold indicate the minimal required
+    difference between the run and the patient's data to accept the run in ABC. The
+    thresholds for "mean", "frequency" and "entropy" are relative differences
+    (abs(x - x_sim) / x), whereas the ks distance of the ecDNA distribution is absolute.
     stats: plot several subplots for combinations of statistics
     """
 
@@ -24,18 +28,25 @@ class App:
     verbosity: bool
 
 
+def infer_nb_timepoints(data: pd.DataFrame) -> int:
+    nb_timepoints = data.idx.value_counts().unique
+    assert (
+        nb_timepoints.shape[0] == 1
+    ), "Found runs with different nb of timepoints {}".format(nb_timepoints)
+    return int(nb_timepoints[0])
+
+
 def load(path2abc: Path, verbosity: bool) -> pd.DataFrame:
-    abc = pd.read_csv(path2abc, header=0, low_memory=False)
+    abc: pd.DataFrame = pd.read_csv(path2abc, header=0, low_memory=False)
     abc.drop(abc[abc.idx == "idx"].index, inplace=True)
     abc.dropna(how="all", inplace=True)
     abc.loc[:, "idx"] = abc.idx.astype("uint32")
-    # print(abc.loc[abc[abc.columns[0]].isna().index, :])
     # abc.loc[:, abc.columns[0]] = abc[abc.columns[0]].astype("uint32")
     for col in abc.columns[2:]:
         abc[col] = abc[col].astype("float")
     if verbosity:
         print(abc.head())
-    return abc
+    return (abc, infer_nb_timepoints(abc))
 
 
 def create_path2save(path2dir: Path, filename: Path) -> Path:
@@ -47,7 +58,7 @@ def create_path2save(path2dir: Path, filename: Path) -> Path:
 
 def run(app: App):
     """Plot posterior distribution of the fitness coefficient"""
-    abc = load(app.abc, app.verbosity)
+    (abc, nb_timepoints) = load(app.abc, app.verbosity)
 
     if app.stats:
         path2save = create_path2save(
@@ -61,7 +72,7 @@ def run(app: App):
                 )
             ),
         )
-        plots.plot_posterior_per_stats(app.thresholds, abc, path2save)
+        plots.plot_posterior_per_stats(app.thresholds, abc, path2save, nb_timepoints)
     else:
         path2save = create_path2save(
             app.path2save,
@@ -71,7 +82,7 @@ def run(app: App):
                 )
             ),
         )
-        plots.plot_post(app.thresholds, abc, path2save)
+        plots.plot_post(app.thresholds, abc, path2save, nb_timepoints)
 
 
 def build_app() -> App:
@@ -147,4 +158,10 @@ def build_app() -> App:
     stats = args["stats"]
     assert abc.parent.is_dir()
 
-    return App(abc, plots.Thresholds(thresholds), abc.parent, stats, args["verbosity"])
+    return App(
+        abc,
+        plots.Thresholds(thresholds),
+        abc.parent,
+        stats,
+        args["verbosity"],
+    )

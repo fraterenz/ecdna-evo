@@ -39,12 +39,13 @@ def plot_death2(death2, ax, title=None):
 
 
 def plot_rates(rates, range_hist: Tuple[float, float], bins: int, ax, title=None):
-    """Modify inplace the ax by plotting the hist of the posterior distribution `rates`. Here `title` is the title of the axis `ax`."""
+    """Modify inplace the ax by plotting the hist of the posterior distribution
+    `rates`. Here `title` is the title of the axis `ax`."""
     ax.hist(rates, bins=bins, range=range_hist, align="mid")
     ax.set_title(title)
 
 
-def plot_posterior_per_stats(thresholds: Thresholds, abc, path2save):
+def plot_posterior_per_stats(thresholds: Thresholds, abc, path2save, nb_timepoints):
     """Plot the posterior distribution for the fitness coefficient
     for each combination of statistics.
 
@@ -63,7 +64,7 @@ def plot_posterior_per_stats(thresholds: Thresholds, abc, path2save):
         for the_thresholds in combinations(thresholds.items(), r):
             # iter over the (stats, threshold) for each combination
             ax = axes[np.unravel_index(i, MYSHAPE)]
-            plot_posterior(the_thresholds, abc, ax)
+            plot_posterior(the_thresholds, abc, ax, nb_timepoints)
             clean = ",".join(
                 [
                     PLOTTING_STATS[stat]
@@ -93,7 +94,7 @@ def plot_posterior_per_stats(thresholds: Thresholds, abc, path2save):
     plt.close(fig_tot)
 
 
-def plot_posterior(thresholds, abc, ax):
+def plot_posterior(thresholds, abc, ax, nb_timepoints):
     my_query = ""
     stats = []
     for threshold in thresholds:
@@ -101,13 +102,28 @@ def plot_posterior(thresholds, abc, ax):
         stats.append(threshold[0])
     my_query = my_query.rstrip(" & ")
     print(my_query)
-    to_plot = abc.loc[abc[stats].query(my_query).index].f1
+    if nb_timepoints == 1:
+        to_plot = abc.loc[abc[stats].query(my_query).index].f1
+    else:
+        # when multiple timepoints are present, runs can have the idx. In this
+        # case, # we want to plot runs for which the query is satisfied for
+        # **all** their # timepoints: groupby idx (same run with different
+        # timepoints), then apply query on those timepoints, then keep run only
+        # if all timepoints match query, i.e. shape[0] == timepoints. Finally,
+        # take only once the fitness # coefficient to avoid saving it multiple
+        # times
+        to_plot = (
+            abc.groupby("idx")
+            .filter(lambda x: (x.query(my_query)).shape[0] == nb_timepoints)
+            .drop_duplicates(["idx"])
+            .f1
+        )
     plot_fitness(to_plot, ax, list(stats))
 
 
-def plot_post(thresholds: Thresholds, abc, path2save):
+def plot_post(thresholds: Thresholds, abc, path2save, nb_timepoints):
     fig, ax = plt.subplots(1, 1)
-    plot_posterior(thresholds.items(), abc, ax)
+    plot_posterior(thresholds.items(), abc, ax, nb_timepoints)
     # ax.tick_params(axis="both", size=2, which="major", labelsize=4)
     fig.axes.append(ax)
     fig.subplots_adjust(hspace=0.5)
