@@ -34,6 +34,15 @@ impl Rates {
             death2: DeathRate::new(d2),
         }
     }
+
+    pub fn estimate_max_iter(&self, max_cells: &NbIndividuals) -> usize {
+        //! Returns the maximal number of iterations.
+        if self.death1 == 0f32.into() || self.death2 == 0f32.into() {
+            *max_cells as usize
+        } else {
+            *max_cells as usize * 3usize
+        }
+    }
 }
 
 /// The case with no selection (fitness coefficients both 1) and cells cannot
@@ -295,7 +304,7 @@ pub trait GetRates {
 }
 
 /// Process simulating only birth of the individuals for both populations
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct PureBirth {
     r1: f32,
     r2: f32,
@@ -303,7 +312,7 @@ pub struct PureBirth {
 
 /// Process simulating birth of the individuals for both populations and death
 /// only for the first population
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct BirthDeath1 {
     r1: f32,
     r2: f32,
@@ -312,7 +321,7 @@ pub struct BirthDeath1 {
 
 /// Process simulating birth of the individuals for both populations and death
 /// only for the second population
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct BirthDeath2 {
     r1: f32,
     r2: f32,
@@ -321,7 +330,7 @@ pub struct BirthDeath2 {
 
 /// Process simulating birth and death of the individuals for both populations
 /// (the real birth- death process)
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct BirthDeath {
     r1: f32,
     r2: f32,
@@ -450,7 +459,7 @@ impl GetRates for BirthDeath {
 
 /// Two-type stochastic birth-death process.
 #[enum_dispatch]
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum BirthDeathProcess {
     /// Cells cannot die but only proliferate.
     PureBirth,

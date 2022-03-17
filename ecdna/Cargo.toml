@@ -3,9 +3,16 @@ name = "ecdna"
 version = "0.1.0"
 edition = "2021"
 authors = ["Francesco Terenzi"]
-description = "Command line interface to configure and run ecdna-evo"
+description = "Evolutionary Models of extrachromosomal DNAs"
 readme = "README.md"
 
 [dependencies]
 ecdna-evo = { path = "../ecdna-evo" }
-clap= { version = "3.0.4", features = ["cargo"]}
+clap = { version = "3.0.4", features = ["cargo"] }
+anyhow = "1.0"
+indicatif = { version = "*", features = ["rayon"] }
+chrono = "0.4"
+rayon = "1.5"
+enum_dispatch = "0.3.7"
+flate2 = "1.0"
+tar = "0.4"

@@ -6,10 +6,11 @@
 //! To add a new dynamical quantity, register it in the enum `Dynamic` and
 //! implement the trait `Name` and `Update` and modify `Dynamic::save`.
 
-use crate::data::{write2file, ToFile};
+use crate::data::{write2file, EcDNADistribution, ToFile};
 use crate::gillespie;
 use crate::run::{Run, Started};
-use crate::{GillespieTime, NbIndividuals, Parameters};
+use crate::{GillespieTime, NbIndividuals};
+use anyhow::{anyhow, Context};
 use enum_dispatch::enum_dispatch;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
@@ -115,13 +116,26 @@ impl Default for Dynamic {
 }
 
 impl Dynamic {
-    pub fn new(params: &Parameters, kind: &str) -> Self {
+    pub fn new(
+        max_iter: usize,
+        initial_ecdna: EcDNADistribution,
+        kind: &str,
+    ) -> anyhow::Result<Self> {
         match kind {
-            "nplus" => Dynamic::NPlus(NPlus::new(params)),
-            "nminus" => Dynamic::NMinus(NMinus::new(params)),
-            "mean" => Dynamic::MeanDyn(MeanDyn::new(params)),
-            "variance" => Dynamic::Variance(Variance::new(params)),
-            "time" => Dynamic::GillespieT(GillespieT::new(params)),
+            "nplus" => Ok(Dynamic::NPlus(NPlus::new(max_iter, initial_ecdna))),
+            "nminus" => {
+                Ok(Dynamic::NMinus(NMinus::new(max_iter, initial_ecdna)))
+            }
+            "mean" => {
+                MeanDyn::new(max_iter, &initial_ecdna).map(Dynamic::MeanDyn)
+            }
+            "variance" => {
+                Variance::new(max_iter, initial_ecdna).map(Dynamic::Variance)
+            }
+            "time" => Ok(Dynamic::GillespieT(GillespieT::new(
+                max_iter,
+                &initial_ecdna,
+            ))),
             _ => panic!("Cannot create time from {}", kind),
         }
     }
@@ -160,10 +174,10 @@ impl Name for NPlus {
 }
 
 impl NPlus {
-    pub fn new(parameters: &Parameters) -> Self {
-        let mut nplus_dynamics =
-            Vec::with_capacity(parameters.max_cells as usize);
-        nplus_dynamics.push(parameters.init_nplus as u64);
+    pub fn new(max_iter: usize, initial_ecdna: EcDNADistribution) -> Self {
+        let mut nplus_dynamics = Vec::with_capacity(max_iter);
+        nplus_dynamics
+            .push(initial_ecdna.into_vec_no_minus().len() as NbIndividuals);
         NPlus { nplus_dynamics, name: "nplus".to_string() }
     }
 }
@@ -196,28 +210,35 @@ impl Name for NMinus {
 }
 
 impl NMinus {
-    pub fn new(parameters: &Parameters) -> Self {
-        let mut nminus_dynamics =
-            Vec::with_capacity(parameters.max_cells as usize);
-        nminus_dynamics.push(parameters.init_nminus);
+    pub fn new(max_iter: usize, initial_ecdna: EcDNADistribution) -> Self {
+        let mut nminus_dynamics = Vec::with_capacity(max_iter);
+        nminus_dynamics
+            .push(initial_ecdna.into_vec_no_minus().len() as NbIndividuals);
         NMinus { nminus_dynamics, name: "nminus".to_string() }
     }
 }
 
 #[derive(Clone, Debug)]
+/// Record the mean of the ecDNA distribution for each iteration.
 pub struct MeanDyn {
-    /// Record the mean of the ecDNA distribution for each iteration.
     mean: Vec<f32>,
     pub name: String,
 }
 
 impl MeanDyn {
-    pub fn new(parameters: &Parameters) -> Self {
-        let mut mean = Vec::with_capacity(parameters.max_iter);
-        mean.push((parameters.init_nplus as u16) as f32);
+    pub fn new(
+        max_iter: usize,
+        initial_ecdna: &EcDNADistribution,
+    ) -> anyhow::Result<Self> {
+        let mut mean = Vec::with_capacity(max_iter);
+        let initial_mean = initial_ecdna.mean().with_context(|| {
+            "Cannot initialize the mean from the initial ecDNA distribution"
+        })?;
+        mean.push(initial_mean.0);
 
-        MeanDyn { mean, name: "mean_dynamics".to_string() }
+        Ok(MeanDyn { mean, name: "mean_dynamics".to_string() })
     }
+
     pub fn ecdna_distr_mean(&self, run: &Run<Started>) -> f32 {
         //! The mean of the ecDNA distribution for the current iteration.
         let ntot = run.get_nminus() + run.get_nplus();
@@ -276,12 +297,19 @@ impl Name for Variance {
 }
 
 impl Variance {
-    pub fn new(parameters: &Parameters) -> Self {
-        let mut variance = Vec::with_capacity(parameters.max_iter);
-        variance.push(0f32);
-        let mean = MeanDyn::new(parameters);
+    pub fn new(
+        max_iter: usize,
+        initial_ecdna: EcDNADistribution,
+    ) -> anyhow::Result<Self> {
+        let mean = MeanDyn::new(max_iter, &initial_ecdna).with_context(||
+            "Cannot compute the mean while initializing the variance from the initial ecDNA distribution")?;
+        let mut variance = Vec::with_capacity(max_iter);
+        let initial_variance = initial_ecdna.variance(Some(*mean.mean.first().unwrap())).with_context(|| {
+            "Cannot initialize the variance from the initial ecDNA distribution"
+        })?;
+        variance.push(initial_variance);
 
-        Variance { variance, mean, name: "var_dynamics".to_string() }
+        Ok(Variance { variance, mean, name: "var_dynamics".to_string() })
     }
 }
 
@@ -314,8 +342,8 @@ impl Name for GillespieT {
 }
 
 impl GillespieT {
-    pub fn new(parameters: &Parameters) -> Self {
-        let mut time = Vec::with_capacity(parameters.max_cells as usize);
+    pub fn new(max_iter: usize, initial_ecdna: &EcDNADistribution) -> Self {
+        let mut time = Vec::with_capacity(max_iter);
         time.push(0f32);
         GillespieT { time, name: "time".to_string() }
     }

@@ -1,8 +1,8 @@
 //! The data of interest, such as the ecDNA distribution, its mean, its entropy,
 //! the frequency of cells w/ ecDNA etc...
 use crate::run::{Ended, Run};
-use crate::{DNACopy, NbIndividuals, Parameters};
-use anyhow::{bail, ensure, Context};
+use crate::{DNACopy, NbIndividuals};
+use anyhow::{anyhow, bail, ensure, Context};
 use enum_dispatch::enum_dispatch;
 use rand::distributions::WeightedIndex;
 use rand::rngs::SmallRng;
@@ -86,10 +86,10 @@ pub fn write2file<T: std::fmt::Display>(
 }
 
 /// Load from file the the ecDNA distribution. The file can be either a json (histogram) or a csv (single-cell ecDNA distribution)
-impl TryFrom<&PathBuf> for EcDNADistribution {
+impl TryFrom<&Path> for EcDNADistribution {
     type Error = anyhow::Error;
 
-    fn try_from(path2file: &PathBuf) -> anyhow::Result<Self, Self::Error> {
+    fn try_from(path2file: &Path) -> anyhow::Result<Self, Self::Error> {
         let extension = path2file
             .extension()
             .with_context(|| {
@@ -242,6 +242,7 @@ pub fn euclidean_distance(val1: f32, val2: f32) -> f32 {
     f32::abs(val1 - val2)
 }
 
+#[derive(Debug)]
 pub struct EcDNASummary {
     pub mean: Mean,
     pub frequency: Frequency,
@@ -381,11 +382,10 @@ impl_deref!(Entropy);
 pub struct Frequency(pub f32);
 
 impl Frequency {
-    pub fn new(parameters: &Parameters) -> Self {
-        let init_nplus = parameters.init_nplus as u64;
-        Frequency(
-            init_nplus as f32 / ((init_nplus + parameters.init_nminus) as f32),
-        )
+    pub fn new(initial_ecdna: &EcDNADistribution) -> Self {
+        let init_nplus = initial_ecdna.nb_nplus() as f32;
+        let ntot = initial_ecdna.ntot as f32;
+        Frequency(init_nplus / ntot)
     }
 }
 
@@ -400,8 +400,8 @@ impl ToFile for Frequency {
 pub struct Entropy(pub f32);
 
 impl Entropy {
-    pub fn new(parameters: &Parameters) -> Self {
-        Entropy(parameters.init_copies as f32)
+    pub fn new(initial_ecdna: &EcDNADistribution) -> anyhow::Result<Self> {
+        initial_ecdna.entropy().map(|entropy| Entropy(entropy.0))
     }
 }
 
@@ -414,7 +414,7 @@ impl ToFile for Entropy {
 
 /// The distribution of ecDNA copies considering the cells w/o any ecDNA copy
 /// represented as an histogram.
-#[derive(Clone, PartialEq, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct EcDNADistribution {
     distribution: HashMap<DNACopy, NbIndividuals>,
     /// Number of total (`NPlus` and `NMinus`) cells
@@ -425,6 +425,18 @@ impl From<HashMap<DNACopy, NbIndividuals>> for EcDNADistribution {
     fn from(distribution: HashMap<DNACopy, NbIndividuals>) -> Self {
         let ntot = distribution.values().sum();
         EcDNADistribution { distribution, ntot }
+    }
+}
+
+impl From<EcDNADistribution> for Vec<DNACopy> {
+    fn from(distr: EcDNADistribution) -> Self {
+        let mut distribution = Vec::with_capacity(distr.nb_cells() as usize);
+        for (dna, cells) in distr.distribution.into_iter() {
+            for _ in 0..cells {
+                distribution.push(dna);
+            }
+        }
+        distribution
     }
 }
 
@@ -439,7 +451,18 @@ impl From<Vec<DNACopy>> for EcDNADistribution {
     }
 }
 
+/// Defaults to a distribution with a single cell with 1 ecDNA copy.
+impl Default for EcDNADistribution {
+    fn default() -> Self {
+        EcDNADistribution::from(vec![1])
+    }
+}
+
 impl EcDNADistribution {
+    pub fn load_from_file(path: &Path) -> anyhow::Result<Self> {
+        EcDNADistribution::try_from(path)
+    }
+
     pub fn ks_distance(&self, ecdna: &EcDNADistribution) -> (f32, bool) {
         //! The ks distance represents the maximal absolute distance between the
         //! empirical cumulative distributions of two `EcDNADistribution`s.
@@ -504,7 +527,7 @@ impl EcDNADistribution {
         EcDNASummary { mean, frequency, entropy }
     }
 
-    fn mean(&self) -> anyhow::Result<Mean> {
+    pub fn mean(&self) -> anyhow::Result<Mean> {
         ensure!(
             !self.distribution.is_empty(),
             "Cannot compute mean from empty distribution"
@@ -514,6 +537,32 @@ impl EcDNADistribution {
                 accum + (*copy as u64) * *count
             }) as f32;
         Ok(Mean(sum / (self.ntot as f32)))
+    }
+
+    pub fn variance(self, mean: Option<f32>) -> anyhow::Result<f32> {
+        let mean = match mean {
+            Some(mean) => mean,
+            _ => {
+                if let Ok(mean) = self.mean() {
+                    mean.0
+                } else {
+                    panic!(
+                        "Cannot compute the mean while computing the variance"
+                    );
+                }
+            }
+        };
+
+        let ntot = self.ntot as f32;
+        let ecdna: Vec<DNACopy> = self.into();
+        Ok(ecdna
+            .into_iter()
+            .map(|value| {
+                let diff = mean - (value as f32);
+                diff * diff
+            })
+            .sum::<f32>()
+            / ntot)
     }
 
     fn frequency(&self) -> anyhow::Result<Frequency> {
@@ -597,6 +646,29 @@ impl EcDNADistribution {
 
     pub fn nb_cells(&self) -> NbIndividuals {
         self.distribution.values().sum::<NbIndividuals>()
+    }
+
+    pub fn nb_nplus(&self) -> NbIndividuals {
+        self.nb_cells() - *self.get_nminus()
+    }
+
+    pub fn get_nminus(&self) -> &NbIndividuals {
+        self.distribution.get(&0u16).unwrap_or(&0u64)
+    }
+
+    pub fn into_vec_no_minus(mut self) -> Vec<DNACopy> {
+        //! Convert the `EcDNADistribution` into a vec of ecDNA copies where each entry
+        //! represents a cell discarding all the cells w/o any ecDNA copy.
+        // remove nminus cells
+        self.distribution.remove(&0u16);
+
+        let mut distribution = Vec::with_capacity(self.nb_cells() as usize);
+        for (dna, cells) in self.distribution.into_iter() {
+            for _ in 0..cells {
+                distribution.push(dna);
+            }
+        }
+        distribution
     }
 }
 

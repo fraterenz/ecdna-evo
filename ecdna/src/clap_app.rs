@@ -1,153 +1,115 @@
 /// CLI to build a configuration used to run the simulations.
-use clap::{crate_authors, crate_version, App, AppSettings, Arg};
+use clap::{
+    arg, command, AppSettings, Arg, ArgEnum, ArgGroup, Args, Command, Parser,
+    Subcommand,
+};
+use std::path::PathBuf;
 
-pub fn clap_app() -> App<'static> {
-    App::new("ecdna")
-    .version(crate_version!())
-    .author(crate_authors!())
-    .about("Evolutionary models of extrachromosomal DNA (ecDNA).\nSimulate quantities related to ecDNA using agent-based stochastic simulations and infer the most probable fitness coefficient from the data using Bayesian inference.") 
-    .global_setting(AppSettings::DeriveDisplayOrder)
-    .setting(AppSettings::SubcommandRequired)
-    .arg(Arg::new("runs")
-            .short('r')
-            .long("runs")
-            .help("Number of times for which the simulation will be ran.")
-            .default_value("300")
-            .global(true)
-            .takes_value(true),
-        )
-    .arg(Arg::new("max_cells")
-            .long("maxcells")
-            .help("Number of cells to simulate, which correspond to the number of iterations with no cell death. In case of cell death, the number of iterations for each simulation will be 3 * maxcells.")
-            .default_value("10000")
-            .global(true)
-            .takes_value(true),
-        )
-    .arg(Arg::new("init_copies")
-            .long("init-copies")
-            .help("Initial copies of ecdna in `NPlus` cell.")
-            .default_value("1")
-            .global(true)
-            .takes_value(true),
-        )
-    .arg(Arg::new("init_nplus")
-            .long("init-nplus")
-            .help("Initial number of cells w/ ecDNA")
-            .default_value("1")
-            .global(true)
-            .takes_value(true),
-        )
-    .arg(Arg::new("init_nminus")
-            .long("init-nminus")
-            .help("Initial number of cells w/o ecDNA")
-            .default_value("0")
-            .global(true)
-            .takes_value(true),
-        )
-    .arg(Arg::new("undersample")
-            .long("undersample")
-            .short('u')
-            .help("Specify how many cells to consider while subsampling the ecDNA distribution")
-            .takes_value(true)
-            .global(true)
-            .validator(|cells| { if cells.parse::<usize>().unwrap() > 10000_usize { return Err(String::from("The maximal number of cells allowed to perform the ecDNA distribution subsampling must be smaller than 10001")) } Ok(()) } ),        
-        )
-    .arg(Arg::new("v")
-            .long("verbosity")
-            .short('v')
-            .max_occurrences(3)
-            .global(true)
-            .help("Sets the level of verbosity")
-        )
-    .subcommand(App::new("simulate")
-        .about("Simulate exponential tumour growth driven by ecDNAs")
-        .arg(Arg::new("selection")
-                .short('s')
-                .long("selection")
-                .help("Proliferation advantage of cells w/ ecDNA, 1 corresponds to neutral evolution i.e. no advantage")
-                .default_value("1")
+pub fn clap_app() -> Command<'static> {
+    command!()
+        .propagate_version(true)
+        .global_setting(AppSettings::DeriveDisplayOrder)
+        .subcommand_required(true)
+        .subcommand(command!("abc")
+            .about("Infer the most probable parameter from the patient's data using ABC")
+            .arg_required_else_help(true)
+            .arg(
+                arg!(--infer <VALUE> "Infer the parameter given some data")
+                    .possible_values(["fitness"]))
+            .arg(arg!(--longitudinal "Infer the parameters using two or more sequencing experiment from the same patient. \
+                                    The inference will be performed assuming same parameters during the all sequencing experiments"
+            ))
+            .arg(
+                arg!(-p --patient <FILE> "Path to the json patient file created with `ecdna add`. See `ecdna add --help`"))
+        	.arg(Arg::new("rho1")
+                .long("rho1-range")
+                .max_values(2)
+                .required(true)
+                .help(
+						"The range of possible values for the proliferation rate of the cells w/ ecDNA. \
+                        If one value given, do not optimize over the proliferation rate which will be fixed for all simulations. \
+						If two values are given, they represent the minimal and maximal value of proliferation rate to test")
                 .takes_value(true),
-             )
-        .arg(Arg::new("death1")
-                .short('d')
-                .long("death1")
+        	)
+        	.arg(Arg::new("rho2")
+                .long("rho2-range")
+                .max_values(2)
+                .required(true)
+                .help(
+						"The range of possible values for the proliferation rate of the cells w/o ecDNA. \
+                        If one value given, do not optimize over the proliferation rate which will be fixed for all simulations. \
+						If two values are given, they represent the minimal and maximal value of proliferation rate to test")
+                .takes_value(true),
+        	)
+        	.arg(Arg::new("delta1")
+                .long("delta1-range")
+                .max_values(2)
+                .required(true)
+                .help(
+						"The range of possible values for death coefficient of the cells w/ ecDNA. \
+						If one value given, do not optimize over death1 hence simulations will have fixed dealta1 parameter. \
+						If two values are given, they represent the minimal and maximal value of death rate for the NPlus cells w/ ecdna")
+                .takes_value(true),
+        	)
+        	.arg(Arg::new("delta2")
+                .long("delta2-range")
+                .max_values(2)
+                .required(true)
+                .help(
+						"The range of possible values for death coefficient of the cells w/o ecDNA. \
+						If one value given, do not optimize over death2 hence simulations will have fixed delta2 parameter. \
+						If two values are given, they represent the minimal and maximal value of death rate for the NPlus cells w/o ecdna")
+                .takes_value(true),
+        	)
+        )
+        .subcommand(command!("simulate")
+            .about("Simulate the dynamics of the ecDNA distribution assuming exponential growth and random ecDNA segregation.")
+            .arg_required_else_help(true)
+            .arg(arg!(--dynamics)
                 .takes_value(true)
-                .default_value("0")
-                .help("Death rate value for the NPlus cells w/ ecdna"),
-            )
-        .arg(Arg::new("death2")
-                .short('z')
-                .long("death2")
-                .takes_value(true)
-                .default_value("0")
-                .help("Death rate value for the NMinus cells w/o ecdna"),
-            )
-        .arg(Arg::new("dynamics")
-                .long("dynamics")
-                .takes_value(true)
+				.required(true)
                 .possible_values(
                     &["nplus", "nminus", "mean", "variance", "time"]
                 )
                 .multiple_values(true)
-                .help("Quantities computed for each iteration (dynamical).\n\t- nplus: track the number of cells w/ ecDNA for each iteration.\n\t- nminus: track the number of cells w/o ecDNA for each iteration.\n\t- mean: track the mean of the ecDNA distribution for each iteration (computationally intensive).\n\t- variance: track the variance of the ecDNA distribution for each iteration (computationally intensive).\n\t- time: track the Gillespie time for each iteration.")
+                .help(
+						"Quantities computed for each iteration (dynamical).\n \
+						\t- nplus: track the number of cells w/ ecDNA for each iteration.\n \
+						\t- nminus: track the number of cells w/o ecDNA for each iteration.\n \
+						\t- mean: track the mean of the ecDNA distribution for each iteration (computationally intensive).\n \
+						\t- variance: track the variance of the ecDNA distribution for each iteration (computationally intensive).\n \
+                        \t- time: track the Gillespie time for each iteration.\n"
+					)
             )
-    )
-    .subcommand(App::new("abc")
-        .about("Infer the most probable fitness and death coefficients from the real data using approximate Bayesian computation (ABC)")
-        .arg(Arg::new("name")
-                .long("name")
-                .required(true)
-                .help("Name of the experiment where to save the results")
-                .takes_value(true),
+            .arg(
+                arg!(--patient <name>"Patient name used to save the results."))
+            .arg(
+                arg!(--rho1 [value] "Proliferation rate of the cells w/ ecDNA")
+                    .default_value("1."))
+            .arg(
+                arg!(--rho2 [value] "Proliferation rate of the cells w/o ecDNA")
+                    .default_value("1."))
+            .arg(
+                arg!(--delta1 [value] "Death rate of the cells w/ ecDNA")
+                    .default_value("0."))
+            .arg(
+                arg!(--delta2 [value] "Death rate of the cells w/o ecDNA")
+                    .default_value("0."))
+            .arg(arg!(--cells [value] "Maximal number of cells to simulate")
+                    .default_value("10000")
+                    .help_heading("CONFIG"))
         )
-        .arg(Arg::new("selection")
-                .long("selection-range")
-                .max_values(2)
-                .required(true)
-                .help("If one value given, `abc` would not optimize over fitness hence simulations will have fixed fitness parameter. If two values are given, they represent the minimal and maximal value of fitness to test; 1 corresponds to neutral evolution")
-                .takes_value(true),
+        .arg(arg!(-v --verbosity ... "Verbosity")
+            .global(true)
         )
-        .arg(Arg::new("death1")
-                .long("death1-range")
-                .max_values(2)
-                .required(true)
-                .help("If one value given, `abc` would not optimize over death1 hence simulations will have fixed death1 parameter. If two values are given, they represent the minimal and maximal value of death rate for the NPlus cells w/ ecdna")
-                .takes_value(true),
+        .arg(
+            arg!(-d --distribution [FILE] "ecDNA distribution specifying the initial state of system from which the simulations will be started. \
+                                            If not specified, start simulations with one single cell with one ecDNA copy.")
+            .help_heading("CONFIG")
+            .global(true)
         )
-        .arg(Arg::new("death2")
-                .long("death2-range")
-                .max_values(2)
-                .required(true)
-                .help("If one value given, `abc` would not optimize over death2 hence simulations will have fixed death2 parameter. If two values are given, they represent the minimal and maximal value of death rate for the NPlus cells w/o ecdna")
-                .takes_value(true),
-        )
-        .arg(Arg::new("distribution_input")
-                .long("distribution")
-                .value_name("FILE")
-                .help("Distribution of the copy number ecDNA of the patient, input FILE")
-                .takes_value(true)
-                .required(false),
-        )
-        .arg(Arg::new("mean_input")
-                .long("mean")
-                .value_name("FILE")
-                .help("Mean copy number ecDNA of the patient, input FILE")
-                .takes_value(true)
-                .required_unless_present_any(&["distribution_input", "frequency_input", "entropy_input"]),
-        )
-        .arg(Arg::new("frequency_input")
-                .long("frequency")
-                .value_name("FILE")
-                .help("Frequency of ecDNA carrying cells of the patient, input FILE")
-                .takes_value(true)
-                .required_unless_present_any(&["distribution_input", "mean_input", "entropy_input"]),
-        )
-        .arg(Arg::new("entropy_input")
-                .long("entropy")
-                .value_name("FILE")
-                .help("Entropy of ecDNA distribution considering cells w/o any ecDNA copies, input FILE")
-                .takes_value(true)
-                .required_unless_present_any(&["distribution_input", "mean_input", "frequency_input"]),
-        ),
-    )
+        .arg(arg!(-r --runs [value]"The number of runs run in parallel to infer the parameter.")
+            .global(true)
+            .default_value("100")
+            .help_heading("CONFIG"))
 }

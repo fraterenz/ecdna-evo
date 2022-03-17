@@ -1,12 +1,11 @@
-use std::env;
-use std::path::PathBuf;
-
 use crate::clap_app::clap_app;
 use anyhow::Context;
 use clap::ArgMatches;
 use ecdna_evo::data::{EcDNADistribution, Entropy, Frequency, Mean};
 use ecdna_evo::patient::{Patient, SequencingData};
-use ecdna_evo::{DNACopy, NbIndividuals, Parameters, Rates};
+use ecdna_evo::{DNACopy, NbIndividuals, Rates};
+use std::env;
+use std::path::PathBuf;
 
 pub struct App {
     pub patient_name: String,
@@ -33,9 +32,9 @@ pub fn build() -> App {
 
     // load the ecdna distribution
     let ecdna: Option<EcDNADistribution> = matches
-        .value_of_t("distribution")
+        .value_of_t::<String>("distribution")
         .ok()
-        .map(|path: String| PathBuf::from(path))
+        .map(PathBuf::from)
         .map(|path| {
             EcDNADistribution::try_from(path.as_ref())
                 .with_context(|| {
@@ -47,12 +46,11 @@ pub fn build() -> App {
                 .unwrap()
         });
 
-    let mean: Option<Mean> =
-        matches.value_of_t("mean").ok().map(|mean: f32| Mean(mean));
+    let mean: Option<Mean> = matches.value_of_t("mean").ok().map(Mean);
     let frequency: Option<Frequency> =
-        matches.value_of_t("frequency").ok().map(|freq| Frequency(freq));
+        matches.value_of_t("frequency").ok().map(Frequency);
     let entropy: Option<Entropy> =
-        matches.value_of_t("entropy").ok().map(|entropy| Entropy(entropy));
+        matches.value_of_t("entropy").ok().map(Entropy);
 
     App {
         patient_name,

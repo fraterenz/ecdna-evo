@@ -1,5 +1,5 @@
 /// CLI to build a configuration used to run the simulations.
-use clap::{arg, command, App, ArgGroup, Command};
+use clap::{arg, command, ArgGroup, Command};
 
 pub fn clap_app() -> Command<'static> {
     command!()

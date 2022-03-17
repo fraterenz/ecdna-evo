@@ -58,12 +58,10 @@ impl SequencingData {
         //! Compute the number of cells
         if let Some(cells) = self.sample_size() {
             let tumour_size = *self.get_tumour_size();
-            if cells == tumour_size {
-                return Some(false);
-            } else if cells < tumour_size {
-                return Some(true);
-            } else {
-                unreachable!("Cannot have more cells in the sample compared to the whole tumour mass!")
+            match cells.cmp(&tumour_size) {
+                std::cmp::Ordering::Less => return Some(true),
+                std::cmp::Ordering::Equal =>return  Some(false),
+                _ => unreachable!("Cannot have more cells in the sample compared to the whole tumour mass!"),
             }
         }
         None
@@ -142,6 +140,18 @@ impl Patient {
             println!("Patient loaded from {:#?}", self.path2json());
         }
         Ok(())
+    }
+
+    pub fn load_from_file(path: &Path, verbosity: u8) -> anyhow::Result<Self> {
+        if verbosity > 0 {
+            println!("Loading patient from {:#?}", path);
+        }
+        serde_json::from_str(&fs::read_to_string(path).with_context(|| {
+            format!("Cannot load patient from {:#?}", path)
+        })?)
+        .with_context(|| {
+            format!("Cannot deserialize patient from {:#?}", path)
+        })
     }
 
     pub fn path2json(&self) -> PathBuf {

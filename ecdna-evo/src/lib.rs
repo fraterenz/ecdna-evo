@@ -55,22 +55,22 @@
 //! // Run the ABC inference to determine the parameters for the `patient`
 //! Simulation::run(params, rates, None, Some(patient));
 //! ```
+// pub mod abc;
 pub mod abc;
 pub mod data;
 pub mod dynamics;
 mod gillespie;
 pub mod patient;
 pub mod run;
-pub mod simulation;
 
 #[doc(inline)]
 pub use crate::gillespie::{GillespieTime, NbIndividuals, Rates};
 #[doc(inline)]
 pub use crate::patient::Patient;
 #[doc(inline)]
-pub use crate::run::{DNACopy, Parameters, Run};
-#[doc(inline)]
-pub use crate::simulation::Simulation;
+pub use crate::run::{DNACopy, Run};
+// #[doc(inline)]
+// pub use crate::simulation::Simulation;
 
 #[macro_use]
 extern crate derive_builder;

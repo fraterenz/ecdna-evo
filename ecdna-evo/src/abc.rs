@@ -10,7 +10,7 @@ use rand::rngs::SmallRng;
 use rand::SeedableRng;
 use serde::Serialize;
 use std::convert::TryFrom;
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 
 /// Perform the ABC rejection algorithm for one run to infer the most probable
@@ -77,11 +77,12 @@ impl ABCRejection {
 
         let mut result =
             builder.build().expect("Cannot run ABC without any data");
-        let rates = run.get_rates();
+        let rates = run.rates();
         result.f1 = rates[0];
         result.f2 = rates[1];
         result.d1 = rates[2];
         result.d2 = rates[3];
+        result.cells = *sample.get_tumour_size();
 
         result.idx = idx;
         result
@@ -114,30 +115,42 @@ struct ABCResult {
     d1: f32,
     #[builder(setter(skip))]
     d2: f32,
+    #[builder(setter(skip))]
+    cells: NbIndividuals,
 }
 
 impl ABCResults {
     pub fn save(
         &self,
         path2folder: &Path,
-        subsamples: &Option<NbIndividuals>,
+        subsamples: Option<&NbIndividuals>,
     ) -> anyhow::Result<()> {
         //! Save the results of the abc inference for a run in a folder abc, where there is one file for each (parental) run and the name of the file corresponds to the parental run.
-        let path2save = if subsamples.is_some() {
-            path2folder.to_owned().join("samples")
-        } else {
-            path2folder.to_owned()
-        };
+        let path2save = path2folder.to_owned();
+        // let path2save = if subsamples.is_some() {
+        //     path2folder.to_owned().join("samples")
+        // } else {
+        //     path2folder.to_owned()
+        // };
         let filename = match self.0[0].parental_idx {
             Some(run) => run.to_string(),
             None => self.0[0].idx.clone(),
         };
-        let mut path2file = path2save.join("abc").join(filename);
+        let mut path2file = path2save.join(filename);
         path2file.set_extension("csv");
         fs::create_dir_all(path2file.parent().unwrap())
             .expect("Cannot create dir");
+        let mut wtr = if path2file.exists() {
+            let wrt = OpenOptions::new()
+                .write(true)
+                .append(true)
+                .open(&path2file)
+                .unwrap();
 
-        let mut wtr = csv::Writer::from_path(path2file)?;
+            csv::WriterBuilder::new().has_headers(false).from_writer(wrt)
+        } else {
+            csv::Writer::from_path(path2file)?
+        };
         for record in self.0.iter() {
             wtr.serialize(record)?;
             wtr.flush()?;

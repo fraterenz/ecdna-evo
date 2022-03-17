@@ -1,25 +1,41 @@
 mod app;
 mod clap_app;
 
-use crate::app::build_app;
-use ecdna_evo::simulation::Simulation;
+use anyhow::Context;
+use app::{
+    build_config, App, BayesianApp, Config, DynamicalApp, LonditudinalApp,
+    Perform, Tarball,
+};
 
 fn main() {
-    // parameters defines how to run the simulation, the dynamics are the
-    // quantities of interest that change for each iteration (saved in results),
-    // the timepoints are the quantities of interest that do not change for each
-    // iteration and are computed at last iteration (saved in results)
-    let (parameters, rates, quantities, patient_data) = build_app();
-    std::process::exit(
-        match Simulation::run(parameters, rates, quantities, patient_data) {
-            Ok(_) => {
-                println!("End simulation");
-                0
-            }
-            Err(err) => {
-                eprintln!("Error: {:?}", err);
-                1
-            }
-        },
-    );
+    let config = build_config();
+    let mut app: App = match config {
+        Config::Bayesian(bayesian) => BayesianApp::new(bayesian)
+            .with_context(|| "Cannot create new bayesian app")
+            .unwrap()
+            .into(),
+        Config::Longitudinal(longitudinal) => {
+            LonditudinalApp::new(longitudinal)
+                .with_context(|| "Cannot create new longitudinal app")
+                .unwrap()
+                .into()
+        }
+        Config::Dynamical(dynamical) => DynamicalApp::new(dynamical)
+            .with_context(|| "Cannot create new dynamical app")
+            .unwrap()
+            .into(),
+    };
+
+    app.run().unwrap(); // TODO
+
+    std::process::exit(match app.compress() {
+        Ok(_) => {
+            println!("End simulation");
+            0
+        }
+        Err(err) => {
+            eprintln!("Error: {:?}", err);
+            1
+        }
+    });
 }
