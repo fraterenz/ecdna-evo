@@ -29,7 +29,7 @@ class App:
 
 
 def infer_nb_timepoints(data: pd.DataFrame) -> int:
-    nb_timepoints = data.idx.value_counts().unique
+    nb_timepoints = data.idx.value_counts().unique()
     assert (
         nb_timepoints.shape[0] == 1
     ), "Found runs with different nb of timepoints {}".format(nb_timepoints)
