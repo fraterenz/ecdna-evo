@@ -1,4 +1,4 @@
-use crate::abc::ABCRejection;
+use crate::abc::{ABCRejection, ABCResults};
 use crate::data::{
     Data, EcDNADistribution, EcDNASummary, Entropy, Frequency, Mean, ToFile,
 };
@@ -10,7 +10,7 @@ use crate::patient::SequencingData;
 use crate::{NbIndividuals, Patient, Rates};
 use enum_dispatch::enum_dispatch;
 use rand::rngs::SmallRng;
-use rand::{thread_rng, Rng};
+use rand::{thread_rng, Rng, SeedableRng};
 use rand_distr::{Binomial, Distribution};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -46,6 +46,7 @@ pub struct Started {
 }
 
 /// The simulation of the run has ended, which is ready to be saved.
+#[derive(Clone)]
 pub struct Ended {
     /// Gillespie time at the end of the run
     gillespie_time: GillespieTime,
@@ -339,29 +340,48 @@ impl Run<Ended> {
             }
         }
 
-        // let abspath = {
-        //     if let Some(sample) = &sample {
-        //         abspath.join(sample.name.clone())
-        //     } else {
-        //         abspath.to_owned()
-        //     }
-        // };
-
         if let Some(sample) = sample {
-            let results = ABCRejection::run(&self, sample);
+            let results = if let Some(true) = sample.is_undersampled() {
+                let nb_samples = 100usize;
+                let mut results = ABCResults::with_capacity(nb_samples);
+                // create multiple subsamples of the same run and save the results
+                // in the same file `path`. It's ok as long as cells is not too
+                // big because deep copies of the ecDNA distribution for each
+                // subsample
+                let mut rng = SmallRng::from_entropy();
+                for i in 0usize..nb_samples {
+                    // returns new ecDNA distribution with cells NPlus cells (clone)
+                    let sampled = self.clone().undersample_ecdna(
+                        &sample.sample_size().unwrap(), // safe to unwrap because of the if let
+                        &mut rng,
+                        i,
+                    );
+                    results.test(&sampled, sample);
+                }
+                results
+            } else {
+                let mut results = ABCResults::with_capacity(1usize);
+                results.test(&self, sample);
+                results
+            };
             results.save(abspath, Some(sample.get_tumour_size()))?;
         } else {
-            self.state.data.save(
-                abspath,
-                &self.filename(),
-                &Some(self.get_nb_cells()),
-            );
+            // todo implement subsampling for dynamics
+            // if self.undersample() {
+            //     let mut rng = SmallRng::from_entropy();
+            //     let abspath_sampling = abspath.join("samples");
+            //     let data = self.undersample_ecdna(cells, &mut rng);
+            //     data.save_data(&abspath_sampling, run_idx, true);
+            // }
+            self.state
+                .data
+                .save(abspath, &PathBuf::from(format!("{}", self.idx)));
         }
         Ok(self)
     }
 
     pub fn undersample_ecdna(
-        &self,
+        self,
         nb_cells: &NbIndividuals,
         rng: &mut SmallRng,
         idx: usize,

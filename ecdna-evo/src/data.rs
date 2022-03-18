@@ -242,13 +242,14 @@ pub fn euclidean_distance(val1: f32, val2: f32) -> f32 {
     f32::abs(val1 - val2)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EcDNASummary {
     pub mean: Mean,
     pub frequency: Frequency,
     pub entropy: Entropy,
 }
 
+#[derive(Clone)]
 pub struct Data {
     pub ecdna: EcDNADistribution,
     pub summary: EcDNASummary,
@@ -269,46 +270,27 @@ impl TryFrom<&EcDNADistribution> for Data {
 }
 
 impl Data {
-    pub fn save(
-        &self,
-        abspath: &Path,
-        run_idx: &Path,
-        subsample: &Option<NbIndividuals>,
-    ) {
-        if let Some(cells) = subsample {
-            let mut rng = SmallRng::from_entropy();
-            let abspath_sampling = abspath.join("samples");
-            let data = self.undersample_ecdna(cells, &mut rng);
-            data.save_data(&abspath_sampling, run_idx, true);
-        }
-        self.save_data(abspath, run_idx, true);
-    }
+    pub fn save(&self, path2dir: &Path, filename: &Path) {
+        let mut ecdna = path2dir.join("ecdna").join(filename);
+        ecdna.set_extension("json");
 
-    fn save_data(&self, file2path: &Path, filename: &Path, save_ecdna: bool) {
-        if save_ecdna {
-            let mut ecdna = file2path.join("ecdna").join(filename);
-            ecdna.set_extension("json");
+        self.ecdna.save(&ecdna).expect("Cannot save the ecDNA distribution");
 
-            self.ecdna
-                .save(&ecdna)
-                .expect("Cannot save the ecDNA distribution");
-        }
-
-        let mut mean = file2path.join("mean").join(filename);
+        let mut mean = path2dir.join("mean").join(filename);
         mean.set_extension("csv");
         self.summary
             .mean
             .save(&mean)
             .expect("Cannot save the ecDNA distribution mean");
 
-        let mut frequency = file2path.join("frequency").join(filename);
+        let mut frequency = path2dir.join("frequency").join(filename);
         frequency.set_extension("csv");
         self.summary
             .frequency
             .save(&frequency)
             .expect("Cannot save the frequency");
 
-        let mut entropy = file2path.join("entropy").join(filename);
+        let mut entropy = path2dir.join("entropy").join(filename);
         entropy.set_extension("csv");
         self.summary
             .entropy
@@ -317,7 +299,7 @@ impl Data {
     }
 
     fn undersample_ecdna(
-        &self,
+        self,
         nb_cells: &NbIndividuals,
         rng: &mut SmallRng,
     ) -> Self {
@@ -597,7 +579,7 @@ impl EcDNADistribution {
     }
 
     pub fn undersample_data(
-        &self,
+        self,
         nb_cells: &NbIndividuals,
         rng: &mut SmallRng,
     ) -> anyhow::Result<Data> {
@@ -606,7 +588,7 @@ impl EcDNADistribution {
     }
 
     fn undersample(
-        &self,
+        self,
         nb_cells: &NbIndividuals,
         rng: &mut SmallRng,
     ) -> EcDNADistribution {
@@ -618,8 +600,7 @@ impl EcDNADistribution {
 
         assert!(nb_cells <= &self.nb_cells(), "Cannot undersample with `nb_cells` greater than the cells found in the ecDNA distribution");
 
-        let ecdna = self.distribution.clone();
-        // ecdna.remove(&0u16); // remove NMinus cells
+        let ecdna = self.distribution;
         if ecdna.is_empty() {
             return EcDNADistribution::from(ecdna);
         }

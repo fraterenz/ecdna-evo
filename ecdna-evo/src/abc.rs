@@ -26,33 +26,9 @@ use std::path::{Path, PathBuf};
 pub struct ABCRejection;
 
 impl ABCRejection {
-    pub fn run(run: &Run<Ended>, sample: &SequencingData) -> ABCResults {
+    pub fn run(run: &Run<Ended>, sample: &SequencingData) -> ABCResult {
         //! Run the ABC rejection method by comparing the run against the
         //! patient's data
-        let nb_samples = 100usize;
-        let mut results = ABCResults(Vec::with_capacity(nb_samples));
-        if let Some(true) = sample.is_undersampled() {
-            // create multiple subsamples of the same run and save the results
-            // in the same file `path`. It's ok as long as cells is not too
-            // big because deep copies of the ecDNA distribution for each
-            // subsample
-            let mut rng = SmallRng::from_entropy();
-            for i in 0usize..nb_samples {
-                // returns new ecDNA distribution with cells NPlus cells (clone)
-                let sampled = run.undersample_ecdna(
-                    &sample.sample_size().unwrap(), // safe to unwrap because of the if let
-                    &mut rng,
-                    i,
-                );
-                results.0.push(ABCRejection::run_it(&sampled, sample));
-            }
-        } else {
-            results.0.push(ABCRejection::run_it(run, sample));
-        }
-        results
-    }
-
-    fn run_it(run: &Run<Ended>, sample: &SequencingData) -> ABCResult {
         let mut builder = ABCResultBuilder::default();
         if let Some(ecdna) = &sample.ecdna {
             builder.ecdna(ecdna.distance(run));
@@ -93,8 +69,18 @@ impl ABCRejection {
 /// the rates. There is one `ABCResults` for each run.
 pub struct ABCResults(Vec<ABCResult>);
 
+impl ABCResults {
+    pub fn with_capacity(capacity: usize) -> Self {
+        ABCResults(Vec::with_capacity(capacity))
+    }
+
+    pub fn test(&mut self, run: &Run<Ended>, sample: &SequencingData) {
+        self.0.push(ABCRejection::run(run, sample));
+    }
+}
+
 #[derive(Builder, Debug, Serialize)]
-struct ABCResult {
+pub struct ABCResult {
     #[builder(setter(strip_option), default)]
     parental_idx: Option<usize>,
     #[builder(setter(skip))]
