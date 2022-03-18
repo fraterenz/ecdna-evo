@@ -4,7 +4,7 @@ mod clap_app;
 use anyhow::Context;
 use app::{
     build_config, App, BayesianApp, Config, DynamicalApp, LonditudinalApp,
-    Perform, Tarball,
+    Perform, SubsampledApp, Tarball,
 };
 
 fn main() {
@@ -20,6 +20,10 @@ fn main() {
                 .unwrap()
                 .into()
         }
+        Config::Subsampled(subsampled) => SubsampledApp::new(subsampled)
+            .with_context(|| "Cannot create new subsampled app")
+            .unwrap()
+            .into(),
         Config::Dynamical(dynamical) => DynamicalApp::new(dynamical)
             .with_context(|| "Cannot create new dynamical app")
             .unwrap()

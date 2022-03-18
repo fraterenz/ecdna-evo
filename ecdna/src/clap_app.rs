@@ -19,6 +19,8 @@ pub fn clap_app() -> Command<'static> {
             .arg(arg!(--longitudinal "Infer the parameters using two or more sequencing experiment from the same patient. \
                                     The inference will be performed assuming same parameters during the all sequencing experiments"
             ))
+            .arg(arg!(--subsampled "Infer the parameters using a single subsample from the whole population. \
+                                    The sample size to undersample will match the patient's sample data."))
             .arg(
                 arg!(-p --patient <FILE> "Path to the json patient file created with `ecdna add`. See `ecdna add --help`"))
         	.arg(Arg::new("rho1")

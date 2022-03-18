@@ -26,6 +26,8 @@ pub fn build_config() -> Config {
         Some(("abc", abc_matches)) => {
             if abc_matches.is_present("longitudinal") {
                 Config::Longitudinal(Longitudinal::new(abc_matches))
+            } else if abc_matches.is_present("subsampled") {
+                Config::Subsampled(Subsampled::new(abc_matches))
             } else {
                 Config::Bayesian(Bayesian::new(abc_matches))
             }
@@ -33,7 +35,7 @@ pub fn build_config() -> Config {
         Some(("simulate", dynamical_matches)) => {
             Config::Dynamical(Dynamical::new(dynamical_matches))
         }
-        _ => unreachable!(),
+        _ => unreachable!("Expect subcomands `simulate` or `abc`"),
     };
 }
 
@@ -85,6 +87,7 @@ pub trait Tarball {
 pub enum App {
     Bayesian(BayesianApp),
     Londitudinal(LonditudinalApp),
+    Subsampled(SubsampledApp),
     Dynamical(DynamicalApp),
 }
 
@@ -172,7 +175,10 @@ impl Perform for BayesianApp {
         let sample2infer = self.patient.samples.first().unwrap();
 
         if self.verbosity > 0 {
-            println!("{} Starting running the inference", Utc::now());
+            println!(
+                "Is the sample to infer subsampled? {:#?}",
+                sample2infer.is_undersampled()
+            );
         }
 
         (0..self.runs)
@@ -294,6 +300,37 @@ impl Perform for LonditudinalApp {
 }
 
 impl Tarball for LonditudinalApp {
+    fn compress(self) -> anyhow::Result<()> {
+        self.0.compress()
+    }
+}
+
+/// Infer the most probable coefficients from the data subsampling the final population.
+pub struct SubsampledApp(BayesianApp);
+
+impl SubsampledApp {
+    pub fn new(config: Subsampled) -> anyhow::Result<Self> {
+        Ok(SubsampledApp(BayesianApp::new(config.0)?))
+    }
+}
+
+impl Perform for SubsampledApp {
+    fn run(&mut self) -> anyhow::Result<()> {
+        ensure!(
+            self.0.patient.samples.len() == 1,
+            "Cannot run Subsampled app with multiple patient's samples"
+        );
+
+        let is_undersampled =
+            self.0.patient.samples.first().unwrap().is_undersampled();
+        ensure!(is_undersampled.is_some(), "Cannot perform subsampled app bayesian inference without any ecDNA distribution as input");
+
+        ensure!(is_undersampled.unwrap(), "Flag --subsampled passed without any subsampling in patient's data: ntot and the distribution have the same number of cells");
+        self.0.run()
+    }
+}
+
+impl Tarball for SubsampledApp {
     fn compress(self) -> anyhow::Result<()> {
         self.0.compress()
     }
@@ -424,6 +461,7 @@ trait InitialStateLoader {
 pub enum Config {
     Bayesian(Bayesian),
     Longitudinal(Longitudinal),
+    Subsampled(Subsampled),
     Dynamical(Dynamical),
 }
 
@@ -475,6 +513,20 @@ impl Longitudinal {
 }
 
 impl InitialStateLoader for Longitudinal {
+    fn load(&self) -> anyhow::Result<(EcDNADistribution, EcDNASummary)> {
+        self.0.load()
+    }
+}
+
+pub struct Subsampled(pub Bayesian);
+
+impl Subsampled {
+    pub fn new(matches: &ArgMatches) -> Subsampled {
+        Subsampled(Bayesian::new(matches))
+    }
+}
+
+impl InitialStateLoader for Subsampled {
     fn load(&self) -> anyhow::Result<(EcDNADistribution, EcDNASummary)> {
         self.0.load()
     }
