@@ -71,7 +71,7 @@ pub fn clap_app() -> Command<'static> {
                 .takes_value(true)
 				.required(true)
                 .possible_values(
-                    &["nplus", "nminus", "mean", "variance", "time"]
+                    &["nplus", "nminus", "mean", "moments", "time"]
                 )
                 .multiple_values(true)
                 .help(
@@ -81,6 +81,17 @@ pub fn clap_app() -> Command<'static> {
 						\t- mean: track the mean of the ecDNA distribution for each iteration (computationally intensive).\n \
 						\t- variance: track the variance of the ecDNA distribution for each iteration (computationally intensive).\n \
                         \t- time: track the Gillespie time for each iteration.\n"
+					)
+            )
+            .arg(arg!(--moments)
+                .takes_value(true)
+                .possible_values(
+                    &["mean", "both"]
+                )
+                .help(
+						"Moments computed for each iteration (dynamical).\n \
+						\t- mean: track the mean of the ecDNA distribution for each iteration (computationally intensive).\n \
+						\t- both: track the variance and the mean of the ecDNA distribution for each iteration (computationally intensive).\n"
 					)
             )
             .arg(

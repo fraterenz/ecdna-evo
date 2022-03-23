@@ -56,6 +56,7 @@ pub struct Ended {
     data: Data,
     /// The run idx from which the sample was taken.
     sampled_run: Option<usize>,
+    dynamics: Option<Dynamics>,
 }
 
 pub trait RunState {}
@@ -159,7 +160,7 @@ impl Run<Started> {
 
     pub fn simulate(
         mut self,
-        mut dynamics: Option<&mut Dynamics>,
+        mut dynamics: Option<Dynamics>,
         max_cells: &NbIndividuals,
         max_iter: usize,
     ) -> Run<Ended> {
@@ -226,6 +227,7 @@ impl Run<Started> {
                 gillespie_time: time,
                 sampled_run: None,
                 last_iter: iter,
+                dynamics,
             },
         }
     }
@@ -295,11 +297,7 @@ impl Run<Started> {
         Data { ecdna, summary: EcDNASummary { mean, frequency, entropy } }
     }
 
-    fn update(
-        &mut self,
-        next_event: Event,
-        dynamics: &mut Option<&mut Dynamics>,
-    ) {
+    fn update(&mut self, next_event: Event, dynamics: &mut Option<Dynamics>) {
         //! Update the run for the next iteration, according to the `next_event`
         //! sampled from Gillespie algorithm. This updates also the `dynamics`
         //! if present.
@@ -320,7 +318,6 @@ impl Run<Ended> {
     pub fn save(
         self,
         abspath: &Path,
-        dynamics: Option<&Dynamics>,
         sample: &Option<&SequencingData>,
     ) -> anyhow::Result<Self> {
         //! Save the run the dynamics (updated for each iter) if present and the
@@ -330,11 +327,12 @@ impl Run<Ended> {
         //! Do not save the full ecDNA distribution when ABC.
 
         // 1. dynamics
-        if let Some(dynamics) = dynamics {
+        let filename = self.filename();
+        if let Some(dynamics) = &self.state.dynamics {
             assert!(sample.is_none(), "Cannot have patient and dynamics");
             for d in dynamics.iter() {
                 let mut file2path =
-                    abspath.join(d.get_name()).join(self.filename());
+                    abspath.join(d.get_name()).join(filename.clone());
                 file2path.set_extension("csv");
                 d.save(&file2path).unwrap();
             }
@@ -404,6 +402,7 @@ impl Run<Ended> {
                 gillespie_time: self.state.gillespie_time,
                 last_iter: self.state.last_iter,
                 sampled_run: Some(self.idx),
+                dynamics: self.state.dynamics,
             },
         }
     }

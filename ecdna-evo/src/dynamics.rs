@@ -13,7 +13,7 @@ use crate::{GillespieTime, NbIndividuals};
 use anyhow::{anyhow, Context};
 use enum_dispatch::enum_dispatch;
 use std::ops::{Deref, DerefMut};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// The main trait for the `Dynamic` which updates the dynamical measurement
 /// based on the state of the `Run` for each iteration. It allows the
@@ -103,7 +103,7 @@ pub enum Dynamic {
     /// The mean ecDNA copy number per iteration
     MeanDyn,
     /// The variance ecDNA copy number per iteration
-    Variance,
+    Moments,
     /// The Gillespie time for each iteration, that is how
     GillespieT,
 }
@@ -129,8 +129,8 @@ impl Dynamic {
             "mean" => {
                 MeanDyn::new(max_iter, &initial_ecdna).map(Dynamic::MeanDyn)
             }
-            "variance" => {
-                Variance::new(max_iter, initial_ecdna).map(Dynamic::Variance)
+            "both" => {
+                Moments::new(max_iter, initial_ecdna).map(Dynamic::Moments)
             }
             "time" => Ok(Dynamic::GillespieT(GillespieT::new(
                 max_iter,
@@ -151,7 +151,7 @@ pub trait Name {
 pub struct NPlus {
     /// Record the number of cells w/ ecDNA for each iteration.
     nplus_dynamics: Vec<NbIndividuals>,
-    pub name: String,
+    name: String,
 }
 
 impl ToFile for NPlus {
@@ -187,7 +187,7 @@ impl NPlus {
 pub struct NMinus {
     /// Record the number of cells w/o ecDNA for each iteration.
     nminus_dynamics: Vec<NbIndividuals>,
-    pub name: String,
+    name: String,
 }
 
 impl ToFile for NMinus {
@@ -212,8 +212,7 @@ impl Name for NMinus {
 impl NMinus {
     pub fn new(max_iter: usize, initial_ecdna: EcDNADistribution) -> Self {
         let mut nminus_dynamics = Vec::with_capacity(max_iter);
-        nminus_dynamics
-            .push(initial_ecdna.into_vec_no_minus().len() as NbIndividuals);
+        nminus_dynamics.push(*initial_ecdna.get_nminus());
         NMinus { nminus_dynamics, name: "nminus".to_string() }
     }
 }
@@ -222,7 +221,7 @@ impl NMinus {
 /// Record the mean of the ecDNA distribution for each iteration.
 pub struct MeanDyn {
     mean: Vec<f32>,
-    pub name: String,
+    name: String,
 }
 
 impl MeanDyn {
@@ -274,29 +273,29 @@ impl Name for MeanDyn {
 }
 
 #[derive(Debug, Clone)]
-pub struct Variance {
+pub struct Moments {
     /// Record the variance of the ecDNA distribution for each iteration.
     variance: Vec<f32>,
     /// Object to compute the mean in a clever way
     mean: MeanDyn,
-    pub name: String,
+    name: String,
 }
 
-impl Update for Variance {
+impl Update for Moments {
     fn update(&mut self, run: &Run<Started>) {
-        let mean = self.mean.ecdna_distr_mean(run);
         self.mean.update(run);
-        self.variance.push(run.variance_ecdna(&mean));
+        self.variance
+            .push(run.variance_ecdna(&self.mean.mean.last().unwrap()));
     }
 }
 
-impl Name for Variance {
+impl Name for Moments {
     fn get_name(&self) -> &String {
         &self.name
     }
 }
 
-impl Variance {
+impl Moments {
     pub fn new(
         max_iter: usize,
         initial_ecdna: EcDNADistribution,
@@ -309,12 +308,19 @@ impl Variance {
         })?;
         variance.push(initial_variance);
 
-        Ok(Variance { variance, mean, name: "var_dynamics".to_string() })
+        Ok(Moments { variance, mean, name: "var_dynamics".to_string() })
     }
 }
 
-impl ToFile for Variance {
+impl ToFile for Moments {
     fn save(&self, path2file: &Path) -> anyhow::Result<()> {
+        let file = path2file.file_name().unwrap().to_owned();
+        let path2mean =
+            PathBuf::from(path2file.parent().unwrap().parent().unwrap())
+                .join(self.mean.get_name())
+                .join(file);
+
+        self.mean.save(&path2mean)?;
         write2file(&self.variance, path2file, None, false)?;
         Ok(())
     }
@@ -325,7 +331,7 @@ impl ToFile for Variance {
 pub struct GillespieT {
     /// Record the number of cells w/ ecDNA for each iteration.
     time: Vec<GillespieTime>,
-    pub name: String,
+    name: String,
 }
 
 impl Update for GillespieT {

@@ -188,7 +188,7 @@ impl Perform for BayesianApp {
                 let cells = sample2infer.get_tumour_size();
                 Run::new(idx, 0f32, 0usize, &self.ecdna, &self.rates)
                     .simulate(None, cells, self.rates.estimate_max_iter(cells))
-                    .save(&self.absolute_path, None, &Some(sample2infer))
+                    .save(&self.absolute_path, &Some(sample2infer))
                     .with_context(|| format!("Cannot save run {}", idx))
                     .unwrap();
             });
@@ -258,9 +258,8 @@ impl Perform for LonditudinalApp {
         }
 
         (0..self.0.runs)
-            .into_iter()
-            // .into_par_iter()
-            // .progress_count(self.0.runs as u64)
+            .into_par_iter()
+            .progress_count(self.0.runs as u64)
             .for_each(|idx| {
                 let mut cells = sample2infer.get_tumour_size();
                 // first timepoint
@@ -271,7 +270,7 @@ impl Perform for LonditudinalApp {
                             cells,
                             self.0.rates.estimate_max_iter(cells),
                         )
-                        .save(&self.0.absolute_path, None, &Some(sample2infer))
+                        .save(&self.0.absolute_path, &Some(sample2infer))
                         .with_context(|| format!("Cannot save run {}", idx))
                         .unwrap();
 
@@ -284,7 +283,7 @@ impl Perform for LonditudinalApp {
                             cells,
                             self.0.rates.estimate_max_iter(cells),
                         )
-                        .save(&self.0.absolute_path, None, &Some(t))
+                        .save(&self.0.absolute_path, &Some(t))
                         .unwrap();
                 }
             });
@@ -354,7 +353,7 @@ pub struct DynamicalApp {
 
 impl DynamicalApp {
     pub fn new(config: Dynamical) -> anyhow::Result<Self> {
-        let (ecdna, summary) = config.load().with_context(|| {
+        let (ecdna, _) = config.load().with_context(|| {
             "Cannot load initial state for DynamicalApp app"
         })?;
         let max_iter = config.rates.estimate_max_iter(&config.cells);
@@ -410,11 +409,11 @@ impl Perform for DynamicalApp {
             .for_each(|idx| {
                 Run::new(idx, 0f32, 0usize, &self.ecdna, &self.rates)
                     .simulate(
-                        Some(&mut self.dynamics.clone()),
+                        Some(self.dynamics.clone()),
                         &self.size,
                         self.max_iter,
                     )
-                    .save(&self.absolute_path, Some(&self.dynamics), &None)
+                    .save(&self.absolute_path, &None)
                     .with_context(|| format!("Cannot save run {}", idx))
                     .unwrap();
             });
@@ -445,6 +444,28 @@ impl Tarball for DynamicalApp {
             }
             compress_dir(&dest, &src, self.verbosity)
                 .expect("Cannot compress dynamics");
+        }
+
+        // specific case with moments dynamics (saving the mean)
+        for path in fs::read_dir(&self.absolute_path)? {
+            match path {
+                Ok(p) => {
+                    if p.path().ends_with("mean_dynamics") {
+                        let src =
+                            self.absolute_path.clone().join("mean_dynamics");
+                        let dest =
+                            self.relative_path.clone().join("mean_dynamics");
+                        if self.verbosity > 0 {
+                            println!("src {:#?} dest {:#?} ", src, dest);
+                        }
+                        compress_dir(&dest, &src, self.verbosity)
+                            .expect("Cannot compress mean_dynamics");
+                    }
+                }
+                _ => {
+                    return Ok(());
+                }
+            }
         }
         Ok(())
     }
@@ -552,8 +573,12 @@ impl Dynamical {
             matches.value_of_t("patient").unwrap_or_else(|e| e.exit());
 
         // Quantities of interest that changes for each iteration
-        let dynamics: Vec<String> =
+        let mut dynamics: Vec<String> =
             matches.values_of_t("dynamics").unwrap_or_else(|e| e.exit());
+        // mean and variance or just mean
+        let moments =
+            matches.values_of_t("moments").unwrap_or_else(|e| e.exit());
+        dynamics.extend(moments);
 
         // Rates of the two-type stochastic birth-death process
         let rates = rates_from_args(matches);
