@@ -1,0 +1,309 @@
+"""Plot the ecDNA dynamics"""
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+import argparse
+import json
+from typing import List
+from pathlib import Path
+from dataclasses import dataclass
+from ecdnaevo import abc, commons
+
+
+@dataclass
+class App:
+    """
+    nplus: Optional path to nplus dynamics nplus.tar.gz
+    nminus: Option path to nminus dynamics nminus.tar.gz
+    mean: Option path to mean dynamics mean_dynamics.tar.gz
+    variance: Option path to var dynamics var_dynamics.tar.gz
+    """
+
+    nplus: List[Path]
+    nminus: List[Path]
+    mean: List[Path]
+    variance: List[Path]
+    ecdna: List[Path]
+    path2dir: Path
+    verbosity: bool
+
+    def run(self):
+        found_nplus, found_nminus = False, False
+        if self.nplus:
+            loaded = []
+            path2save = commons.create_path2save(self.path2dir, Path("nplus.pdf"))
+            for plus in self.nplus:
+                df = commons.load_unformatted_csv(plus)
+                loaded.append(df)
+                if self.verbosity > 0:
+                    print(df.head())
+            self.plot(
+                loaded,
+                path2save,
+                xlabel="Tumour cells",
+                ylabel="Cells with ecDNA copies",
+                legend=False,
+                loglog=True,
+            )
+            found_nplus = True
+        if self.nminus:
+            path2save = commons.create_path2save(self.path2dir, Path("nminus.pdf"))
+            loaded = []
+            for minus in self.nminus:
+                loaded.append(commons.load_unformatted_csv(minus))
+            self.plot(
+                loaded,
+                path2save,
+                xlabel="Tumour cells",
+                ylabel="Cells without any ecDNA copies",
+                legend=False,
+                loglog=True,
+                fontsize=18,
+            )
+            found_nminus = True
+        if self.mean:
+            loaded = []
+            path2save = commons.create_path2save(self.path2dir, Path("mean.pdf"))
+            for mean in self.mean:
+                df = commons.load_unformatted_csv(mean)
+                loaded.append(df)
+                if self.verbosity > 0:
+                    print(df.head())
+            self.plot(
+                loaded,
+                path2save,
+                xlabel="Tumour cells",
+                ylabel="Average ecDNA copies per cell",
+                legend=False,
+            )
+        if self.variance:
+            loaded = []
+            path2save = commons.create_path2save(self.path2dir, Path("variance.pdf"))
+            for variance in self.variance:
+                df = commons.load_unformatted_csv(variance)
+                loaded.append(df)
+                if self.verbosity > 0:
+                    print(df.head())
+            self.plot(
+                loaded,
+                path2save,
+                xlabel="Tumour cells",
+                ylabel="Average ecDNA copies per cell",
+                legend=False,
+            )
+        if found_nplus and found_nminus:
+            loaded = []
+            path2save = commons.create_path2save(self.path2dir, Path("frequency.pdf"))
+            # assume order matches
+            for (nplus, nminus) in zip(self.nplus, self.nminus):
+                plus = commons.load_unformatted_csv(nplus)
+                minus = commons.load_unformatted_csv(nminus)
+                frequency = plus / (plus + minus)
+                loaded.append(frequency)
+
+                if self.verbosity > 0:
+                    print(frequency.head())
+            self.plot(
+                loaded,
+                path2save,
+                xlabel="Tumour cells",
+                ylabel="Frequency of cells w/ ecDNA copies",
+                legend=False,
+                logx=True,
+            )
+        if self.ecdna:
+            fig, ax = plt.subplots(1, 1)
+            loaded = []
+            path2save = commons.create_path2save(self.path2dir, Path("ecdna.pdf"))
+            # load data
+            for ecdna in self.ecdna:
+                assert ecdna.is_file(), "Expected file"
+                assert ecdna.suffix == ".json", "Expected json file"
+
+                with open(ecdna) as file:
+                    data = {
+                        int(k): val
+                        for k, val in json.load(file)["distribution"].items()
+                    }
+                loaded.append(data)
+
+            # standarize ecDNA distributions: create the same bins for all distributions
+            # find max copy number k_max present in all the data
+            distributions = []
+            k_max = max(
+                [int(copy) for distribution in loaded for copy in distribution.keys()]
+            )
+            # cutoff for viz
+            k_max = 50
+            for ecdna, c in zip(loaded, commons.PALETTE.colors):
+                for k in range(k_max):
+                    ecdna.setdefault(k, 0)
+                data = pd.Series(ecdna, dtype="uint").sort_index()
+                if self.verbosity > 0:
+                    print(data.head())
+                # skip nminus cells
+                data.drop(index=0, inplace=True)
+                data /= data.sum()
+                distributions.append(data)
+
+                data.loc[:k_max].plot(
+                    kind="bar",
+                    color=c,
+                    alpha=0.25,
+                    ax=ax,
+                )
+            ax.set_xlabel("ecDNA copies per cell k", fontsize=18)
+            ax.set_ylabel("Fraction of cells", fontsize=18)
+            xticks = np.linspace(0, k_max, 11, dtype="uint")
+            ax.tick_params(axis="y", labelsize=18, which="both", width=1)
+            ax.set_xticks(
+                ticks=xticks,
+                labelsize=18,
+                rotation=90,
+                width=1,
+            )
+            ax.set_xlim([0, k_max])
+            ax.set_xticks(xticks)
+            ax.set_xticklabels(xticks, rotation=0)
+            ax.tick_params(axis="x", labelsize=18, which="both", width=1)
+            print("Saving figure to", path2save)
+            fig.savefig(fname=path2save, bbox_inches="tight")
+
+            # compute scaling w/o nminus cells
+            path2save = commons.create_path2save(self.path2dir, Path("scaling.pdf"))
+            fig, ax = plt.subplots(1, 1)
+            # take high copies, from Lange et al. 2021 preprint fig3e
+            high_copy = 7
+            for ecdna, c in zip(distributions, commons.PALETTE.colors):
+                high_ecdnas = pd.DataFrame(
+                    ecdna.loc[high_copy:].copy(deep=True), columns=["distribution"]
+                )
+                ntot = high_ecdnas.distribution.sum()
+                high_ecdnas["1/k"] = 1.0 / high_ecdnas.index
+                high_ecdnas["fraction"] = high_ecdnas.loc[:, "distribution"] / ntot
+                if self.verbosity > 0:
+                    print(high_ecdnas.head())
+                high_ecdnas.plot(ax=ax, x="1/k", y="fraction", color=c, legend=False)
+            ax.set_xlabel("1/(ecDNA copies per cell)", fontsize=18)
+            ax.set_ylabel("Fraction of cells", fontsize=18)
+            ax.tick_params(axis="y", labelsize=18, which="both", width=1)
+            ax.tick_params(axis="x", labelsize=18, which="both", width=1)
+            print("Saving figure to", path2save)
+            fig.savefig(fname=path2save, bbox_inches="tight")
+
+    def plot(
+        self,
+        data: List[pd.DataFrame],
+        path2save: Path,
+        **kwargs,
+    ):
+        # TODO legend with labels
+        fig, ax = plt.subplots(1, 1)
+        for df, c in zip(data, commons.PALETTE.colors):
+            df.plot(ax=ax, alpha=0.2, color=c, **kwargs)
+            df.mean(axis=1).plot(ax=ax, alpha=1, color=c, linestyle="--", **kwargs)
+        ax.tick_params(axis="y", labelsize=18, which="both", width=1)
+        ax.tick_params(axis="x", labelsize=18, which="both", width=1)
+        ax.set_xlabel(ax.xaxis.get_label().get_text(), fontsize=18)
+        ax.set_ylabel(ax.yaxis.get_label().get_text(), fontsize=18)
+        print("Saving figure to", path2save)
+        fig.savefig(fname=path2save, bbox_inches="tight")
+
+
+def build_app() -> App:
+    """Parse and returns the app"""
+    # create the top-level parser
+    parser = argparse.ArgumentParser(
+        description="The ecDNAs dynamics simulated with the program `ecdna`."
+    )
+
+    parser.add_argument(
+        "--nplus",
+        metavar="FILE",
+        dest="nplus",
+        action="extend",
+        nargs="*",
+        required=False,
+        type=str,
+        help="Optional path list to nplus dynamics nplus.tar.gz",
+    )
+
+    parser.add_argument(
+        "--nminus",
+        metavar="FILE",
+        dest="nminus",
+        action="extend",
+        nargs="*",
+        required=False,
+        type=str,
+        help="Optional path list to nminus dynamics nminus.tar.gz",
+    )
+
+    parser.add_argument(
+        "--mean",
+        metavar="FILE",
+        action="extend",
+        nargs="*",
+        dest="mean",
+        required=False,
+        type=str,
+        help="Optional path list to mean dynamics mean_dynamics.tar.gz",
+    )
+
+    parser.add_argument(
+        "--variance",
+        metavar="FILE",
+        action="extend",
+        nargs="*",
+        dest="variance",
+        required=False,
+        type=str,
+        help="Optional path list to variance dynamics var_dynamics.tar.gz",
+    )
+
+    parser.add_argument(
+        "--ecdna",
+        metavar="FILE",
+        action="extend",
+        nargs="*",
+        dest="ecdna",
+        required=False,
+        type=str,
+        help="Optional path list to json ecDNA distribution",
+    )
+
+    parser.add_argument(
+        "--save",
+        metavar="FILE",
+        dest="path2dir",
+        required=False,
+        type=str,
+        help="Path to directory where to store the results",
+    )
+
+    parser.add_argument(
+        "-v",
+        "--verbosity",
+        action="store_true",
+        default=False,
+        help="increase output verbosity",
+    )
+
+    args = vars(parser.parse_args())
+    path2dir = Path(args["path2dir"])
+
+    assert path2dir.is_dir(), "{} is not a path to a valid directory".format(path2dir)
+
+    return App(
+        [Path(path) for path in args["nplus"]] if args["nplus"] else [],
+        [Path(path) for path in args["nminus"]] if args["nminus"] else [],
+        [Path(path) for path in args["mean"]] if args["mean"] else [],
+        [Path(path) for path in args["variance"]] if args["variance"] else [],
+        [Path(path) for path in args["ecdna"]] if args["ecdna"] else [],
+        path2dir,
+        args["verbosity"],
+    )
+
+
+if __name__ == "__main__":
+    build_app().run()
