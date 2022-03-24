@@ -407,15 +407,21 @@ impl Perform for DynamicalApp {
             .into_par_iter()
             .progress_count(self.runs as u64)
             .for_each(|idx| {
-                Run::new(idx, 0f32, 0usize, &self.ecdna, &self.rates)
-                    .simulate(
-                        Some(self.dynamics.clone()),
-                        &self.size,
-                        self.max_iter,
-                    )
-                    .save(&self.absolute_path, &None)
-                    .with_context(|| format!("Cannot save run {}", idx))
-                    .unwrap();
+                Run::new(
+                    idx,
+                    0f32,
+                    self.ecdna.nb_cells() as usize,
+                    &self.ecdna,
+                    &self.rates,
+                )
+                .simulate(
+                    Some(self.dynamics.clone()),
+                    &self.size,
+                    self.max_iter,
+                )
+                .save(&self.absolute_path, &None)
+                .with_context(|| format!("Cannot save run {}", idx))
+                .unwrap();
             });
 
         println!(

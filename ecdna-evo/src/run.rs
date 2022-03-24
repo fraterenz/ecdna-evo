@@ -119,7 +119,7 @@ impl Run<Started> {
 
     pub fn get_nplus(&self) -> NbIndividuals {
         //! Number of cells w at least one ecDNA copy for the current iteration.
-        self.state.system.get_nplus_cells()
+        self.state.system.nplus_cells()
     }
 
     pub fn mean_ecdna(&self) -> f32 {
@@ -171,6 +171,16 @@ impl Run<Started> {
         let mut iter = self.state.init_iter;
         let mut nplus = self.get_nplus();
         let mut nminus = *self.get_nminus();
+
+        // if we start from an initial state having more than one cell, must prepare
+        // the dynamics by filling them with const values
+        if let Some(dynamics) = &mut dynamics {
+            for _ in 0..self.state.system.ntot() {
+                for d in dynamics.iter_mut() {
+                    d.update(&self);
+                }
+            }
+        }
 
         let (time, condition) = {
             loop {
@@ -497,8 +507,12 @@ impl System {
         self.event = event;
     }
 
-    fn get_nplus_cells(&self) -> NbIndividuals {
+    fn nplus_cells(&self) -> NbIndividuals {
         self.ecdna_distr.get_nplus_cells()
+    }
+
+    pub fn ntot(&self) -> NbIndividuals {
+        self.nplus_cells() + self.nminus
     }
 }
 

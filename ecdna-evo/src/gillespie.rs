@@ -614,7 +614,10 @@ pub fn fast_mean_computation(
     //! in state from the current iteration, ie self.state.len() - SPECIES
     //! to the end.
     match event {
-        AdvanceRun::Init => panic!("Cannot compute mean with Init event"),
+        // when dynamics are present and we start with some initial state with more
+        // than one cells, we init the dynamics (and thus the mean if needed) with
+        // constant values
+        AdvanceRun::Init => Some(previous_mean),
         // The mean will be n_old * mean_old / (n_old + 1)
         AdvanceRun::Proliferate2 => {
             Some(previous_mean * ntot as f32 / (ntot as f32 + 1_f32))
