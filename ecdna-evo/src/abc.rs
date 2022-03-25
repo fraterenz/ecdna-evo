@@ -3,7 +3,7 @@
 use crate::data::{Distance, EcDNADistribution, Entropy, Frequency, Mean};
 use crate::patient::SequencingData;
 use crate::run::{Ended, Run};
-use crate::NbIndividuals;
+use crate::{DNACopy, NbIndividuals};
 use anyhow::Context;
 use csv;
 use rand::rngs::SmallRng;
@@ -61,6 +61,21 @@ impl ABCRejection {
         result.cells = *sample.get_tumour_size();
 
         result.idx = idx;
+
+        let ntot = run.init_state.get_distribution().nb_cells();
+        result.init_mean = run
+            .init_state
+            .get_distribution()
+            .mean()
+            .expect("Cannot compute the mean of the initial distribution")
+            .0;
+        result.init_cells = ntot;
+        result.init_copies = run
+            .init_state
+            .get_distribution()
+            .get_unique_nplus_copies()
+            .cloned();
+
         result
     }
 }
@@ -103,6 +118,12 @@ pub struct ABCResult {
     d2: f32,
     #[builder(setter(skip))]
     cells: NbIndividuals,
+    #[builder(setter(skip))]
+    init_mean: f32,
+    #[builder(setter(skip))]
+    init_cells: NbIndividuals,
+    #[builder(setter(skip))]
+    init_copies: Option<DNACopy>,
 }
 
 impl ABCResults {

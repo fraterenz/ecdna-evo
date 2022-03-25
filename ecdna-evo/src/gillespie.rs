@@ -1,8 +1,8 @@
+use crate::run::Range;
 use enum_dispatch::enum_dispatch;
 use rand::distributions::{Open01, Uniform};
 use rand::rngs::SmallRng;
 use rand::{thread_rng, Rng, SeedableRng};
-use rand_distr::Distribution;
 use std::convert::From;
 use std::fmt;
 use std::ops::{BitXor, Mul};
@@ -56,7 +56,7 @@ impl Default for Rates {
 /// Gillespie rate units 1/N
 #[derive(Clone, Copy, Debug, PartialOrd, PartialEq)]
 enum Rate {
-    Range(Range),
+    Range(Range<f32>),
     Scalar(f32),
 }
 
@@ -86,7 +86,7 @@ impl fmt::Display for Rate {
         let s = {
             match self {
                 Rate::Range(range) => {
-                    format!("{}_{}", range.min, range.max)
+                    format!("{}", range)
                 }
                 Rate::Scalar(v) => {
                     format!("{}", v)
@@ -107,31 +107,6 @@ impl Mul for Rate {
             },
             Rate::Range(_) => panic!("Do not know how to mulitply ranges"),
         }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialOrd, PartialEq)]
-struct Range {
-    min: f32,
-    max: f32,
-}
-
-impl Default for Range {
-    fn default() -> Self {
-        Range { min: 0f32, max: 1f32 }
-    }
-}
-
-impl Range {
-    pub fn new(min: f32, max: f32) -> Range {
-        if min >= max {
-            panic!("Found min {} greater than max {}", min, max)
-        }
-        Range { min, max }
-    }
-
-    fn sample_uniformly(&self, rng: &mut SmallRng) -> f32 {
-        Uniform::new(self.min, self.max).sample(rng)
     }
 }
 

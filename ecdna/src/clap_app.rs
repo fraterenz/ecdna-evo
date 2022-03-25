@@ -11,11 +11,8 @@ pub fn clap_app() -> Command<'static> {
         .global_setting(AppSettings::DeriveDisplayOrder)
         .subcommand_required(true)
         .subcommand(command!("abc")
-            .about("Infer the most probable parameter from the patient's data using ABC")
+            .about("Infer the most probable set of parameters from the patient's data using ABC")
             .arg_required_else_help(true)
-            .arg(
-                arg!(--infer <VALUE> "Infer the parameter given some data")
-                    .possible_values(["fitness"]))
             .arg(arg!(--longitudinal "Infer the parameters using two or more sequencing experiment from the same patient. \
                                     The inference will be performed assuming same parameters during the all sequencing experiments"
             ))
@@ -23,7 +20,7 @@ pub fn clap_app() -> Command<'static> {
                                     The sample size to undersample will match the patient's sample data."))
             .arg(
                 arg!(-p --patient <FILE> "Path to the json patient file created with `ecdna add`. See `ecdna add --help`"))
-        	.arg(Arg::new("rho1")
+            .arg(Arg::new("rho1")
                 .long("rho1-range")
                 .max_values(2)
                 .required(true)
@@ -63,6 +60,18 @@ pub fn clap_app() -> Command<'static> {
 						If two values are given, they represent the minimal and maximal value of death rate for the NPlus cells w/o ecdna")
                 .takes_value(true),
         	)
+        	.arg(Arg::new("init_copies")
+                .long("copies-range")
+                .max_values(2)
+                .required(false)
+                .conflicts_with("distribution")
+                .default_value("1")
+                .help(
+						"The range of possible ecDNA copies to initialized the first cells carrying ecDNA copies. \
+                        If one value given, do not optimize over the initial ecDNA copies which will be fixed for all simulations. \
+						If two values are given, they represent the minimal and maximal value of ecDNA copies to test")
+                .takes_value(true),
+            )
         )
         .subcommand(command!("simulate")
             .about("Simulate the dynamics of the ecDNA distribution assuming exponential growth and random ecDNA segregation.")

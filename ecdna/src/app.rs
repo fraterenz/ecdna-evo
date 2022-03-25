@@ -6,8 +6,8 @@ use ecdna_evo::{
     data::{EcDNADistribution, EcDNASummary, Entropy, Frequency, Mean},
     dynamics::{Dynamic, Dynamics, Name},
     patient::{Patient, SequencingData, SequencingDataBuilder},
-    run::Run,
-    NbIndividuals, Rates,
+    run::{InitialState, Range, Run},
+    DNACopy, NbIndividuals, Rates,
 };
 use enum_dispatch::enum_dispatch;
 use flate2::{write::GzEncoder, Compression};
@@ -37,23 +37,6 @@ pub fn build_config() -> Config {
         }
         _ => unreachable!("Expect subcomands `simulate` or `abc`"),
     };
-}
-
-fn rates_from_args(matches: &ArgMatches) -> Rates {
-    // Proliferation rate of the cells w/ ecDNA
-    let fitness1: Vec<f32> =
-        matches.values_of_t("rho1").unwrap_or_else(|e| e.exit());
-    // Proliferation rate of the cells w/o ecDNA
-    let fitness2: Vec<f32> =
-        matches.values_of_t("rho2").unwrap_or_else(|e| e.exit());
-
-    // Death rate of cells w/ ecDNA
-    let death1: Vec<f32> =
-        matches.values_of_t("delta1").unwrap_or_else(|e| e.exit());
-    let death2: Vec<f32> =
-        matches.values_of_t("delta2").unwrap_or_else(|e| e.exit());
-
-    Rates::new(&fitness1, &fitness2, &death1, &death2)
 }
 
 fn match_verbosity(matches: &ArgMatches) -> u8 {
@@ -97,11 +80,10 @@ pub struct BayesianApp {
     pub patient: Patient,
     pub runs: usize,
     pub rates: Rates,
-    pub ecdna: EcDNADistribution,
+    pub init_copies: Vec<DNACopy>,
     pub mean: Mean,
     pub frequency: Frequency,
     pub entropy: Entropy,
-    pub to_infer: String,
     relative_path: PathBuf,
     absolute_path: PathBuf,
     pub verbosity: u8,
@@ -134,15 +116,22 @@ impl BayesianApp {
         let absolute_path =
             std::env::current_dir()?.join(relative_path.clone());
 
+        // create rates from ranges: sample parameters from [min, max]
+        let rates = Rates::new(
+            &config.rho1,
+            &config.rho2,
+            &config.delta1,
+            &config.delta2,
+        );
+
         let app = BayesianApp {
             patient,
             runs: config.runs,
-            rates: config.rates,
-            ecdna,
+            rates,
+            init_copies: config.init_copies,
             mean: summary.mean,
             frequency: summary.frequency,
             entropy: summary.entropy,
-            to_infer: config.to_infer,
             relative_path,
             absolute_path,
             verbosity: config.verbosity,
@@ -164,9 +153,8 @@ impl Perform for BayesianApp {
         );
 
         println!(
-            "{} Start inferring {} using ABC with {} runs for patient {}",
+            "{} Start ABC with {} runs for patient {}",
             Utc::now(),
-            self.to_infer,
             self.runs,
             self.patient.name
         );
@@ -186,19 +174,25 @@ impl Perform for BayesianApp {
             .progress_count(self.runs as u64)
             .for_each(|idx| {
                 let cells = sample2infer.get_tumour_size();
-                Run::new(idx, 0f32, 0usize, &self.ecdna, &self.rates)
+
+                // create initi distribution: sample the initial copies for the single malignant
+                // clone (ie the first cell in the tumour with X copies of ecDNAs).
+                let initial_state = match *self.init_copies {
+                    [initial_copy] => {
+                        InitialState::new_from_one_copy(initial_copy, 0usize)
+                    }
+                    [min, max] => InitialState::random(&Range::new(min, max)),
+                    _ => panic!("Max 2 values, found more than 2"),
+                };
+
+                Run::new(idx, 0f32, initial_state, &self.rates)
                     .simulate(None, cells, self.rates.estimate_max_iter(cells))
                     .save(&self.absolute_path, &Some(sample2infer))
                     .with_context(|| format!("Cannot save run {}", idx))
                     .unwrap();
             });
 
-        println!(
-            "{} End inferring {} using ABC with {} runs",
-            Utc::now(),
-            self.to_infer,
-            self.runs
-        );
+        println!("{} End using ABC with {} runs", Utc::now(), self.runs);
         Ok(())
     }
 }
@@ -243,9 +237,8 @@ impl Perform for LonditudinalApp {
         );
 
         println!(
-            "{} Start inferring {} using ABC with {} runs for patient {}",
+            "{} Start ABC with {} runs for patient {}",
             Utc::now(),
-            self.0.to_infer,
             self.0.runs,
             self.0.patient.name
         );
@@ -262,9 +255,20 @@ impl Perform for LonditudinalApp {
             .progress_count(self.0.runs as u64)
             .for_each(|idx| {
                 let mut cells = sample2infer.get_tumour_size();
+
+                // create initi distribution: sample the initial copies for the single malignant
+                // clone (ie the first cell in the tumour with X copies of ecDNAs).
+                let initial_state = match *self.0.init_copies {
+                    [initial_copy] => {
+                        InitialState::new_from_one_copy(initial_copy, 0usize)
+                    }
+                    [min, max] => InitialState::random(&Range::new(min, max)),
+                    _ => panic!("Max 2 values, found more than 2"),
+                };
+
                 // first timepoint
                 let mut run =
-                    Run::new(idx, 0f32, 0usize, &self.0.ecdna, &self.0.rates)
+                    Run::new(idx, 0f32, initial_state, &self.0.rates)
                         .simulate(
                             None,
                             cells,
@@ -288,12 +292,7 @@ impl Perform for LonditudinalApp {
                 }
             });
 
-        println!(
-            "{} End inferring {} using ABC with {} runs",
-            Utc::now(),
-            self.0.to_infer,
-            self.0.runs
-        );
+        println!("{} End ABC with {} runs", Utc::now(), self.0.runs);
         Ok(())
     }
 }
@@ -356,7 +355,15 @@ impl DynamicalApp {
         let (ecdna, _) = config.load().with_context(|| {
             "Cannot load initial state for DynamicalApp app"
         })?;
-        let max_iter = config.rates.estimate_max_iter(&config.cells);
+
+        let rates = Rates::new(
+            &[config.rho1],
+            &[config.rho2],
+            &[config.delta1],
+            &[config.delta2],
+        );
+
+        let max_iter = rates.estimate_max_iter(&config.cells);
 
         let mut dynamics = Vec::with_capacity(config.kind.len());
         for k in config.kind.iter() {
@@ -380,7 +387,7 @@ impl DynamicalApp {
         let app = DynamicalApp {
             patient_name: config.patient_name,
             runs: config.runs,
-            rates: config.rates,
+            rates,
             dynamics: dynamics.into(),
             size: config.cells,
             ecdna,
@@ -407,21 +414,19 @@ impl Perform for DynamicalApp {
             .into_par_iter()
             .progress_count(self.runs as u64)
             .for_each(|idx| {
-                Run::new(
-                    idx,
-                    0f32,
+                let initial_state = InitialState::new(
+                    self.ecdna.clone(),
                     self.ecdna.nb_cells() as usize,
-                    &self.ecdna,
-                    &self.rates,
-                )
-                .simulate(
-                    Some(self.dynamics.clone()),
-                    &self.size,
-                    self.max_iter,
-                )
-                .save(&self.absolute_path, &None)
-                .with_context(|| format!("Cannot save run {}", idx))
-                .unwrap();
+                );
+                Run::new(idx, 0f32, initial_state, &self.rates)
+                    .simulate(
+                        Some(self.dynamics.clone()),
+                        &self.size,
+                        self.max_iter,
+                    )
+                    .save(&self.absolute_path, &None)
+                    .with_context(|| format!("Cannot save run {}", idx))
+                    .unwrap();
             });
 
         println!(
@@ -496,8 +501,11 @@ pub struct Bayesian {
     pub patient: PathBuf,
     pub runs: usize,
     pub distribution: Option<PathBuf>,
-    pub rates: Rates,
-    pub to_infer: String,
+    pub rho1: Vec<f32>,
+    pub rho2: Vec<f32>,
+    pub delta1: Vec<f32>,
+    pub delta2: Vec<f32>,
+    pub init_copies: Vec<DNACopy>,
     pub verbosity: u8,
 }
 
@@ -505,14 +513,37 @@ impl Bayesian {
     pub fn new(matches: &ArgMatches) -> Bayesian {
         let (verbosity, distribution, runs) = match_shared_args(matches);
 
-        let to_infer: String =
-            matches.value_of_t("infer").unwrap_or_else(|e| e.exit());
         let patient: PathBuf =
             matches.value_of_t("patient").unwrap_or_else(|e| e.exit());
-        // Rates of the two-type stochastic birth-death process
-        let rates = rates_from_args(matches);
 
-        Bayesian { patient, runs, distribution, rates, verbosity, to_infer }
+        // Rates of the two-type stochastic birth-death process
+        // Proliferation rate of the cells w/ ecDNA
+        let rho1: Vec<f32> =
+            matches.values_of_t("rho1").unwrap_or_else(|e| e.exit());
+        // Proliferation rate of the cells w/o ecDNA
+        let rho2: Vec<f32> =
+            matches.values_of_t("rho2").unwrap_or_else(|e| e.exit());
+
+        // Death rate of cells w/ ecDNA
+        let delta1: Vec<f32> =
+            matches.values_of_t("delta1").unwrap_or_else(|e| e.exit());
+        let delta2: Vec<f32> =
+            matches.values_of_t("delta2").unwrap_or_else(|e| e.exit());
+
+        let init_copies: Vec<DNACopy> =
+            matches.values_of_t("init_copies").unwrap_or_else(|e| e.exit());
+
+        Bayesian {
+            patient,
+            runs,
+            distribution,
+            rho1,
+            rho2,
+            delta1,
+            delta2,
+            init_copies,
+            verbosity,
+        }
     }
 }
 
@@ -565,7 +596,10 @@ pub struct Dynamical {
     pub runs: usize,
     pub cells: NbIndividuals,
     pub distribution: Option<PathBuf>,
-    pub rates: Rates,
+    pub rho1: f32,
+    pub rho2: f32,
+    pub delta1: f32,
+    pub delta2: f32,
     pub verbosity: u8,
 }
 
@@ -587,7 +621,18 @@ impl Dynamical {
         dynamics.extend(moments);
 
         // Rates of the two-type stochastic birth-death process
-        let rates = rates_from_args(matches);
+        // Proliferation rate of the cells w/ ecDNA
+        let rho1: f32 =
+            matches.value_of_t("rho1").unwrap_or_else(|e| e.exit());
+        // Proliferation rate of the cells w/o ecDNA
+        let rho2: f32 =
+            matches.value_of_t("rho2").unwrap_or_else(|e| e.exit());
+
+        // Death rate of cells w/ ecDNA
+        let delta1: f32 =
+            matches.value_of_t("delta1").unwrap_or_else(|e| e.exit());
+        let delta2: f32 =
+            matches.value_of_t("delta2").unwrap_or_else(|e| e.exit());
 
         if verbosity > 1 {
             println!("dynamics: {:#?}", dynamics);
@@ -599,7 +644,10 @@ impl Dynamical {
             runs,
             cells,
             distribution,
-            rates,
+            rho1,
+            rho2,
+            delta1,
+            delta2,
             verbosity,
         }
     }

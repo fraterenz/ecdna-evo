@@ -625,6 +625,23 @@ impl EcDNADistribution {
         self.distribution.keys().copied().collect()
     }
 
+    pub fn get_unique_nplus_copies(&self) -> Option<&DNACopy> {
+        //! Get the ecDNA copy number of assuming there is only one cell with ecDNA
+        //! (and any number of cells w/o any ecDNA copies). If there are more than
+        //! one cell w/ ecDNA, returns `None`.
+        assert!(self.ntot == self.nb_nplus() + *self.get_nminus());
+        if self.nb_nplus() == 1 {
+            return Some(
+                self.distribution
+                    .keys()
+                    .collect::<Vec<&DNACopy>>()
+                    .first()
+                    .unwrap(),
+            );
+        }
+        None
+    }
+
     pub fn nb_cells(&self) -> NbIndividuals {
         self.distribution.values().sum::<NbIndividuals>()
     }

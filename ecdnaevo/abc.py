@@ -32,30 +32,39 @@ class App:
 
     abc: Path
     thresholds: Thresholds
+    theta: str
     path2save: Path
     stats: bool
     verbosity: bool
 
 
-def infer_nb_timepoints(data: pd.DataFrame) -> int:
+def infer_nb_timepoints(data: pd.DataFrame, verbosity: bool) -> int:
     nb_timepoints = data.idx.value_counts().unique()
     assert (
         nb_timepoints.shape[0] == 1
     ), "Found runs with different nb of timepoints {}".format(nb_timepoints)
-    return int(nb_timepoints[0])
+
+    nb_timepoints = int(nb_timepoints[0])
+    if verbosity:
+        print("Found {} timpoints".format(nb_timepoints))
+    return nb_timepoints
 
 
-def load(path2abc: Path, verbosity: bool) -> pd.DataFrame:
+def load(path2abc: Path, verbosity: bool) -> Tuple[pd.DataFrame, int]:
     abc: pd.DataFrame = pd.read_csv(path2abc, header=0, low_memory=False)
     abc.drop(abc[abc.idx == "idx"].index, inplace=True)
     abc.dropna(how="all", inplace=True)
     abc.loc[:, "idx"] = abc.idx.astype("uint32")
     # abc.loc[:, abc.columns[0]] = abc[abc.columns[0]].astype("uint32")
-    for col in abc.columns[2:]:
+    for col in abc.columns[2:-2]:
         abc[col] = abc[col].astype("float")
+    for col in abc.columns[-2:]:
+        abc[col] = abc[col].astype("uint")
+
     if verbosity:
         print(abc.head())
-    return (abc, infer_nb_timepoints(abc))
+        print(abc.dtypes)
+    return (abc, infer_nb_timepoints(abc, verbosity))
 
 
 def run(app: App):
@@ -66,32 +75,37 @@ def run(app: App):
         path2save = commons.create_path2save(
             app.path2save,
             Path(
-                "{}mean_{}frequency_{}entropy_{}ecdna_fitness_raw_subplots.pdf".format(
+                "{}mean_{}frequency_{}entropy_{}ecdna_{}_subplots.pdf".format(
                     app.thresholds["mean"],
                     app.thresholds["frequency"],
                     app.thresholds["entropy"],
                     app.thresholds["ecdna"],
+                    app.theta,
                 )
             ),
         )
-        abc.plot_posterior_per_stats(app.thresholds, abc, path2save, nb_timepoints)
+        plot_posterior_per_stats(
+            app.thresholds, abc, path2save, nb_timepoints, app.theta, app.verbosity
+        )
     else:
         path2save = commons.create_path2save(
             app.path2save,
             Path(
-                "{}relative_{}ecdna_fitness_raw.pdf".format(
-                    app.thresholds["mean"], app.thresholds["ecdna"]
+                "{}relative_{}ecdna_{}.pdf".format(
+                    app.thresholds["mean"], app.thresholds["ecdna"], app.theta
                 )
             ),
         )
-        abc.plot_post(app.thresholds, abc, path2save, nb_timepoints)
+        plot_post(
+            app.thresholds, abc, path2save, nb_timepoints, app.theta, app.verbosity
+        )
 
 
 def build_app() -> App:
     """Parse and returns the app"""
     # create the top-level parser
     parser = argparse.ArgumentParser(
-        description="Plot posterior distribution (histograms) for ABC inference."
+        description="Plot posterior distribution (histograms) for the parameters theta inferred by ABC."
     )
 
     parser.add_argument(
@@ -101,6 +115,14 @@ def build_app() -> App:
         action="store_true",
         default=False,
         help="Plot posterior for combinations of statistics",
+    )
+
+    parser.add_argument(
+        "--theta",
+        dest="theta",
+        required=True,
+        choices=["f1", "d1", "d2", "init_copies"],
+        help="Parameter to infer",
     )
 
     parser.add_argument(
@@ -163,6 +185,7 @@ def build_app() -> App:
     return App(
         abc,
         Thresholds(thresholds),
+        args["theta"],
         abc.parent,
         stats,
         args["verbosity"],
@@ -187,12 +210,12 @@ def plot_fitness(fitness, ax, title=None):
     plot_rates(fitness, (0.9, 3.1), 120, ax, title)
 
 
-def plot_death1(death1, ax, title=None):
-    plot_rates(death1, (0, 1.1), 40, ax, title)
+def plot_death(death, ax, title=None):
+    plot_rates(death, (0, 1.1), 120, ax, title)
 
 
-def plot_death2(death2, ax, title=None):
-    plot_rates(death2, (0, 1.1), 40, ax, title)
+def plot_copies(copies, ax, title=None):
+    plot_rates(copies, (0, copies.max()), 120, ax, title)
 
 
 def plot_rates(rates, range_hist: Tuple[float, float], bins: int, ax, title=None):
@@ -202,7 +225,9 @@ def plot_rates(rates, range_hist: Tuple[float, float], bins: int, ax, title=None
     ax.set_title(title)
 
 
-def plot_posterior_per_stats(thresholds: Thresholds, abc, path2save, nb_timepoints):
+def plot_posterior_per_stats(
+    thresholds: Thresholds, abc, path2save, nb_timepoints, theta, verbosity
+):
     """Plot the posterior distribution for the fitness coefficient
     for each combination of statistics.
 
@@ -212,7 +237,7 @@ def plot_posterior_per_stats(thresholds: Thresholds, abc, path2save, nb_timepoin
         for mean, frequency, and entropy, and for the ecdna is the ks distance.
     """
     fig_tot, axes = plt.subplots(*MYSHAPE, sharex=True)
-    axes[0, 0].set_xlim([0.9, 3.1])
+    # axes[0, 0].set_xlim([0.9, 3.1])
     i = 0
 
     # combinations of statistics
@@ -221,7 +246,7 @@ def plot_posterior_per_stats(thresholds: Thresholds, abc, path2save, nb_timepoin
         for the_thresholds in combinations(thresholds.items(), r):
             # iter over the (stats, threshold) for each combination
             ax = axes[np.unravel_index(i, MYSHAPE)]
-            plot_posterior(the_thresholds, abc, ax, nb_timepoints)
+            plot_posterior(the_thresholds, abc, ax, nb_timepoints, theta, verbosity)
             clean = ",".join(
                 [
                     PLOTTING_STATS[stat]
@@ -251,7 +276,7 @@ def plot_posterior_per_stats(thresholds: Thresholds, abc, path2save, nb_timepoin
     plt.close(fig_tot)
 
 
-def plot_posterior(thresholds, abc, ax, nb_timepoints):
+def plot_posterior(thresholds, abc, ax, nb_timepoints, theta, verbosity):
     my_query = ""
     stats = []
     for threshold in thresholds:
@@ -260,7 +285,7 @@ def plot_posterior(thresholds, abc, ax, nb_timepoints):
     my_query = my_query.rstrip(" & ")
     print(my_query)
     if nb_timepoints == 1:
-        to_plot = abc.loc[abc[stats].query(my_query).index].f1
+        to_plot = abc.loc[abc[stats].query(my_query).index, theta]
     else:
         # when multiple timepoints are present, runs can have the idx. In this
         # case, # we want to plot runs for which the query is satisfied for
@@ -272,15 +297,27 @@ def plot_posterior(thresholds, abc, ax, nb_timepoints):
         to_plot = (
             abc.groupby("idx")
             .filter(lambda x: (x.query(my_query)).shape[0] == nb_timepoints)
-            .drop_duplicates(["idx"])
-            .f1
+            .drop_duplicates(["idx"])[theta]
         )
-    plot_fitness(to_plot, ax, list(stats))
+    if verbosity:
+        print(to_plot)
+    if theta == "f1":
+        plot_fitness(to_plot, ax, list(stats))
+    elif theta in {"d1", "d2"}:
+        plot_death(to_plot, ax, list(stats))
+    elif theta == "init_copies":
+        plot_copies(to_plot, ax, list(stats))
+    else:
+        raise ValueError(
+            "{} not valid: theta must be either `f1`, `d1`, `d2` or `init_copies`".format(
+                theta
+            )
+        )
 
 
-def plot_post(thresholds: Thresholds, abc, path2save, nb_timepoints):
+def plot_post(thresholds: Thresholds, abc, path2save, nb_timepoints, theta, verbosity):
     fig, ax = plt.subplots(1, 1)
-    plot_posterior(thresholds.items(), abc, ax, nb_timepoints)
+    plot_posterior(thresholds.items(), abc, ax, nb_timepoints, theta, verbosity)
     # ax.tick_params(axis="both", size=2, which="major", labelsize=4)
     fig.axes.append(ax)
     fig.subplots_adjust(hspace=0.5)

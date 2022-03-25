@@ -9,10 +9,12 @@ use crate::gillespie::{
 use crate::patient::SequencingData;
 use crate::{NbIndividuals, Patient, Rates};
 use enum_dispatch::enum_dispatch;
+use num_traits::{One, Zero};
 use rand::rngs::SmallRng;
 use rand::{thread_rng, Rng, SeedableRng};
-use rand_distr::{Binomial, Distribution};
+use rand_distr::{Binomial, Distribution, Uniform};
 use std::collections::HashMap;
+use std::fmt::{self, Display};
 use std::path::{Path, PathBuf};
 
 /// Number of ecDNA copies within a cell. We assume that a cell cannot have more
@@ -34,13 +36,13 @@ pub struct Run<S: RunState> {
     pub idx: usize,
     /// Birth-Death process created from some rates.
     bd_process: BirthDeathProcess,
+    /// Initial state of the system
+    pub init_state: InitialState,
 }
 
 /// The simulation of the run has started, the stochastic birth-death process
 /// has started looping over the iterations.
 pub struct Started {
-    /// Start the simulation from this iteration
-    init_iter: usize,
     /// State of the system at one particular iteration
     system: System,
 }
@@ -69,7 +71,12 @@ impl From<Run<Ended>> for Run<Started> {
     fn from(run: Run<Ended>) -> Self {
         let state: Started = run.state.into();
 
-        Run { idx: run.idx, bd_process: run.bd_process, state }
+        Run {
+            idx: run.idx,
+            bd_process: run.bd_process,
+            state,
+            init_state: run.init_state,
+        }
     }
 }
 
@@ -81,7 +88,7 @@ impl From<Ended> for Started {
             Event { kind: AdvanceRun::Init, time: state.gillespie_time };
         let system = System { nminus, ecdna_distr, event };
 
-        Started { system, init_iter: state.last_iter }
+        Started { system }
     }
 }
 
@@ -89,8 +96,7 @@ impl Run<Started> {
     pub fn new(
         idx: usize,
         time: f32,
-        init_iter: usize,
-        initial_ecdna: &EcDNADistribution,
+        init_state: InitialState,
         rates: &Rates,
     ) -> Self {
         //! Use the `parameters` and the `rates` to initialize a realization of
@@ -99,12 +105,12 @@ impl Run<Started> {
         Run {
             idx,
             bd_process: BirthDeathProcess::new(rates),
+            init_state: init_state.clone(),
             state: Started {
-                init_iter,
                 system: System {
-                    nminus: *initial_ecdna.get_nminus(),
+                    nminus: *init_state.init_distribution.get_nminus(),
                     ecdna_distr: EcDNADistributionNPlus::from(
-                        initial_ecdna.clone(),
+                        init_state.init_distribution,
                     ),
                     event: Event { kind: AdvanceRun::Init, time },
                 },
@@ -168,7 +174,7 @@ impl Run<Started> {
         //!
         //! If the some `dynamics` are given, those quantities will be
         //! calculated using the [`Update`] method.
-        let mut iter = self.state.init_iter;
+        let mut iter = self.init_state.init_iter;
         let mut nplus = self.get_nplus();
         let mut nminus = *self.get_nminus();
 
@@ -225,13 +231,15 @@ impl Run<Started> {
             assert!(ntot > 0, "No cells found with PureBirth process")
         }
 
-        let (idx, process) = (self.idx, self.bd_process.clone());
+        let (idx, process, init_state) =
+            (self.idx, self.bd_process.clone(), self.init_state.clone());
 
         let data = self.create_data(&ntot, &condition);
 
         Run {
             idx,
             bd_process: process,
+            init_state,
             state: Ended {
                 data,
                 gillespie_time: time,
@@ -407,6 +415,7 @@ impl Run<Ended> {
         Run {
             idx,
             bd_process: self.bd_process.clone(),
+            init_state: self.init_state,
             state: Ended {
                 data,
                 gillespie_time: self.state.gillespie_time,
@@ -463,6 +472,81 @@ impl Run<Ended> {
     fn filename(&self) -> PathBuf {
         //! File path for the current run (used to save data)
         PathBuf::from(self.idx.to_string())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialOrd, PartialEq)]
+pub struct Range<T> {
+    min: T,
+    max: T,
+}
+
+impl<T> Default for Range<T>
+where
+    T: num_traits::Zero + num_traits::One,
+{
+    fn default() -> Self {
+        Range { min: T::zero(), max: T::one() }
+    }
+}
+
+impl<T: std::fmt::Display> Display for Range<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}_{}", self.min, self.max)
+    }
+}
+
+impl<T> Range<T>
+where
+    T: std::fmt::Display
+        + rand_distr::uniform::SampleUniform
+        + std::cmp::PartialOrd,
+{
+    pub fn new(min: T, max: T) -> Range<T> {
+        if min >= max {
+            panic!("Found min {} greater than max {}", min, max)
+        }
+        Range { min, max }
+    }
+
+    pub fn sample_uniformly(&self, rng: &mut SmallRng) -> T {
+        Uniform::new(&self.min, &self.max).sample(rng)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct InitialState {
+    init_iter: usize,
+    init_distribution: EcDNADistribution,
+}
+
+impl InitialState {
+    pub fn random(range: &Range<u16>) -> Self {
+        let mut rng = SmallRng::from_entropy();
+        InitialState {
+            init_iter: 0usize,
+            init_distribution: EcDNADistribution::from(vec![
+                range.sample_uniformly(&mut rng)
+            ]),
+        }
+    }
+
+    pub fn new_from_one_copy(init_copy: DNACopy, init_iter: usize) -> Self {
+        InitialState {
+            init_iter,
+            init_distribution: EcDNADistribution::from(vec![init_copy]),
+        }
+    }
+
+    pub fn new(
+        init_distribution: EcDNADistribution,
+        init_iter: usize,
+    ) -> Self {
+        InitialState { init_iter, init_distribution }
+    }
+
+    pub fn get_distribution(&self) -> &EcDNADistribution {
+        &self.init_distribution
     }
 }
 
