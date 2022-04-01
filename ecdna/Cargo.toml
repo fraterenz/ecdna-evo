@@ -16,3 +16,4 @@ rayon = "1.5"
 enum_dispatch = "0.3.7"
 flate2 = "1.0"
 tar = "0.4"
+rand = { version = "0.8.0", features = ["small_rng"] }

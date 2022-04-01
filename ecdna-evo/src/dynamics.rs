@@ -10,7 +10,7 @@ use crate::data::{write2file, EcDNADistribution, ToFile};
 use crate::gillespie;
 use crate::run::{Run, Started};
 use crate::{GillespieTime, NbIndividuals};
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use enum_dispatch::enum_dispatch;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
@@ -129,14 +129,11 @@ impl Dynamic {
             "mean" => {
                 MeanDyn::new(max_iter, &initial_ecdna).map(Dynamic::MeanDyn)
             }
-            "both" => {
+            "moments" => {
                 Moments::new(max_iter, initial_ecdna).map(Dynamic::Moments)
             }
-            "time" => Ok(Dynamic::GillespieT(GillespieT::new(
-                max_iter,
-                &initial_ecdna,
-            ))),
-            _ => panic!("Cannot create time from {}", kind),
+            "time" => Ok(Dynamic::GillespieT(GillespieT::new(max_iter))),
+            _ => panic!("Cannot create dynamic from {}", kind),
         }
     }
 }
@@ -284,8 +281,7 @@ pub struct Moments {
 impl Update for Moments {
     fn update(&mut self, run: &Run<Started>) {
         self.mean.update(run);
-        self.variance
-            .push(run.variance_ecdna(&self.mean.mean.last().unwrap()));
+        self.variance.push(run.variance_ecdna(self.mean.mean.last().unwrap()));
     }
 }
 
@@ -348,7 +344,7 @@ impl Name for GillespieT {
 }
 
 impl GillespieT {
-    pub fn new(max_iter: usize, initial_ecdna: &EcDNADistribution) -> Self {
+    pub fn new(max_iter: usize) -> Self {
         let mut time = Vec::with_capacity(max_iter);
         time.push(0f32);
         GillespieT { time, name: "time".to_string() }

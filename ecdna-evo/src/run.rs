@@ -1,18 +1,17 @@
-use crate::abc::{ABCRejection, ABCResults};
 use crate::data::{
-    Data, EcDNADistribution, EcDNASummary, Entropy, Frequency, Mean, ToFile,
+    write2file, Data, EcDNADistribution, EcDNASummary, Entropy, Frequency,
+    Mean, ToFile,
 };
-use crate::dynamics::{Dynamics, Name, Update};
+use crate::dynamics::{Dynamics, Update};
 use crate::gillespie::{
     AdvanceRun, BirthDeathProcess, Event, GetRates, GillespieTime,
 };
-use crate::patient::SequencingData;
-use crate::{NbIndividuals, Patient, Rates};
+use crate::{NbIndividuals, Rates};
+use anyhow::ensure;
 use enum_dispatch::enum_dispatch;
-use num_traits::{One, Zero};
-use rand::rngs::SmallRng;
-use rand::{thread_rng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng};
 use rand_distr::{Binomial, Distribution, Uniform};
+use rand_pcg::Pcg64Mcg;
 use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::path::{Path, PathBuf};
@@ -20,6 +19,32 @@ use std::path::{Path, PathBuf};
 /// Number of ecDNA copies within a cell. We assume that a cell cannot have more
 /// than 65535 copies (`u16` is 2^16 - 1 = 65535 copies).
 pub type DNACopy = u16;
+
+#[derive(Clone, Copy, Debug)]
+pub struct Seed(u64);
+
+impl Seed {
+    pub fn new(seed: u64) -> Self {
+        Seed(seed)
+    }
+
+    pub fn get_seed(&self) -> &u64 {
+        &self.0
+    }
+}
+
+impl ToFile for Seed {
+    fn save(&self, path2file: &Path) -> anyhow::Result<()> {
+        write2file(&[self.0], path2file, None, false)?;
+        Ok(())
+    }
+}
+
+impl Default for Seed {
+    fn default() -> Self {
+        Seed(26u64)
+    }
+}
 
 /// Simulation of an exponentially growing tumour, that is one realization of
 /// the stochastic birth-death process.
@@ -38,6 +63,8 @@ pub struct Run<S: RunState> {
     bd_process: BirthDeathProcess,
     /// Initial state of the system
     pub init_state: InitialState,
+    pub seed: Seed,
+    rng: Pcg64Mcg,
 }
 
 /// The simulation of the run has started, the stochastic birth-death process
@@ -58,7 +85,6 @@ pub struct Ended {
     data: Data,
     /// The run idx from which the sample was taken.
     sampled_run: Option<usize>,
-    dynamics: Option<Dynamics>,
 }
 
 pub trait RunState {}
@@ -76,6 +102,8 @@ impl From<Run<Ended>> for Run<Started> {
             bd_process: run.bd_process,
             state,
             init_state: run.init_state,
+            seed: run.seed,
+            rng: run.rng,
         }
     }
 }
@@ -97,7 +125,8 @@ impl Run<Started> {
         idx: usize,
         time: f32,
         init_state: InitialState,
-        rates: &Rates,
+        rates: Rates,
+        seed: Seed,
     ) -> Self {
         //! Use the `parameters` and the `rates` to initialize a realization of
         //! a birth-death stochastic process.
@@ -115,6 +144,8 @@ impl Run<Started> {
                     event: Event { kind: AdvanceRun::Init, time },
                 },
             },
+            seed,
+            rng: Pcg64Mcg::seed_from_u64(*seed.get_seed()),
         }
     }
 
@@ -166,7 +197,7 @@ impl Run<Started> {
 
     pub fn simulate(
         mut self,
-        mut dynamics: Option<Dynamics>,
+        dynamics: &mut Option<&mut Dynamics>,
         max_cells: &NbIndividuals,
         max_iter: usize,
     ) -> Run<Ended> {
@@ -180,7 +211,7 @@ impl Run<Started> {
 
         // if we start from an initial state having more than one cell, must prepare
         // the dynamics by filling them with const values
-        if let Some(dynamics) = &mut dynamics {
+        if let Some(dynamics) = dynamics {
             for _ in 0..self.state.system.ntot() {
                 for d in dynamics.iter_mut() {
                     d.update(&self);
@@ -192,8 +223,9 @@ impl Run<Started> {
             loop {
                 // Compute the next event using Gillespie algorithm based on the
                 // stochastic process defined by `process`
-                let event = self.bd_process.gillespie(nplus, nminus);
-                self.update(event, &mut dynamics);
+                let event =
+                    self.bd_process.gillespie(nplus, nminus, &mut self.rng);
+                self.update(event, dynamics);
                 nplus = self.get_nplus();
                 nminus = *self.get_nminus();
                 iter += 1;
@@ -234,6 +266,12 @@ impl Run<Started> {
         let (idx, process, init_state) =
             (self.idx, self.bd_process.clone(), self.init_state.clone());
 
+        let (seed, rng) = (
+            self.seed,
+            Pcg64Mcg::from_rng(self.rng.clone())
+                .expect("Cannot create rng from the run"),
+        );
+
         let data = self.create_data(&ntot, &condition);
 
         Run {
@@ -245,8 +283,9 @@ impl Run<Started> {
                 gillespie_time: time,
                 sampled_run: None,
                 last_iter: iter,
-                dynamics,
             },
+            seed,
+            rng,
         }
     }
 
@@ -315,14 +354,18 @@ impl Run<Started> {
         Data { ecdna, summary: EcDNASummary { mean, frequency, entropy } }
     }
 
-    fn update(&mut self, next_event: Event, dynamics: &mut Option<Dynamics>) {
+    fn update(
+        &mut self,
+        next_event: Event,
+        dynamics: &mut Option<&mut Dynamics>,
+    ) {
         //! Update the run for the next iteration, according to the `next_event`
         //! sampled from Gillespie algorithm. This updates also the `dynamics`
         //! if present.
         if let AdvanceRun::Init = next_event.kind {
             panic!("Init state can only be used to initialize simulation!")
         }
-        self.state.system.update(next_event);
+        self.state.system.update(next_event, &mut self.rng);
         if let Some(dynamics) = dynamics {
             for d in dynamics.iter_mut() {
                 // updates all dynamics according to the new state
@@ -333,78 +376,21 @@ impl Run<Started> {
 }
 
 impl Run<Ended> {
-    pub fn save(
-        self,
-        abspath: &Path,
-        sample: &Option<&SequencingData>,
-    ) -> anyhow::Result<Self> {
-        //! Save the run the dynamics (updated for each iter) if present and the
-        //! other quantities, computed at the end of the run such as the mean,
-        //! frequency.
-        //!
-        //! Do not save the full ecDNA distribution when ABC.
-
-        // 1. dynamics
-        let filename = self.filename();
-        if let Some(dynamics) = &self.state.dynamics {
-            assert!(sample.is_none(), "Cannot have patient and dynamics");
-            for d in dynamics.iter() {
-                let mut file2path =
-                    abspath.join(d.get_name()).join(filename.clone());
-                file2path.set_extension("csv");
-                d.save(&file2path).unwrap();
-            }
-        }
-
-        if let Some(sample) = sample {
-            let results = if let Some(true) = sample.is_undersampled() {
-                let nb_samples = 100usize;
-                let mut results = ABCResults::with_capacity(nb_samples);
-                // create multiple subsamples of the same run and save the results
-                // in the same file `path`. It's ok as long as cells is not too
-                // big because deep copies of the ecDNA distribution for each
-                // subsample
-                let mut rng = SmallRng::from_entropy();
-                for i in 0usize..nb_samples {
-                    // returns new ecDNA distribution with cells NPlus cells (clone)
-                    let sampled = self.clone().undersample_ecdna(
-                        &sample.sample_size().unwrap(), // safe to unwrap because of the if let
-                        &mut rng,
-                        i,
-                    );
-                    results.test(&sampled, sample);
-                }
-                results
-            } else {
-                let mut results = ABCResults::with_capacity(1usize);
-                results.test(&self, sample);
-                results
-            };
-            results.save(abspath, Some(sample.get_tumour_size()))?;
-        } else {
-            // todo implement subsampling for dynamics
-            // if self.undersample() {
-            //     let mut rng = SmallRng::from_entropy();
-            //     let abspath_sampling = abspath.join("samples");
-            //     let data = self.undersample_ecdna(cells, &mut rng);
-            //     data.save_data(&abspath_sampling, run_idx, true);
-            // }
-            self.state
-                .data
-                .save(abspath, &PathBuf::from(format!("{}", self.idx)));
-        }
-        Ok(self)
-    }
-
     pub fn undersample_ecdna(
         self,
         nb_cells: &NbIndividuals,
-        rng: &mut SmallRng,
         idx: usize,
     ) -> Self {
         //! Returns a copy of the run with subsampled ecDNA distribution
-        let data =
-            self.state.data.ecdna.undersample_data(nb_cells, rng).unwrap();
+        let data = self
+            .state
+            .data
+            .ecdna
+            .undersample_data(
+                nb_cells,
+                &mut Pcg64Mcg::seed_from_u64(*self.seed.get_seed()),
+            )
+            .unwrap();
 
         assert_eq!(
             &data.ecdna.nb_cells(),
@@ -421,22 +407,17 @@ impl Run<Ended> {
                 gillespie_time: self.state.gillespie_time,
                 last_iter: self.state.last_iter,
                 sampled_run: Some(self.idx),
-                dynamics: self.state.dynamics,
             },
+            seed: self.seed,
+            rng: self.rng,
         }
     }
 
-    pub fn continue_simulation(
-        self,
-        until: &NbIndividuals,
-        max_iter: usize,
-    ) -> Run<Ended> {
-        //! Continue to simulate tumour growth unitl `until` cells are reached.
-        let run: Run<Started> = self.into();
-        run.simulate(None, until, max_iter)
+    pub fn save_ecdna(&self, path: &Path) {
+        self.state.data.save(path, &PathBuf::from(format!("{}", self.idx)));
     }
 
-    pub fn get_nb_cells(&self) -> NbIndividuals {
+    pub fn nb_cells(&self) -> NbIndividuals {
         self.state.data.ecdna.nb_cells()
     }
 
@@ -469,16 +450,17 @@ impl Run<Ended> {
         self.bd_process.get_rates()
     }
 
-    fn filename(&self) -> PathBuf {
+    pub fn filename(&self) -> PathBuf {
         //! File path for the current run (used to save data)
         PathBuf::from(self.idx.to_string())
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialOrd, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Range<T> {
     min: T,
     max: T,
+    rng: Pcg64Mcg,
 }
 
 impl<T> Default for Range<T>
@@ -486,7 +468,11 @@ where
     T: num_traits::Zero + num_traits::One,
 {
     fn default() -> Self {
-        Range { min: T::zero(), max: T::one() }
+        Range {
+            min: T::zero(),
+            max: T::one(),
+            rng: Pcg64Mcg::seed_from_u64(*Seed::default().get_seed()),
+        }
     }
 }
 
@@ -502,17 +488,23 @@ where
         + rand_distr::uniform::SampleUniform
         + std::cmp::PartialOrd,
 {
-    pub fn new(min: T, max: T) -> Range<T> {
+    pub fn new(min: T, max: T, seed: Seed) -> Range<T> {
         if min >= max {
             panic!("Found min {} greater than max {}", min, max)
         }
-        Range { min, max }
+        Range { min, max, rng: Pcg64Mcg::seed_from_u64(*seed.get_seed()) }
     }
 
-    pub fn sample_uniformly(&self, rng: &mut SmallRng) -> T {
-        Uniform::new(&self.min, &self.max).sample(rng)
+    pub fn sample_uniformly(&mut self) -> T {
+        Uniform::new(&self.min, &self.max).sample(&mut self.rng)
     }
 }
+
+// impl PartialEq for Range {
+//     fn eq(&self, other: &Self) -> bool {
+//         self.isbn == other.isbn
+//     }
+// }
 
 #[derive(Debug, Clone)]
 pub struct InitialState {
@@ -521,12 +513,11 @@ pub struct InitialState {
 }
 
 impl InitialState {
-    pub fn random(range: &Range<u16>) -> Self {
-        let mut rng = SmallRng::from_entropy();
+    pub fn random(mut range: Range<u16>) -> Self {
         InitialState {
             init_iter: 0usize,
             init_distribution: EcDNADistribution::from(vec![
-                range.sample_uniformly(&mut rng)
+                range.sample_uniformly()
             ]),
         }
     }
@@ -558,7 +549,7 @@ struct System {
 }
 
 impl System {
-    fn update(&mut self, event: Event) {
+    fn update(&mut self, event: Event, rng: &mut Pcg64Mcg) {
         //! Update the state of the system based on event sampled from Gillespie
         match event.kind {
             AdvanceRun::Proliferate1 => {
@@ -566,7 +557,7 @@ impl System {
                 // next and update the ecdna distribution as well.
                 // Match the cell that has been generated by the
                 // proliferation of the nplus cell
-                match self.ecdna_distr.proliferate_nplus() {
+                match self.ecdna_distr.proliferate_nplus(rng) {
                     // Updates of nplus cells is done by ecdna_distr
                     Cell::NPlus => {}
                     Cell::NMinus => {
@@ -579,7 +570,7 @@ impl System {
             }
             // Updates of nplus cells is done by ecdna_distr
             AdvanceRun::Die1 => {
-                self.ecdna_distr.kill_nplus();
+                self.ecdna_distr.kill_nplus(rng);
             }
             AdvanceRun::Die2 => {
                 self.nminus -= 1;
@@ -634,20 +625,20 @@ impl EcDNADistributionNPlus {
         self.0.len() as NbIndividuals
     }
 
-    fn pick_nplus_cell(&self) -> usize {
+    fn pick_nplus_cell(&self, rng: &mut Pcg64Mcg) -> usize {
         //! Pick a nplus cell at random
         assert!(!self.is_empty());
-        thread_rng().gen_range(0..self.get_nplus_cells() as usize)
+        rng.gen_range(0..self.get_nplus_cells() as usize)
     }
 
-    fn kill_nplus(&mut self) {
+    fn kill_nplus(&mut self, rng: &mut Pcg64Mcg) {
         //! A `NPlus` dies and thus we remove its ecdna contribution from the
         //! state vector `ecdna_distribution`. Remember that we assume
         //! the order is not important for `ecdna_distribution`,
         //! since we only need to compute the mean and the variance from this
         //! vector.
         // generate randomly a `NPlus` cell that will die next
-        let idx: usize = self.pick_nplus_cell();
+        let idx: usize = self.pick_nplus_cell(rng);
 
         // Update the distribution of copies of ecdna in the nplus population.
         // Note that `die_and_update_distribution` will returns the next cell
@@ -655,15 +646,15 @@ impl EcDNADistributionNPlus {
         self.0.swap_remove(idx);
     }
 
-    fn proliferate_nplus(&mut self) -> Cell {
+    fn proliferate_nplus(&mut self, rng: &mut Pcg64Mcg) -> Cell {
         //! Update the distribution of ec_dna per cell and flag if a new
         //! `NMinus` cell appeared after division. This happened if
         //! `daughter1` or `daughter2` is 0. Uneven segregation means that one
         //! `NMinus` cell is born, and the other daughter cell got all the
         //! available ec_dna.
-        let idx = self.pick_nplus_cell();
+        let idx = self.pick_nplus_cell(rng);
         let (daughter1, daughter2, uneven_segregation) =
-            self.dna_segregation(idx);
+            self.dna_segregation(idx, rng);
 
         if uneven_segregation {
             self.0[idx] = daughter1 + daughter2; // n + 0 = n = 0 + n
@@ -675,7 +666,11 @@ impl EcDNADistributionNPlus {
         }
     }
 
-    fn dna_segregation(&self, idx: usize) -> (DNACopy, DNACopy, bool) {
+    fn dna_segregation(
+        &self,
+        idx: usize,
+        rng: &mut Pcg64Mcg,
+    ) -> (DNACopy, DNACopy, bool) {
         //! Simulate the proliferation of one `NPlus` cell and returns whether a
         //! uneven segregation occured (i.e. one daughter cell inherited all
         //! ecDNA material from mother cells). When a `idx` `NPlus` cell
@@ -697,8 +692,7 @@ impl EcDNADistributionNPlus {
 
         // draw the ec_dna that will be given to the daughter cells
         let bin = Binomial::new(available_dna as u64, 0.5).unwrap();
-        let d_1: DNACopy =
-            bin.sample(&mut rand::thread_rng()).try_into().unwrap();
+        let d_1: DNACopy = bin.sample(rng).try_into().unwrap();
         let d_2: DNACopy = available_dna - d_1;
         assert_ne!(d_1 + d_2, 0);
         assert!(
@@ -773,301 +767,368 @@ pub enum EndRun {
     MaxItersReached,
 }
 
-#[cfg(test)]
-extern crate quickcheck;
+#[enum_dispatch]
+/// When taking a subsample of the whole population, specify how to continue the
+/// cell growth: either from a sample or from the whole tumour population.
+pub trait ContinueGrowth {
+    fn restart_growth(
+        &self,
+        run: Run<Ended>,
+        sample_size: &NbIndividuals,
+    ) -> anyhow::Result<Run<Started>>;
+}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Specify how to growth the population after a subsample has been taken (biospy
+/// or cell culture).
+#[enum_dispatch(ContinueGrowth)]
+#[derive(Debug)]
+pub enum Growth {
+    /// Cell culture: growth restart from the subsample of the whole population
+    /// since the subsample is a new cell culture.
+    CellCulture,
+    /// Patient tumour: growth continues from the whole population since the
+    /// subsample is just a biopsy.
+    PatientStudy,
+}
 
-    #[test]
-    fn ecdna_distribution_is_empty_with_nminus_cells() {
-        let p = Parameters { init_copies: 0u16, ..Default::default() };
-        let ecdna = EcDNADistributionNPlus::new(&p);
-        assert!(ecdna.is_empty());
-    }
+#[derive(Debug, Default)]
+pub struct CellCulture;
 
-    #[test]
-    fn ecdna_distribution_getter_when_empty() {
-        let p = Parameters { init_copies: 0u16, ..Default::default() };
-        let ecdna = EcDNADistributionNPlus::new(&p);
-        assert_eq!(ecdna.get_nplus_cells(), 0u64);
-        assert!(ecdna.is_empty());
-    }
-
-    #[test]
-    fn ecdna_distribution_from_default() {
-        let p = Parameters::default();
-        let ecdna = EcDNADistributionNPlus::new(&p);
-        assert_eq!(ecdna.get_nplus_cells(), 1u64);
-        assert!(!ecdna.is_empty());
-    }
-
-    #[test]
-    fn ecdna_distribution_from() {
-        let p = Parameters { init_copies: 1u16, ..Default::default() };
-        let ecdna = EcDNADistributionNPlus::new(&p);
-        assert_eq!(ecdna.get_nplus_cells(), 1);
-        assert!(!ecdna.is_empty());
-    }
-
-    #[test]
-    #[should_panic]
-    fn ecdna_distribution_kill_nplus_empty() {
-        let p = Parameters { init_copies: 0u16, ..Default::default() };
-        let mut ecdna = EcDNADistributionNPlus::new(&p);
-        ecdna.kill_nplus();
-    }
-
-    #[test]
-    fn ecdna_distribution_kill_nplus_one_cell() {
-        let p = Parameters { init_copies: 1u16, ..Default::default() };
-        let mut ecdna = EcDNADistributionNPlus::new(&p);
-        ecdna.kill_nplus();
-        assert!(ecdna.is_empty());
-        assert_eq!(ecdna.get_nplus_cells(), 0);
-    }
-
-    #[test]
-    fn ecdna_distribution_kill_nplus() {
-        let p = Parameters { init_copies: 1u16, ..Default::default() };
-        let mut ecdna = EcDNADistributionNPlus::new(&p);
-        ecdna.kill_nplus();
-        assert!(ecdna.is_empty());
-        assert_eq!(ecdna.get_nplus_cells(), 0);
-    }
-
-    #[test]
-    #[should_panic]
-    fn ecdna_distribution_proliferate_nplus_empty() {
-        let p = Parameters { init_copies: 0u16, ..Default::default() };
-        let mut ecdna = EcDNADistributionNPlus::new(&p);
-        ecdna.proliferate_nplus();
-    }
-
-    #[test]
-    fn ecdna_distribution_proliferate() {
-        let p = Parameters { init_copies: 1u16, ..Default::default() };
-        let mut ecdna = EcDNADistributionNPlus::new(&p);
-        ecdna.proliferate_nplus();
-        assert!(ecdna.get_nplus_cells() > 0);
-    }
-
-    #[test]
-    #[should_panic]
-    fn ecdna_distribution_dna_segregation_overflow() {
-        let p = Parameters { init_copies: u16::MAX, ..Default::default() };
-        let ecdna = EcDNADistributionNPlus::new(&p);
-        ecdna.dna_segregation(0usize);
-    }
-
-    #[test]
-    fn ecdna_distribution_dna_segregation() {
-        let init_copies = 2u16;
-        let p = Parameters { init_copies, ..Default::default() };
-        let ecdna = EcDNADistributionNPlus::new(&p);
-        let (ecdna1, ecdna2, uneven) = ecdna.dna_segregation(0usize);
-        assert_eq!(
-            ecdna1 + ecdna2,
-            2 * init_copies,
-            "Sum does not match {}",
-            ecdna1 + ecdna2
-        );
-        if ecdna1 * ecdna2 == 0 {
-            assert!(uneven);
-        } else {
-            assert!(!uneven);
-        }
-    }
-
-    #[test]
-    #[should_panic]
-    fn compute_mean_wrong_ntot() {
-        let p = Parameters { init_copies: 1u16, ..Default::default() };
-        EcDNADistributionNPlus::new(&p).compute_mean(&0);
-    }
-
-    #[test]
-    fn compute_mean_empty() {
-        let p = Parameters { init_copies: 0u16, ..Default::default() };
-        assert!(
-            (EcDNADistributionNPlus::new(&p).compute_mean(&1) - 0f32).abs()
-                < f32::EPSILON
-        );
-    }
-
-    #[test]
-    fn compute_mean_empty_no_cells() {
-        let p = Parameters { init_copies: 0u16, ..Default::default() };
-        assert!(EcDNADistributionNPlus::new(&p).compute_mean(&0).is_nan());
-    }
-
-    #[test]
-    #[should_panic]
-    fn compute_mean_no_cells() {
-        let p = Parameters { init_copies: 1u16, ..Default::default() };
-        assert!(EcDNADistributionNPlus::new(&p).compute_mean(&0).is_nan());
-    }
-
-    #[test]
-    fn compute_mean_with_1s() {
-        let p = Parameters { init_copies: 1u16, ..Default::default() };
-        assert!(
-            (EcDNADistributionNPlus::new(&p).compute_mean(&1) - 1f32).abs()
-                < f32::EPSILON
-        );
-    }
-
-    #[test]
-    fn compute_mean_with_default() {
-        let p = Parameters { init_copies: 1u16, ..Default::default() };
-        assert!(
-            (EcDNADistributionNPlus::new(&p).compute_mean(&1) - 1f32).abs()
-                < f32::EPSILON
-        );
-    }
-
-    #[test]
-    fn compute_mean_with_1s_and_nminus() {
-        let p = Parameters { init_copies: 1u16, ..Default::default() };
-        assert!(
-            (EcDNADistributionNPlus::new(&p).compute_mean(&2) - 0.5f32).abs()
-                < f32::EPSILON
-        );
-    }
-
-    #[test]
-    fn compute_mean_with_no_nminus() {
-        let p = Parameters { init_copies: 2u16, ..Default::default() };
-        let mut distr = EcDNADistributionNPlus::new(&p);
-        distr.0.push(4);
-        assert!((distr.compute_mean(&2) - 3f32).abs() < f32::EPSILON)
-    }
-
-    #[test]
-    fn compute_mean_with_nminus() {
-        let p = Parameters { init_copies: 1u16, ..Default::default() };
-        let mut distr = EcDNADistributionNPlus::new(&p);
-        distr.0.push(2);
-        assert!((distr.compute_mean(&3) - 1f32).abs() < f32::EPSILON);
-    }
-
-    #[test]
-    fn compute_mean_overflow() {
-        let p = Parameters { init_copies: 1u16, ..Default::default() };
-        let mut distr = EcDNADistributionNPlus::new(&p);
-        distr.0.push(u16::MAX);
-        assert!(distr.get_nplus_cells() == 2u64);
-        let exp = ((1u64 + (u16::MAX as u64)) as f32) / 2f32;
-        assert!((distr.compute_mean(&2) - exp).abs() < f32::EPSILON);
-    }
-
-    #[test]
-    fn compute_mean_overflow_nminus() {
-        let p = Parameters { init_copies: 1u16, ..Default::default() };
-        let mut distr = EcDNADistributionNPlus::new(&p);
-        distr.0.push(u16::MAX);
-        assert!(distr.get_nplus_cells() == 2u64);
-        let exp = ((1u64 + (u16::MAX as u64)) as f32) / 3f32;
-        assert!((distr.compute_mean(&3) - exp).abs() < f32::EPSILON);
-    }
-
-    #[quickcheck]
-    fn from_ended_to_started_idx(
-        idx: usize,
-        gillespie_time: f32,
-        last_iter: usize,
-    ) -> bool {
-        let data = Data {
-            ecdna: EcDNADistribution::from(HashMap::from([
-                (1u16, 2u64),
-                (0u16, 3u64),
-                (2u16, 1u64),
-            ])),
-            mean: Mean(0.66f32),
-            frequency: Frequency(0.5f32),
-            entropy: Entropy(0.2f32),
-        };
-        let bd_process = BirthDeathProcess::default();
-
-        let run: Run<Started> = Run {
-            idx,
-            bd_process,
-            state: Ended {
-                data,
-                gillespie_time,
-                last_iter,
-                sampled_run: None,
-            },
-        }
-        .into();
-        run.idx == idx
-    }
-
-    #[quickcheck]
-    fn from_ended_to_started_time(
-        idx: usize,
-        gillespie_time: f32,
-        last_iter: usize,
-    ) -> bool {
-        let data = Data {
-            ecdna: EcDNADistribution::from(HashMap::from([
-                (1u16, 2u64),
-                (0u16, 3u64),
-                (2u16, 1u64),
-            ])),
-            mean: Mean(0.66f32),
-            frequency: Frequency(0.5f32),
-            entropy: Entropy(0.2f32),
-        };
-        let bd_process = BirthDeathProcess::default();
-
-        let run: Run<Started> = Run {
-            idx,
-            bd_process,
-            state: Ended {
-                data,
-                gillespie_time,
-                last_iter,
-                sampled_run: None,
-            },
-        }
-        .into();
-        run.state.system.event.time == gillespie_time
-            || gillespie_time.is_nan()
-    }
-
-    #[quickcheck]
-    fn from_ended_to_started_iter(
-        idx: usize,
-        gillespie_time: f32,
-        last_iter: usize,
-    ) -> bool {
-        let data = Data {
-            ecdna: EcDNADistribution::from(HashMap::from([
-                (1u16, 2u64),
-                (0u16, 3u64),
-                (2u16, 1u64),
-            ])),
-            summary: EcDNASummary {
-                mean: Mean(0.66f32),
-                frequency: Frequency(0.5f32),
-                entropy: Entropy(0.2f32),
-            },
-        };
-        let bd_process = BirthDeathProcess::default();
-
-        let run: Run<Started> = Run {
-            idx,
-            bd_process,
-            state: Ended {
-                data,
-                gillespie_time,
-                last_iter,
-                sampled_run: None,
-            },
-        }
-        .into();
-        run.state.init_iter == last_iter
+impl CellCulture {
+    pub fn new() -> Self {
+        CellCulture
     }
 }
+
+impl ContinueGrowth for CellCulture {
+    fn restart_growth(
+        &self,
+        run: Run<Ended>,
+        sample_size: &NbIndividuals,
+    ) -> anyhow::Result<Run<Started>> {
+        //! In cell culture experiments, growth restart from subsample of the
+        //! whole population.
+        ensure!(&run.nb_cells() == sample_size);
+        Ok(run.into())
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct PatientStudy;
+
+impl PatientStudy {
+    pub fn new() -> Self {
+        PatientStudy
+    }
+}
+
+impl ContinueGrowth for PatientStudy {
+    fn restart_growth(
+        &self,
+        run: Run<Ended>,
+        sample_size: &NbIndividuals,
+    ) -> anyhow::Result<Run<Started>> {
+        //! In patient studies, growth restart from subsample of the whole population.
+        ensure!(&run.nb_cells() > sample_size);
+        Ok(run.into())
+    }
+}
+
+// #[cfg(test)]
+// extern crate quickcheck;
+//
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//
+//     #[test]
+//     fn ecdna_distribution_is_empty_with_nminus_cells() {
+//         let p = Parameters { init_copies: 0u16, ..Default::default() };
+//         let ecdna = EcDNADistributionNPlus::new(&p);
+//         assert!(ecdna.is_empty());
+//     }
+//
+//     #[test]
+//     fn ecdna_distribution_getter_when_empty() {
+//         let p = Parameters { init_copies: 0u16, ..Default::default() };
+//         let ecdna = EcDNADistributionNPlus::new(&p);
+//         assert_eq!(ecdna.get_nplus_cells(), 0u64);
+//         assert!(ecdna.is_empty());
+//     }
+//
+//     #[test]
+//     fn ecdna_distribution_from_default() {
+//         let p = Parameters::default();
+//         let ecdna = EcDNADistributionNPlus::new(&p);
+//         assert_eq!(ecdna.get_nplus_cells(), 1u64);
+//         assert!(!ecdna.is_empty());
+//     }
+//
+//     #[test]
+//     fn ecdna_distribution_from() {
+//         let p = Parameters { init_copies: 1u16, ..Default::default() };
+//         let ecdna = EcDNADistributionNPlus::new(&p);
+//         assert_eq!(ecdna.get_nplus_cells(), 1);
+//         assert!(!ecdna.is_empty());
+//     }
+//
+//     #[test]
+//     #[should_panic]
+//     fn ecdna_distribution_kill_nplus_empty() {
+//         let p = Parameters { init_copies: 0u16, ..Default::default() };
+//         let mut ecdna = EcDNADistributionNPlus::new(&p);
+//         ecdna.kill_nplus();
+//     }
+//
+//     #[test]
+//     fn ecdna_distribution_kill_nplus_one_cell() {
+//         let p = Parameters { init_copies: 1u16, ..Default::default() };
+//         let mut ecdna = EcDNADistributionNPlus::new(&p);
+//         ecdna.kill_nplus();
+//         assert!(ecdna.is_empty());
+//         assert_eq!(ecdna.get_nplus_cells(), 0);
+//     }
+//
+//     #[test]
+//     fn ecdna_distribution_kill_nplus() {
+//         let p = Parameters { init_copies: 1u16, ..Default::default() };
+//         let mut ecdna = EcDNADistributionNPlus::new(&p);
+//         ecdna.kill_nplus();
+//         assert!(ecdna.is_empty());
+//         assert_eq!(ecdna.get_nplus_cells(), 0);
+//     }
+//
+//     #[test]
+//     #[should_panic]
+//     fn ecdna_distribution_proliferate_nplus_empty() {
+//         let p = Parameters { init_copies: 0u16, ..Default::default() };
+//         let mut ecdna = EcDNADistributionNPlus::new(&p);
+//         ecdna.proliferate_nplus();
+//     }
+//
+//     #[test]
+//     fn ecdna_distribution_proliferate() {
+//         let p = Parameters { init_copies: 1u16, ..Default::default() };
+//         let mut ecdna = EcDNADistributionNPlus::new(&p);
+//         ecdna.proliferate_nplus();
+//         assert!(ecdna.get_nplus_cells() > 0);
+//     }
+//
+//     #[test]
+//     #[should_panic]
+//     fn ecdna_distribution_dna_segregation_overflow() {
+//         let p = Parameters { init_copies: u16::MAX, ..Default::default() };
+//         let ecdna = EcDNADistributionNPlus::new(&p);
+//         ecdna.dna_segregation(0usize);
+//     }
+//
+//     #[test]
+//     fn ecdna_distribution_dna_segregation() {
+//         let init_copies = 2u16;
+//         let p = Parameters { init_copies, ..Default::default() };
+//         let ecdna = EcDNADistributionNPlus::new(&p);
+//         let (ecdna1, ecdna2, uneven) = ecdna.dna_segregation(0usize);
+//         assert_eq!(
+//             ecdna1 + ecdna2,
+//             2 * init_copies,
+//             "Sum does not match {}",
+//             ecdna1 + ecdna2
+//         );
+//         if ecdna1 * ecdna2 == 0 {
+//             assert!(uneven);
+//         } else {
+//             assert!(!uneven);
+//         }
+//     }
+//
+//     #[test]
+//     #[should_panic]
+//     fn compute_mean_wrong_ntot() {
+//         let p = Parameters { init_copies: 1u16, ..Default::default() };
+//         EcDNADistributionNPlus::new(&p).compute_mean(&0);
+//     }
+//
+//     #[test]
+//     fn compute_mean_empty() {
+//         let p = Parameters { init_copies: 0u16, ..Default::default() };
+//         assert!(
+//             (EcDNADistributionNPlus::new(&p).compute_mean(&1) - 0f32).abs()
+//                 < f32::EPSILON
+//         );
+//     }
+//
+//     #[test]
+//     fn compute_mean_empty_no_cells() {
+//         let p = Parameters { init_copies: 0u16, ..Default::default() };
+//         assert!(EcDNADistributionNPlus::new(&p).compute_mean(&0).is_nan());
+//     }
+//
+//     #[test]
+//     #[should_panic]
+//     fn compute_mean_no_cells() {
+//         let p = Parameters { init_copies: 1u16, ..Default::default() };
+//         assert!(EcDNADistributionNPlus::new(&p).compute_mean(&0).is_nan());
+//     }
+//
+//     #[test]
+//     fn compute_mean_with_1s() {
+//         let p = Parameters { init_copies: 1u16, ..Default::default() };
+//         assert!(
+//             (EcDNADistributionNPlus::new(&p).compute_mean(&1) - 1f32).abs()
+//                 < f32::EPSILON
+//         );
+//     }
+//
+//     #[test]
+//     fn compute_mean_with_default() {
+//         let p = Parameters { init_copies: 1u16, ..Default::default() };
+//         assert!(
+//             (EcDNADistributionNPlus::new(&p).compute_mean(&1) - 1f32).abs()
+//                 < f32::EPSILON
+//         );
+//     }
+//
+//     #[test]
+//     fn compute_mean_with_1s_and_nminus() {
+//         let p = Parameters { init_copies: 1u16, ..Default::default() };
+//         assert!(
+//             (EcDNADistributionNPlus::new(&p).compute_mean(&2) - 0.5f32).abs()
+//                 < f32::EPSILON
+//         );
+//     }
+//
+//     #[test]
+//     fn compute_mean_with_no_nminus() {
+//         let p = Parameters { init_copies: 2u16, ..Default::default() };
+//         let mut distr = EcDNADistributionNPlus::new(&p);
+//         distr.0.push(4);
+//         assert!((distr.compute_mean(&2) - 3f32).abs() < f32::EPSILON)
+//     }
+//
+//     #[test]
+//     fn compute_mean_with_nminus() {
+//         let p = Parameters { init_copies: 1u16, ..Default::default() };
+//         let mut distr = EcDNADistributionNPlus::new(&p);
+//         distr.0.push(2);
+//         assert!((distr.compute_mean(&3) - 1f32).abs() < f32::EPSILON);
+//     }
+//
+//     #[test]
+//     fn compute_mean_overflow() {
+//         let p = Parameters { init_copies: 1u16, ..Default::default() };
+//         let mut distr = EcDNADistributionNPlus::new(&p);
+//         distr.0.push(u16::MAX);
+//         assert!(distr.get_nplus_cells() == 2u64);
+//         let exp = ((1u64 + (u16::MAX as u64)) as f32) / 2f32;
+//         assert!((distr.compute_mean(&2) - exp).abs() < f32::EPSILON);
+//     }
+//
+//     #[test]
+//     fn compute_mean_overflow_nminus() {
+//         let p = Parameters { init_copies: 1u16, ..Default::default() };
+//         let mut distr = EcDNADistributionNPlus::new(&p);
+//         distr.0.push(u16::MAX);
+//         assert!(distr.get_nplus_cells() == 2u64);
+//         let exp = ((1u64 + (u16::MAX as u64)) as f32) / 3f32;
+//         assert!((distr.compute_mean(&3) - exp).abs() < f32::EPSILON);
+//     }
+//
+//     #[quickcheck]
+//     fn from_ended_to_started_idx(
+//         idx: usize,
+//         gillespie_time: f32,
+//         last_iter: usize,
+//     ) -> bool {
+//         let data = Data {
+//             ecdna: EcDNADistribution::from(HashMap::from([
+//                 (1u16, 2u64),
+//                 (0u16, 3u64),
+//                 (2u16, 1u64),
+//             ])),
+//             mean: Mean(0.66f32),
+//             frequency: Frequency(0.5f32),
+//             entropy: Entropy(0.2f32),
+//         };
+//         let bd_process = BirthDeathProcess::default();
+//
+//         let run: Run<Started> = Run {
+//             idx,
+//             bd_process,
+//             state: Ended {
+//                 data,
+//                 gillespie_time,
+//                 last_iter,
+//                 sampled_run: None,
+//             },
+//         }
+//         .into();
+//         run.idx == idx
+//     }
+//
+//     #[quickcheck]
+//     fn from_ended_to_started_time(
+//         idx: usize,
+//         gillespie_time: f32,
+//         last_iter: usize,
+//     ) -> bool {
+//         let data = Data {
+//             ecdna: EcDNADistribution::from(HashMap::from([
+//                 (1u16, 2u64),
+//                 (0u16, 3u64),
+//                 (2u16, 1u64),
+//             ])),
+//             mean: Mean(0.66f32),
+//             frequency: Frequency(0.5f32),
+//             entropy: Entropy(0.2f32),
+//         };
+//         let bd_process = BirthDeathProcess::default();
+//
+//         let run: Run<Started> = Run {
+//             idx,
+//             bd_process,
+//             state: Ended {
+//                 data,
+//                 gillespie_time,
+//                 last_iter,
+//                 sampled_run: None,
+//             },
+//         }
+//         .into();
+//         run.state.system.event.time == gillespie_time
+//             || gillespie_time.is_nan()
+//     }
+//
+//     #[quickcheck]
+//     fn from_ended_to_started_iter(
+//         idx: usize,
+//         gillespie_time: f32,
+//         last_iter: usize,
+//     ) -> bool {
+//         let data = Data {
+//             ecdna: EcDNADistribution::from(HashMap::from([
+//                 (1u16, 2u64),
+//                 (0u16, 3u64),
+//                 (2u16, 1u64),
+//             ])),
+//             summary: EcDNASummary {
+//                 mean: Mean(0.66f32),
+//                 frequency: Frequency(0.5f32),
+//                 entropy: Entropy(0.2f32),
+//             },
+//         };
+//         let bd_process = BirthDeathProcess::default();
+//
+//         let run: Run<Started> = Run {
+//             idx,
+//             bd_process,
+//             state: Ended {
+//                 data,
+//                 gillespie_time,
+//                 last_iter,
+//                 sampled_run: None,
+//             },
+//         }
+//         .into();
+//         run.state.init_iter == last_iter
+//     }
+// }

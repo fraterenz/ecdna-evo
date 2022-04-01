@@ -23,6 +23,7 @@ class App:
     nminus: List[Path]
     mean: List[Path]
     variance: List[Path]
+    time: List[Path]
     ecdna: List[Path]
     path2dir: Path
     verbosity: bool
@@ -50,7 +51,10 @@ class App:
             path2save = commons.create_path2save(self.path2dir, Path("nminus.pdf"))
             loaded = []
             for minus in self.nminus:
-                loaded.append(commons.load_unformatted_csv(minus))
+                df = commons.load_unformatted_csv(minus)
+                loaded.append(df)
+                if self.verbosity > 0:
+                    print(df.head())
             self.plot(
                 loaded,
                 path2save,
@@ -61,6 +65,15 @@ class App:
                 fontsize=18,
             )
             found_nminus = True
+        if self.time:
+            if found_nplus:
+                pass
+            elif found_nminus:
+                pass
+            else:
+                raise ValueError(
+                    "Cannot plot the gillepsie time without nplus or nminus"
+                )
         if self.mean:
             loaded = []
             path2save = commons.create_path2save(self.path2dir, Path("mean.pdf"))
@@ -262,6 +275,17 @@ def build_app() -> App:
     )
 
     parser.add_argument(
+        "--time",
+        metavar="FILE",
+        action="extend",
+        nargs="*",
+        dest="time",
+        required=False,
+        type=str,
+        help="Optional path list to gillespie time dynamics time.tar.gz",
+    )
+
+    parser.add_argument(
         "--ecdna",
         metavar="FILE",
         action="extend",
@@ -299,6 +323,7 @@ def build_app() -> App:
         [Path(path) for path in args["nminus"]] if args["nminus"] else [],
         [Path(path) for path in args["mean"]] if args["mean"] else [],
         [Path(path) for path in args["variance"]] if args["variance"] else [],
+        [Path(path) for path in args["time"]] if args["time"] else [],
         [Path(path) for path in args["ecdna"]] if args["ecdna"] else [],
         path2dir,
         args["verbosity"],

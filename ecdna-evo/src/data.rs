@@ -2,12 +2,11 @@
 //! the frequency of cells w/ ecDNA etc...
 use crate::run::{Ended, Run};
 use crate::{DNACopy, NbIndividuals};
-use anyhow::{anyhow, bail, ensure, Context};
+use anyhow::{bail, ensure, Context};
 use enum_dispatch::enum_dispatch;
 use rand::distributions::WeightedIndex;
-use rand::rngs::SmallRng;
-use rand::SeedableRng;
 use rand_distr::Distribution;
+use rand_pcg::Pcg64Mcg;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
@@ -15,7 +14,7 @@ use std::fs;
 use std::fs::read_to_string;
 use std::io::{BufWriter, Write};
 use std::ops::Deref;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// The main trait for the `Measurement` which defines how to compare the `Run`
 /// against the `Measurement`. Types that are `Measurement` must implement
@@ -118,7 +117,7 @@ impl Distance for EcDNADistribution {
         //! cells
         // do not compute the KS statistics with less than 10 datapoints
         let too_few_cells =
-            self.nb_cells() <= 10u64 || run.get_nb_cells() <= 10u64;
+            self.nb_cells() <= 10u64 || run.nb_cells() <= 10u64;
         if too_few_cells {
             f32::INFINITY
         } else {
@@ -296,29 +295,6 @@ impl Data {
             .entropy
             .save(&entropy)
             .expect("Cannot save the ecDNA distribution entropy");
-    }
-
-    fn undersample_ecdna(
-        self,
-        nb_cells: &NbIndividuals,
-        rng: &mut SmallRng,
-    ) -> Self {
-        //! Returns a copy of the run with subsampled ecDNA distribution
-        let data = self
-            .ecdna
-            .undersample_data(nb_cells, rng)
-            .with_context(|| {
-                "Cannot undersample_data from empty ecDNA distribution"
-            })
-            .unwrap();
-
-        assert_eq!(
-                &data.ecdna.nb_cells(),
-                nb_cells,
-                "Wrong undersampling of the ecDNA distirbution: {} cells expected after sampling, found {}, {:#?}", nb_cells, data.ecdna.nb_cells(), data.ecdna
-            );
-
-        data
     }
 }
 
@@ -581,7 +557,7 @@ impl EcDNADistribution {
     pub fn undersample_data(
         self,
         nb_cells: &NbIndividuals,
-        rng: &mut SmallRng,
+        rng: &mut Pcg64Mcg,
     ) -> anyhow::Result<Data> {
         let ecdna = self.undersample(nb_cells, rng);
         Data::try_from(&ecdna)
@@ -590,7 +566,7 @@ impl EcDNADistribution {
     fn undersample(
         self,
         nb_cells: &NbIndividuals,
-        rng: &mut SmallRng,
+        rng: &mut Pcg64Mcg,
     ) -> EcDNADistribution {
         //! Undersample the ecDNA distribution taking roughly sample the proportion of ecDNA copies in cells found in the tumour
         assert!(
@@ -764,7 +740,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn ecdna_distribution_undersampling_empty() {
-        let mut rng = SmallRng::from_entropy();
+        let mut rng = Pcg64Mcg::seed_from_u64(26u64);
         let ecdna = EcDNADistribution::from(vec![]);
         ecdna.undersample(&3u64, &mut rng);
     }
@@ -772,7 +748,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn ecdna_distribution_undersampling_more_cells_than_ecdna_distribution() {
-        let mut rng = SmallRng::from_entropy();
+        let mut rng = Pcg64Mcg::seed_from_u64(26u64);
         let ecdna = EcDNADistribution::from(vec![10u16]);
         ecdna.undersample(&3u64, &mut rng);
     }
@@ -807,18 +783,21 @@ mod tests {
     #[quickcheck]
     fn ecdna_distribution_undersampling_check_cells_tot(
         valid_ecdna: ValidEcDNADistributionFixture,
+        seed: u64,
     ) -> bool {
-        let mut rng = SmallRng::from_entropy();
+        let mut rng = Pcg64Mcg::seed_from_u64(seed);
         valid_ecdna.0.undersample(&8u64, &mut rng).nb_cells() == 8u64
     }
 
     #[quickcheck]
     fn ecdna_distribution_undersampling_check_copies(
         valid_ecdna: ValidEcDNADistributionFixture,
+        seed: u64,
     ) -> bool {
-        let mut rng = SmallRng::from_entropy();
+        let mut rng = Pcg64Mcg::seed_from_u64(seed);
         valid_ecdna
             .0
+            .clone()
             .undersample(&8u64, &mut rng)
             .copies()
             .is_subset(&valid_ecdna.0.copies())
@@ -826,7 +805,7 @@ mod tests {
 
     #[test]
     fn ecdna_distribution_undersampling_check_copies_one_copy() {
-        let mut rng = SmallRng::from_entropy();
+        let mut rng = Pcg64Mcg::seed_from_u64(26u64);
         let distribution = HashMap::from([(10u16, 2u64)]);
         let ntot = distribution.values().sum();
         let ecdna = EcDNADistribution { distribution, ntot };
@@ -835,16 +814,11 @@ mod tests {
             ecdna.undersample(&1u64, &mut rng).copies(),
             HashSet::from([10u16]),
         );
-
-        assert_eq!(
-            ecdna.undersample(&1u64, &mut rng),
-            EcDNADistribution::from(vec![10u16])
-        );
     }
 
     #[test]
     fn ecdna_distribution_undersampling_check_with_nminus_empty() {
-        let mut rng = SmallRng::from_entropy();
+        let mut rng = Pcg64Mcg::seed_from_u64(26u64);
         let distribution = HashMap::from([(0u16, 10u64)]);
         let ecdna = EcDNADistribution::from(distribution);
         assert_eq!(
@@ -855,7 +829,7 @@ mod tests {
 
     #[test]
     fn ecdna_distribution_undersampling_check_copies_one_copy_two_samples() {
-        let mut rng = SmallRng::from_entropy();
+        let mut rng = Pcg64Mcg::seed_from_u64(26u64);
         let distribution = HashMap::from([(10u16, 2u64)]);
         let ntot = distribution.values().sum();
         let ecdna = EcDNADistribution { distribution, ntot };
@@ -863,26 +837,17 @@ mod tests {
             ecdna.undersample(&2u64, &mut rng).copies(),
             HashSet::from([10u16])
         );
-        assert_eq!(
-            ecdna.undersample(&2u64, &mut rng),
-            EcDNADistribution::from(vec![10u16, 10u16])
-        );
     }
 
     #[test]
     fn ecdna_distribution_undersampling_check_likelihood() {
-        let mut rng = SmallRng::from_entropy();
+        let mut rng = Pcg64Mcg::seed_from_u64(26u64);
         let distribution = HashMap::from([(10u16, 10000u64), (1u16, 1u64)]);
         let ntot = distribution.values().sum();
         let ecdna = EcDNADistribution { distribution, ntot };
         assert_eq!(
             ecdna.undersample(&1u64, &mut rng).copies(),
             HashSet::from([10u16])
-        );
-
-        assert_eq!(
-            ecdna.undersample(&1u64, &mut rng),
-            EcDNADistribution::from(vec![10u16])
         );
     }
 

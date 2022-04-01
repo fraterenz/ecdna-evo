@@ -1,8 +1,8 @@
-use crate::run::Range;
+use crate::run::{Range, Seed};
 use enum_dispatch::enum_dispatch;
-use rand::distributions::{Open01, Uniform};
-use rand::rngs::SmallRng;
-use rand::{thread_rng, Rng, SeedableRng};
+use rand::Rng;
+use rand_distr::Open01;
+use rand_pcg::Pcg64Mcg;
 use std::convert::From;
 use std::fmt;
 use std::ops::{BitXor, Mul};
@@ -11,7 +11,7 @@ use std::ops::{BitXor, Mul};
 type GillespieRate = f32;
 
 /// Rates of the two-type stochastic birth-death process (units [1/N])
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Rates {
     /// Proliferation rate of the cells w/ ecDNA of a stochastic birth-death
     /// process
@@ -26,18 +26,24 @@ pub struct Rates {
 }
 
 impl Rates {
-    pub fn new(f1: &[f32], f2: &[f32], d1: &[f32], d2: &[f32]) -> Self {
+    pub fn new(
+        f1: &[f32],
+        f2: &[f32],
+        d1: &[f32],
+        d2: &[f32],
+        seed: Seed,
+    ) -> Self {
         Rates {
-            fitness1: ProliferationRate::new(f1),
-            fitness2: ProliferationRate::new(f2),
-            death1: DeathRate::new(d1),
-            death2: DeathRate::new(d2),
+            fitness1: ProliferationRate::new(f1, seed),
+            fitness2: ProliferationRate::new(f2, seed),
+            death1: DeathRate::new(d1, seed),
+            death2: DeathRate::new(d2, seed),
         }
     }
 
     pub fn estimate_max_iter(&self, max_cells: &NbIndividuals) -> usize {
         //! Returns the maximal number of iterations.
-        if self.death1 == 0f32.into() || self.death2 == 0f32.into() {
+        if self.death1.is_zero() || self.death2.is_zero() {
             *max_cells as usize
         } else {
             *max_cells as usize * 3usize
@@ -49,22 +55,22 @@ impl Rates {
 /// die
 impl Default for Rates {
     fn default() -> Self {
-        Rates::new(&[1f32], &[1f32], &[0f32], &[0f32])
+        Rates::new(&[1f32], &[1f32], &[0f32], &[0f32], Seed::default())
     }
 }
 
 /// Gillespie rate units 1/N
-#[derive(Clone, Copy, Debug, PartialOrd, PartialEq)]
+#[derive(Clone, Debug)]
 enum Rate {
     Range(Range<f32>),
     Scalar(f32),
 }
 
 impl Rate {
-    pub fn new(rates: &[f32]) -> Self {
+    pub fn new(rates: &[f32], seed: Seed) -> Self {
         match *rates {
             [rate] => Rate::Scalar(rate),
-            [min, max] => Rate::Range(Range::new(min, max)),
+            [min, max] => Rate::Range(Range::new(min, max, seed)),
             _ => {
                 panic!(
                     "Cannot create Rate with more than two rates {:#?}",
@@ -110,7 +116,7 @@ impl Mul for Rate {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialOrd, PartialEq)]
+#[derive(Clone, Debug)]
 /// How many times on average there will be proliferation for a stochastic
 /// birth-death process
 pub struct ProliferationRate(Rate);
@@ -118,32 +124,39 @@ pub struct ProliferationRate(Rate);
 /// By default a proliferation rate is 1 (neutral case)
 impl Default for ProliferationRate {
     fn default() -> Self {
-        ProliferationRate::new(&[1f32])
+        ProliferationRate::new(&[1f32], Seed::default())
     }
 }
 
 impl ProliferationRate {
-    pub fn new(rates: &[f32]) -> Self {
+    pub fn new(rates: &[f32], seed: Seed) -> Self {
         assert!(
             !rates.iter().any(|val| val < &0f32),
             "ProliferationRate cannot be negative"
         );
-        ProliferationRate(Rate::new(rates))
+        ProliferationRate(Rate::new(rates, seed))
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialOrd, PartialEq, Default)]
+#[derive(Clone, Debug, Default)]
 /// How many times on average there will be death for a stochastic birth-death
 /// process
 pub struct DeathRate(Rate);
 
 impl DeathRate {
-    pub fn new(rates: &[f32]) -> Self {
+    pub fn new(rates: &[f32], seed: Seed) -> Self {
         assert!(
             !rates.iter().any(|val| val < &0f32),
             "DeathRate cannot be negative"
         );
-        DeathRate(Rate::new(rates))
+        DeathRate(Rate::new(rates, seed))
+    }
+
+    pub fn is_zero(&self) -> bool {
+        match self.0 {
+            Rate::Scalar(rate) => rate != 0f32,
+            Rate::Range(_) => panic!("Cannot say if rate is 0 with range"),
+        }
     }
 }
 
@@ -162,10 +175,9 @@ impl From<f32> for ProliferationRate {
 
 impl From<ProliferationRate> for GillespieRate {
     fn from(rate: ProliferationRate) -> Self {
-        let mut rng = SmallRng::from_entropy();
         match rate.0 {
             Rate::Scalar(v) => v,
-            Rate::Range(range) => range.sample_uniformly(&mut rng),
+            Rate::Range(mut range) => range.sample_uniformly(),
         }
     }
 }
@@ -204,10 +216,9 @@ impl From<f32> for DeathRate {
 
 impl From<DeathRate> for GillespieRate {
     fn from(rate: DeathRate) -> Self {
-        let mut rng = SmallRng::from_entropy();
         match rate.0 {
             Rate::Scalar(v) => v,
-            Rate::Range(range) => range.sample_uniformly(&mut rng),
+            Rate::Range(mut range) => range.sample_uniformly(),
         }
     }
 }
@@ -269,6 +280,7 @@ pub trait ComputeTimesEvents {
         &self,
         pop1: NbIndividuals,
         pop2: NbIndividuals,
+        rng: &mut Pcg64Mcg,
     ) -> ([GillespieRate; 4], [AdvanceRun; 4]);
 }
 
@@ -318,11 +330,12 @@ impl ComputeTimesEvents for PureBirth {
         &self,
         pop1: NbIndividuals,
         pop2: NbIndividuals,
+        rng: &mut Pcg64Mcg,
     ) -> ([GillespieRate; 4], [AdvanceRun; 4]) {
         let rates = [
-            exprand(self.r1 * pop1 as f32), /* proliferation rate for pop1 */
-            exprand(self.r2 * pop2 as f32), /* proliferation rate for cell
-                                             * w/o ecDNA */
+            exprand(self.r1 * pop1 as f32, rng), /* proliferation rate for pop1 */
+            exprand(self.r2 * pop2 as f32, rng), /* proliferation rate for cell
+                                                  * w/o ecDNA */
             f32::INFINITY,
             f32::INFINITY,
         ];
@@ -348,13 +361,14 @@ impl ComputeTimesEvents for BirthDeath1 {
         &self,
         pop1: NbIndividuals,
         pop2: NbIndividuals,
+        rng: &mut Pcg64Mcg,
     ) -> ([GillespieRate; 4], [AdvanceRun; 4]) {
         let rates = [
-            exprand(self.r1 * pop1 as f32), /* proliferation rate for pop1 */
-            exprand(self.r2 * pop2 as f32), /* proliferation rate for cell
-                                             * w/o ecDNA */
-            exprand(self.d1 * pop1 as f32), // death rate for pop1
-            f32::INFINITY,                  // death rate for pop2
+            exprand(self.r1 * pop1 as f32, rng), /* proliferation rate for pop1 */
+            exprand(self.r2 * pop2 as f32, rng), /* proliferation rate for cell
+                                                  * w/o ecDNA */
+            exprand(self.d1 * pop1 as f32, rng), // death rate for pop1
+            f32::INFINITY,                       // death rate for pop2
         ];
         let events = [
             AdvanceRun::Proliferate1,
@@ -378,13 +392,14 @@ impl ComputeTimesEvents for BirthDeath2 {
         &self,
         pop1: NbIndividuals,
         pop2: NbIndividuals,
+        rng: &mut Pcg64Mcg,
     ) -> ([GillespieRate; 4], [AdvanceRun; 4]) {
         let rates = [
-            exprand(self.r1 * pop1 as f32), /* proliferation rate for pop1 */
-            exprand(self.r2 * pop2 as f32), /* proliferation rate for cell
-                                             * w/o ecDNA */
-            f32::INFINITY,                  // death rate for pop1
-            exprand(self.d2 * pop2 as f32), // death rate for pop2
+            exprand(self.r1 * pop1 as f32, rng), /* proliferation rate for pop1 */
+            exprand(self.r2 * pop2 as f32, rng), /* proliferation rate for cell
+                                                  * w/o ecDNA */
+            f32::INFINITY, // death rate for pop1
+            exprand(self.d2 * pop2 as f32, rng), // death rate for pop2
         ];
         let events = [
             AdvanceRun::Proliferate1,
@@ -408,13 +423,14 @@ impl ComputeTimesEvents for BirthDeath {
         &self,
         pop1: NbIndividuals,
         pop2: NbIndividuals,
+        rng: &mut Pcg64Mcg,
     ) -> ([GillespieRate; 4], [AdvanceRun; 4]) {
         let rates = [
-            exprand(self.r1 * pop1 as f32), /* proliferation rate for pop1 */
-            exprand(self.r2 * pop2 as f32), /* proliferation rate for cell
-                                             * w/o ecDNA */
-            exprand(self.d1 * pop1 as f32), // death rate for pop1
-            exprand(self.d2 * pop2 as f32), // death rate for pop2
+            exprand(self.r1 * pop1 as f32, rng), /* proliferation rate for pop1 */
+            exprand(self.r2 * pop2 as f32, rng), /* proliferation rate for cell
+                                                  * w/o ecDNA */
+            exprand(self.d1 * pop1 as f32, rng), // death rate for pop1
+            exprand(self.d2 * pop2 as f32, rng), // death rate for pop2
         ];
         let events = [
             AdvanceRun::Proliferate1,
@@ -449,7 +465,7 @@ pub enum BirthDeathProcess {
 }
 
 impl BirthDeathProcess {
-    pub fn new(rates: &Rates) -> BirthDeathProcess {
+    pub fn new(rates: Rates) -> BirthDeathProcess {
         //! Creates a new stochastic process. This will sample the rates (for
         //! abc).
         //!
@@ -468,25 +484,24 @@ impl BirthDeathProcess {
         //!
         //! 4. `BirthDeath1`, that is `d1` is not zero and `d2` is not zero:
         //! individuals of both populations can proliferate and die
-        let mut rng = SmallRng::from_entropy();
 
         let f1 = match rates.fitness1.0 {
-            Rate::Range(range) => range.sample_uniformly(&mut rng),
+            Rate::Range(mut range) => range.sample_uniformly(),
             Rate::Scalar(v) => v,
         };
 
         let f2 = match rates.fitness2.0 {
-            Rate::Range(range) => range.sample_uniformly(&mut rng),
+            Rate::Range(mut range) => range.sample_uniformly(),
             Rate::Scalar(v) => v,
         };
 
         let d1 = match rates.death1.0 {
-            Rate::Range(range) => range.sample_uniformly(&mut rng),
+            Rate::Range(mut range) => range.sample_uniformly(),
             Rate::Scalar(v) => v,
         };
 
         let d2 = match rates.death2.0 {
-            Rate::Range(range) => range.sample_uniformly(&mut rng),
+            Rate::Range(mut range) => range.sample_uniformly(),
             Rate::Scalar(v) => v,
         };
 
@@ -523,10 +538,11 @@ impl BirthDeathProcess {
         &self,
         pop1: NbIndividuals,
         pop2: NbIndividuals,
+        rng: &mut Pcg64Mcg,
     ) -> Event {
         //! Determine the next `Event` using the Gillespie algorithm.
         assert!((pop1 + pop2) > 0u64);
-        let (kind, time) = self.next_event(pop1, pop2);
+        let (kind, time) = self.next_event(pop1, pop2, rng);
         Event { kind, time }
     }
 
@@ -534,8 +550,9 @@ impl BirthDeathProcess {
         &self,
         pop1: NbIndividuals,
         pop2: NbIndividuals,
+        rng: &mut Pcg64Mcg,
     ) -> (AdvanceRun, GillespieTime) {
-        let (times, events) = self.compute_times_events(pop1, pop2);
+        let (times, events) = self.compute_times_events(pop1, pop2, rng);
 
         // Find the event that will occur next, corresponding to the smaller
         // waiting time
@@ -551,14 +568,14 @@ impl BirthDeathProcess {
     }
 }
 
-fn exprand(lambda: GillespieRate) -> f32 {
+fn exprand(lambda: GillespieRate, rng: &mut Pcg64Mcg) -> f32 {
     //! Generates a random waiting time using the exponential waiting time with
     //! parameter `lambda` of Poisson StochasticProcess.
     if (lambda - 0_f32).abs() < f32::EPSILON {
         f32::INFINITY
     } else {
         // random number between (0, 1)
-        let val: f32 = thread_rng().sample(Open01);
+        let val: f32 = rng.sample(Open01);
         -(1. - val).ln() / lambda
     }
 }
@@ -630,22 +647,96 @@ pub fn fast_mean_computation(
 }
 
 #[cfg(test)]
+extern crate quickcheck;
+
+#[cfg(test)]
 mod tests {
     use super::*;
+    use rand::SeedableRng;
+
+    #[quickcheck]
+    fn exprand_same_seed(lambda: f32, seed: u64) -> bool {
+        let mut rng = Pcg64Mcg::seed_from_u64(seed);
+        if lambda == 0f32 {
+            exprand(lambda, &mut rng).is_infinite()
+        } else if lambda.is_nan() {
+            exprand(lambda, &mut rng).is_nan()
+        } else {
+            let exp1 = exprand(lambda, &mut rng);
+            let mut rng = Pcg64Mcg::seed_from_u64(seed);
+            let exp2 = exprand(lambda, &mut rng);
+            (exp1 - exp2).abs() < f32::EPSILON
+        }
+    }
+
+    use quickcheck::{Arbitrary, Gen};
+
+    impl Arbitrary for BirthDeathProcess {
+        fn arbitrary(g: &mut Gen) -> BirthDeathProcess {
+            BirthDeathProcess::new(Rates::new(
+                &[PositiveRate::arbitrary(g).0],
+                &[PositiveRate::arbitrary(g).0],
+                &[PositiveRate::arbitrary(g).0],
+                &[PositiveRate::arbitrary(g).0],
+                Seed::new(u64::arbitrary(g)),
+            ))
+        }
+    }
+
+    #[derive(Clone)]
+    struct PositiveRate(pub f32);
+
+    impl Arbitrary for PositiveRate {
+        fn arbitrary(g: &mut Gen) -> Self {
+            let rate = f32::arbitrary(g).abs();
+            if rate.is_nan() {
+                return PositiveRate::arbitrary(g);
+            }
+            PositiveRate(rate)
+        }
+    }
+
+    #[quickcheck]
+    fn next_event_same_seed_same_event(
+        pop1: NbIndividuals,
+        pop2: NbIndividuals,
+        bd: BirthDeathProcess,
+        seed: u64,
+    ) -> bool {
+        let mut rng = Pcg64Mcg::seed_from_u64(seed);
+        let (event1, _) = bd.next_event(pop1, pop2, &mut rng);
+
+        let mut rng = Pcg64Mcg::seed_from_u64(seed);
+        let (event2, _) = bd.next_event(pop1, pop2, &mut rng);
+
+        event1 == event2
+    }
+
+    #[quickcheck]
+    fn next_event_same_seed_same_time(
+        pop1: NbIndividuals,
+        pop2: NbIndividuals,
+        bd: BirthDeathProcess,
+        seed: u64,
+    ) -> bool {
+        let mut rng = Pcg64Mcg::seed_from_u64(seed);
+        let (_, time1) = bd.next_event(pop1, pop2, &mut rng);
+
+        let mut rng = Pcg64Mcg::seed_from_u64(seed);
+        let (_, time2) = bd.next_event(pop1, pop2, &mut rng);
+
+        time1 == time2
+    }
 
     #[test]
     fn test_exprand() {
-        let lambda: GillespieRate = 0.3;
-        let first = exprand(lambda);
-        let second = exprand(lambda);
-        assert!((first - second).abs() > f32::EPSILON);
-
+        let mut rng = Pcg64Mcg::seed_from_u64(1u64);
         let lambda: GillespieRate = 0_f32;
-        let first = exprand(lambda);
+        let first = exprand(lambda, &mut rng);
         assert!(first.is_infinite());
 
         let lambda: GillespieRate = f32::INFINITY;
-        let first = exprand(lambda);
+        let first = exprand(lambda, &mut rng);
         assert!((0f32 - first).abs() < f32::EPSILON);
     }
 
@@ -671,76 +762,5 @@ mod tests {
             ),
             None
         );
-    }
-
-    // -------------------------------------------------------------------------
-    // TEST ONE ITERATION OF GILLESPIE ALGORITHM
-    #[test]
-    #[should_panic]
-    fn test_gillespie_panics_with_no_individuals_lefth() {
-        let my_process =
-            BirthDeathProcess::new(&Rates::new(&[1.], &[1.], &[0.], &[0.]));
-        my_process.gillespie(0, 0);
-    }
-
-    #[test]
-    fn test_gillespie_returns_proliferate1() {
-        let my_process =
-            BirthDeathProcess::new(&Rates::new(&[1.], &[0.], &[0.], &[0.]));
-        assert_eq!(AdvanceRun::Proliferate1, my_process.gillespie(1, 2).kind);
-    }
-
-    #[test]
-    fn test_gillespie_returns_highly_probably_proliferate1() {
-        let my_process = BirthDeathProcess::new(&Rates::new(
-            &[10000.],
-            &[0.],
-            &[0.01],
-            &[0.],
-        ));
-        assert_eq!(AdvanceRun::Proliferate1, my_process.gillespie(1, 2).kind);
-    }
-
-    #[test]
-    fn test_gillespie_returns_highly_probably_proliferate2() {
-        let my_process =
-            BirthDeathProcess::new(&Rates::new(&[0.], &[1.], &[0.0], &[0.]));
-        assert_eq!(AdvanceRun::Proliferate2, my_process.gillespie(1, 2).kind);
-    }
-
-    #[test]
-    fn test_gillespie_returns_die1() {
-        let my_process =
-            BirthDeathProcess::new(&Rates::new(&[0.], &[0.], &[1.], &[0.]));
-        assert_eq!(my_process.gillespie(1, 2).kind, AdvanceRun::Die1);
-    }
-
-    #[test]
-    fn test_gillespie_returns_die2() {
-        let my_process =
-            BirthDeathProcess::new(&Rates::new(&[0.], &[0.], &[0.], &[1.]));
-        assert_eq!(AdvanceRun::Die2, my_process.gillespie(1, 2).kind);
-    }
-
-    #[test]
-    fn test_default_rates() {
-        let rates = Rates::new(&[1f32], &[1f32], &[0f32], &[0f32]);
-        assert_eq!(rates, Rates::default());
-        assert_eq!(rates.fitness1, ProliferationRate::from(1f32));
-        assert_eq!(rates.fitness2, ProliferationRate::from(1f32));
-        assert_eq!(rates.death1, DeathRate::from(0f32));
-        assert_eq!(rates.death2, DeathRate::from(0f32));
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_panic_proliferation_rate_smaller_than_0() {
-        ProliferationRate::new(&[-1f32]);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_negative_death_rate_panics() {
-        DeathRate::new(&[-2f32]);
     }
 }

@@ -4,10 +4,7 @@ mod clap_app;
 use crate::app::build;
 use anyhow::Context;
 use app::App;
-use ecdna_evo::{
-    data::Mean,
-    patient::{Patient, SequencingData, SequencingDataBuilder},
-};
+use ecdna_evo::patient::{Patient, SequencingData, SequencingDataBuilder};
 use std::fs;
 use std::process;
 

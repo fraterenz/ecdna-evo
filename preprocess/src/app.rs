@@ -1,10 +1,7 @@
 use crate::clap_app::clap_app;
 use anyhow::Context;
-use clap::ArgMatches;
 use ecdna_evo::data::{EcDNADistribution, Entropy, Frequency, Mean};
-use ecdna_evo::patient::{Patient, SequencingData};
-use ecdna_evo::{DNACopy, NbIndividuals, Rates};
-use std::env;
+use ecdna_evo::NbIndividuals;
 use std::path::PathBuf;
 
 pub struct App {

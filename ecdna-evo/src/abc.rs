@@ -1,17 +1,13 @@
 //! Perform the approximate Bayesian computation to infer the most probable
 //! fitness and death coefficients from the data.
-use crate::data::{Distance, EcDNADistribution, Entropy, Frequency, Mean};
+use crate::data::Distance;
 use crate::patient::SequencingData;
 use crate::run::{Ended, Run};
 use crate::{DNACopy, NbIndividuals};
-use anyhow::Context;
 use csv;
-use rand::rngs::SmallRng;
-use rand::SeedableRng;
 use serde::Serialize;
-use std::convert::TryFrom;
 use std::fs::{self, OpenOptions};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Perform the ABC rejection algorithm for one run to infer the most probable
 /// values of the rates based on the patient's data.
@@ -130,7 +126,7 @@ impl ABCResults {
     pub fn save(
         &self,
         path2folder: &Path,
-        subsamples: Option<&NbIndividuals>,
+        // subsamples: Option<&NbIndividuals>,
     ) -> anyhow::Result<()> {
         //! Save the results of the abc inference for a run in a folder abc, where there is one file for each (parental) run and the name of the file corresponds to the parental run.
         let path2save = path2folder.to_owned();
