@@ -1,87 +1,25 @@
 //! The data of interest, such as the ecDNA distribution, its mean, its entropy,
 //! the frequency of cells w/ ecDNA etc...
-use crate::run::{Ended, Run};
-use crate::{DNACopy, NbIndividuals};
 use anyhow::{bail, ensure, Context};
+use ecdna_sim::{write2file, NbIndividuals};
 use enum_dispatch::enum_dispatch;
 use rand::distributions::WeightedIndex;
-use rand_distr::Distribution;
+use rand::prelude::Distribution;
 use rand_pcg::Pcg64Mcg;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::fs;
 use std::fs::read_to_string;
-use std::io::{BufWriter, Write};
 use std::ops::Deref;
 use std::path::Path;
 
-/// The main trait for the `Measurement` which defines how to compare the `Run`
-/// against the `Measurement`. Types that are `Measurement` must implement
-/// `Distance`
-///
-/// # How can I implement `Distance`?
-/// An example of `Measurement` comparing the ecDNA copy number mean of the
-/// patient against the one simulated by the run:
-///
-/// ```no_run
-/// use ecdna_evo::data::{euclidean_distance, relative_change, Distance};
-/// use ecdna_evo::run::{Ended, Run};
-///
-/// pub struct Mean(pub f32);
-///
-/// impl Distance for Mean {
-///     fn distance(&self, run: &Run<Ended>) -> f32 {
-///         //! The run and the patient's data differ when absolute difference
-///         //! between the means considering `NMinus` cells is greater than a
-///         //! threshold.
-///         relative_change(&self.0, &run.get_mean())
-///     }
-/// }
-/// ```
-
-pub trait Distance {
-    /// The data differs from the run when the distance between a `Measurement`
-    /// according to a certain metric is higher than a threshold
-    fn distance(&self, run: &Run<Ended>) -> f32;
-}
+use crate::DNACopy;
 
 /// Trait to write the data to file
 #[enum_dispatch]
 pub trait ToFile {
     fn save(&self, path2file: &Path) -> anyhow::Result<()>;
-}
-
-pub fn write2file<T: std::fmt::Display>(
-    data: &[T],
-    path: &Path,
-    header: Option<&str>,
-    endline: bool,
-) -> anyhow::Result<()> {
-    //! Write vector of float into new file with a precision of 4 decimals.
-    //! Write NAN if the slice to write to file is empty.
-    fs::create_dir_all(path.parent().unwrap()).expect("Cannot create dir");
-    let f = fs::OpenOptions::new()
-        .read(true)
-        .append(true)
-        .create(true)
-        .open(path)?;
-    let mut buffer = BufWriter::new(f);
-    if !data.is_empty() {
-        if let Some(h) = header {
-            writeln!(buffer, "{}", h)?;
-        }
-        write!(buffer, "{:.4}", data.first().unwrap())?;
-        for ele in data.iter().skip(1) {
-            write!(buffer, ",{:.4}", ele)?;
-        }
-        if endline {
-            writeln!(buffer)?;
-        }
-    } else {
-        write!(buffer, "{}", f32::NAN)?;
-    }
-    Ok(())
 }
 
 /// Load from file the the ecDNA distribution. The file can be either a json (histogram) or a csv (single-cell ecDNA distribution)
@@ -109,23 +47,6 @@ impl TryFrom<&Path> for EcDNADistribution {
     }
 }
 
-impl Distance for EcDNADistribution {
-    fn distance(&self, run: &Run<Ended>) -> f32 {
-        //! The run and the patient's data ecDNA distributions (considering
-        //! cells w/o ecDNA) are different if the Kolmogorov-Smirnov statistic
-        //! is greater than a certain threshold or if there are less than 10
-        //! cells
-        // do not compute the KS statistics with less than 10 datapoints
-        let too_few_cells =
-            self.nb_cells() <= 10u64 || run.nb_cells() <= 10u64;
-        if too_few_cells {
-            f32::INFINITY
-        } else {
-            self.ks_distance(run.get_ecdna()).0
-        }
-    }
-}
-
 impl TryFrom<&EcDNADistribution> for Mean {
     type Error = &'static str;
 
@@ -135,15 +56,6 @@ impl TryFrom<&EcDNADistribution> for Mean {
         } else {
             ecdna.mean().map_err(|_| stringify!(e))
         }
-    }
-}
-
-impl Distance for Mean {
-    fn distance(&self, run: &Run<Ended>) -> f32 {
-        //! The run and the patient's data differ when the absolute difference
-        //! between the means considering `NMinus` cells is greater than a
-        //! threshold.
-        relative_change(self, run.get_mean())
     }
 }
 
@@ -159,12 +71,6 @@ impl TryFrom<&EcDNADistribution> for Frequency {
     }
 }
 
-impl Distance for Frequency {
-    fn distance(&self, run: &Run<Ended>) -> f32 {
-        relative_change(self, run.get_frequency())
-    }
-}
-
 impl TryFrom<&EcDNADistribution> for Entropy {
     type Error = &'static str;
 
@@ -174,15 +80,6 @@ impl TryFrom<&EcDNADistribution> for Entropy {
         } else {
             ecdna.entropy().map_err(|_| stringify!(e))
         }
-    }
-}
-
-impl Distance for Entropy {
-    fn distance(&self, run: &Run<Ended>) -> f32 {
-        //! The run and the patient's data differ when the absolute difference
-        //! between the entropies considering `NMinus` cells is greater than a
-        //! threshold.
-        relative_change(self, run.get_entropy())
     }
 }
 
@@ -229,11 +126,6 @@ where
         }
     }
     Ok(data)
-}
-
-/// Relative change between two scalars
-pub fn relative_change(x1: &f32, &x2: &f32) -> f32 {
-    (x1 - x2).abs() / x1
 }
 
 /// L2 norm between two scalars
@@ -647,15 +539,17 @@ impl EcDNADistribution {
 }
 
 #[cfg(test)]
-extern crate quickcheck;
-
-#[cfg(test)]
 mod tests {
+    use crate::DNACopy;
+
     use super::*;
+    use ecdna_sim::NbIndividuals;
     use fake::Fake;
-    use quickcheck::{quickcheck, Gen};
+    use quickcheck::Gen;
+    use quickcheck_macros::quickcheck;
     use rand::rngs::SmallRng;
     use rand::{Rng, SeedableRng};
+    use rand_pcg::Pcg64Mcg;
     use test_case::test_case;
 
     #[test]
@@ -679,7 +573,7 @@ mod tests {
 
     #[test]
     fn from_vec_for_ecdna_distribution_empty() {
-        let my_vec = vec![];
+        let my_vec: Vec<DNACopy> = vec![];
         let dna = EcDNADistribution::from(my_vec);
         assert!(dna.is_empty());
     }
@@ -717,13 +611,6 @@ mod tests {
     fn ecdna_frequency_empty() {
         EcDNADistribution::from(vec![]).frequency().unwrap();
     }
-
-    // #[test_case(vec![0u16, 1u16, 2u16] => Mean(1f32)  ; "Balanced input")]
-    // #[test_case(vec![1u16, 1u16, 1u16] => Mean(1f32)  ; "Constant input")]
-    // #[test_case(vec![0u16, 2u16] => Mean(1f32)  ; "Unbalanced input")]
-    // fn ecdna_mean_1(ecdna: Vec<u16>) -> Mean {
-    //     EcDNADistribution::from(ecdna).mean()
-    // }
 
     #[test]
     #[should_panic]

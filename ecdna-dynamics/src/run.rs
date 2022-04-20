@@ -1,50 +1,26 @@
-use crate::data::{
-    write2file, Data, EcDNADistribution, EcDNASummary, Entropy, Frequency,
-    Mean, ToFile,
+use crate::dynamics::{
+    Dynamic, Dynamics, GillespieT, MeanDyn, Moments, NMinus, NPlus,
 };
-use crate::dynamics::{Dynamics, Update};
-use crate::gillespie::{
-    AdvanceRun, BirthDeathProcess, Event, GetRates, GillespieTime,
+use anyhow::{ensure, Context};
+use ecdna_data::data::{
+    Data, EcDNADistribution, EcDNASummary, Entropy, Frequency, Mean,
 };
-use crate::{NbIndividuals, Rates};
-use anyhow::ensure;
+use ecdna_sim::event::{
+    fast_mean_computation, AdvanceRun, Event, GillespieTime,
+};
+use ecdna_sim::process::BirthDeathProcess;
+use ecdna_sim::rate::{GetRates, Range, Rates};
+use ecdna_sim::{NbIndividuals, Seed};
 use enum_dispatch::enum_dispatch;
 use rand::{Rng, SeedableRng};
-use rand_distr::{Binomial, Distribution, Uniform};
+use rand_distr::{Binomial, Distribution};
 use rand_pcg::Pcg64Mcg;
 use std::collections::HashMap;
-use std::fmt::{self, Display};
 use std::path::{Path, PathBuf};
 
 /// Number of ecDNA copies within a cell. We assume that a cell cannot have more
 /// than 65535 copies (`u16` is 2^16 - 1 = 65535 copies).
 pub type DNACopy = u16;
-
-#[derive(Clone, Copy, Debug)]
-pub struct Seed(u64);
-
-impl Seed {
-    pub fn new(seed: u64) -> Self {
-        Seed(seed)
-    }
-
-    pub fn get_seed(&self) -> &u64 {
-        &self.0
-    }
-}
-
-impl ToFile for Seed {
-    fn save(&self, path2file: &Path) -> anyhow::Result<()> {
-        write2file(&[self.0], path2file, None, false)?;
-        Ok(())
-    }
-}
-
-impl Default for Seed {
-    fn default() -> Self {
-        Seed(26u64)
-    }
-}
 
 /// Simulation of an exponentially growing tumour, that is one realization of
 /// the stochastic birth-death process.
@@ -456,50 +432,6 @@ impl Run<Ended> {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Range<T> {
-    min: T,
-    max: T,
-    rng: Pcg64Mcg,
-}
-
-impl<T> Default for Range<T>
-where
-    T: num_traits::Zero + num_traits::One,
-{
-    fn default() -> Self {
-        Range {
-            min: T::zero(),
-            max: T::one(),
-            rng: Pcg64Mcg::seed_from_u64(*Seed::default().get_seed()),
-        }
-    }
-}
-
-impl<T: std::fmt::Display> Display for Range<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}_{}", self.min, self.max)
-    }
-}
-
-impl<T> Range<T>
-where
-    T: std::fmt::Display
-        + rand_distr::uniform::SampleUniform
-        + std::cmp::PartialOrd,
-{
-    pub fn new(min: T, max: T, seed: Seed) -> Range<T> {
-        if min >= max {
-            panic!("Found min {} greater than max {}", min, max)
-        }
-        Range { min, max, rng: Pcg64Mcg::seed_from_u64(*seed.get_seed()) }
-    }
-
-    pub fn sample_uniformly(&mut self) -> T {
-        Uniform::new(&self.min, &self.max).sample(&mut self.rng)
-    }
-}
-
 // impl PartialEq for Range {
 //     fn eq(&self, other: &Self) -> bool {
 //         self.isbn == other.isbn
@@ -831,6 +763,97 @@ impl ContinueGrowth for PatientStudy {
         //! In patient studies, growth restart from subsample of the whole population.
         ensure!(&run.nb_cells() > sample_size);
         Ok(run.into())
+    }
+}
+
+/// The main trait for the `Dynamic` which updates the dynamical measurement
+/// based on the state of the `Run` for each iteration. It allows the
+/// communication between the `Dynamic` and the `Run`.
+///
+/// # How can I implement `Update`?
+/// Types that are `Dynamic` must implement `Update` which defines how to update
+/// the dynamical measurement based on the state of the `Run` at each iteration.
+///
+/// An example of `Dynamic`al measurement keeping track of the number of cells
+/// with any copy of ecDNA per iteration:
+///
+/// ```no_run
+/// use ecdna_dynamics::run::{Update, Run, Started};
+/// use ecdna_sim::NbIndividuals;
+///
+/// pub struct NPlus {
+///     /// Record the number of cells w/ ecDNA for each iteration.
+///     nplus_dynamics: Vec<NbIndividuals>,
+/// }
+///
+/// impl Update for NPlus {
+///     fn update(&mut self, run: &Run<Started>) {
+///         self.nplus_dynamics.push(run.get_nplus());
+///     }
+/// }
+/// ```
+
+#[enum_dispatch]
+pub trait Update {
+    /// Update the measurement based on the `run` for each iteration, i.e.
+    /// defines how to interact with `Run` to update the quantity of interest
+    /// for each iteration.
+    fn update(&mut self, run: &Run<Started>);
+}
+
+impl Update for NPlus {
+    fn update(&mut self, run: &Run<Started>) {
+        self.store_nplus(run.get_nplus());
+    }
+}
+
+impl Update for NMinus {
+    fn update(&mut self, run: &Run<Started>) {
+        self.store_nminus(*run.get_nminus());
+    }
+}
+
+impl Update for MeanDyn {
+    fn update(&mut self, run: &Run<Started>) {
+        let mean = match fast_mean_computation(
+            self.get_previous_mean()
+                .with_context(|| "Cannot update the dynamical mean")
+                .unwrap(),
+            &run.get_gillespie_event().kind,
+            run.get_nminus() + run.get_nplus(),
+        ) {
+            Some(mean) => mean,
+            // slow version: traverse the whole vector of the ecDNA distribution
+            None => run.mean_ecdna(),
+        };
+        self.store_mean(mean);
+    }
+}
+
+impl Update for Moments {
+    fn update(&mut self, run: &Run<Started>) {
+        let mean = match fast_mean_computation(
+            self.get_previous_mean()
+                .with_context(|| "Cannot update the dynamical mean")
+                .unwrap(),
+            &run.get_gillespie_event().kind,
+            run.get_nminus() + run.get_nplus(),
+        ) {
+            Some(mean) => mean,
+            // slow version: traverse the whole vector of the ecDNA distribution
+            None => run.mean_ecdna(),
+        };
+        self.store_moments(mean, run.variance_ecdna(&mean));
+    }
+}
+
+impl Update for GillespieT {
+    fn update(&mut self, run: &Run<Started>) {
+        let time = self
+            .get_previous_time()
+            .with_context(|| "Cannot update the gillespie time")
+            .unwrap();
+        self.store_time(time + run.get_gillespie_event().time);
     }
 }
 

@@ -7,7 +7,7 @@ import json
 from typing import List
 from pathlib import Path
 from dataclasses import dataclass
-from ecdnaevo import abc, commons
+from . import abc, commons
 
 
 @dataclass

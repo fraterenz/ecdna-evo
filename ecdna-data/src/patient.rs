@@ -1,7 +1,7 @@
 //! A `Patient` is a collection of `SequencingData` that have been collected and sequenced from the same tumour mass but at different timepoints.
 use crate::data::{EcDNADistribution, Entropy, Frequency, Mean};
-use crate::NbIndividuals;
 use anyhow::{anyhow, Context};
+use ecdna_sim::NbIndividuals;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};

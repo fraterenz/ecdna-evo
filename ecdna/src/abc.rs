@@ -1,10 +1,9 @@
 //! Perform the approximate Bayesian computation to infer the most probable
 //! fitness and death coefficients from the data.
-use crate::data::Distance;
-use crate::patient::SequencingData;
-use crate::run::{Ended, Run};
-use crate::{DNACopy, NbIndividuals};
-use csv;
+use ecdna_data::data::{EcDNADistribution, Entropy, Frequency, Mean};
+use ecdna_data::patient::SequencingData;
+use ecdna_dynamics::run::{DNACopy, Ended, Run};
+use ecdna_sim::NbIndividuals;
 use serde::Serialize;
 use std::fs::{self, OpenOptions};
 use std::path::Path;
@@ -160,4 +159,80 @@ impl ABCResults {
         }
         Ok(())
     }
+}
+
+/// The main trait for the `Measurement` which defines how to compare the `Run`
+/// against the `Measurement`. Types that are `Measurement` must implement
+/// `Distance`
+///
+/// # How can I implement `Distance`?
+/// An example of `Measurement` comparing the ecDNA copy number mean of the
+/// patient against the one simulated by the run:
+///
+/// ```no_run
+/// use ecdna_evo::data::{euclidean_distance, relative_change, Distance};
+/// use ecdna_evo::run::{Ended, Run};
+///
+/// pub struct Mean(pub f32);
+///
+/// impl Distance for Mean {
+///     fn distance(&self, run: &Run<Ended>) -> f32 {
+///         //! The run and the patient's data differ when absolute difference
+///         //! between the means considering `NMinus` cells is greater than a
+///         //! threshold.
+///         relative_change(&self.0, &run.get_mean())
+///     }
+/// }
+/// ```
+
+pub trait Distance {
+    /// The data differs from the run when the distance between a `Measurement`
+    /// according to a certain metric is higher than a threshold
+    fn distance(&self, run: &Run<Ended>) -> f32;
+}
+
+impl Distance for EcDNADistribution {
+    fn distance(&self, run: &Run<Ended>) -> f32 {
+        //! The run and the patient's data ecDNA distributions (considering
+        //! cells w/o ecDNA) are different if the Kolmogorov-Smirnov statistic
+        //! is greater than a certain threshold or if there are less than 10
+        //! cells
+        // do not compute the KS statistics with less than 10 datapoints
+        let too_few_cells =
+            self.nb_cells() <= 10u64 || run.nb_cells() <= 10u64;
+        if too_few_cells {
+            f32::INFINITY
+        } else {
+            self.ks_distance(run.get_ecdna()).0
+        }
+    }
+}
+
+impl Distance for Mean {
+    fn distance(&self, run: &Run<Ended>) -> f32 {
+        //! The run and the patient's data differ when the absolute difference
+        //! between the means considering `NMinus` cells is greater than a
+        //! threshold.
+        relative_change(self, run.get_mean())
+    }
+}
+
+impl Distance for Frequency {
+    fn distance(&self, run: &Run<Ended>) -> f32 {
+        relative_change(self, run.get_frequency())
+    }
+}
+
+impl Distance for Entropy {
+    fn distance(&self, run: &Run<Ended>) -> f32 {
+        //! The run and the patient's data differ when the absolute difference
+        //! between the entropies considering `NMinus` cells is greater than a
+        //! threshold.
+        relative_change(self, run.get_entropy())
+    }
+}
+
+/// Relative change between two scalars
+pub fn relative_change(x1: &f32, &x2: &f32) -> f32 {
+    (x1 - x2).abs() / x1
 }

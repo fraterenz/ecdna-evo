@@ -11,7 +11,7 @@ pub fn clap_app() -> Command<'static> {
             .about("Infer the most probable set of parameters from the patient's data using ABC")
             .arg_required_else_help(true)
             .arg(
-                arg!(-p --patient <FILE> "Path to the json patient file created with `ecdna add`. See `ecdna add --help`"))
+                arg!(-p --patient <FILE> "Path to the json patient file created with `preprocess` command. See `preprocess --help`"))
             .arg(Arg::new("rho1")
                 .long("rho1-range")
                 .max_values(2)

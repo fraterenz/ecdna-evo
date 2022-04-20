@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from collections import UserDict
 from typing import NewType, Tuple
 from itertools import combinations
-from ecdnaevo import commons
+from . import commons
 
 PLOTTING_STATS = {"ecdna": "D", "mean": "M", "frequency": "F", "entropy": "E"}
 MYSHAPE = (len(PLOTTING_STATS), len(PLOTTING_STATS))
@@ -223,6 +223,7 @@ def plot_rates(rates, range_hist: Tuple[float, float], bins: int, ax, title=None
     `rates`. Here `title` is the title of the axis `ax`."""
     ax.hist(rates, bins=bins, range=range_hist, align="mid")
     ax.set_title(title)
+    ax.tick_params(axis='both', labelsize=20)
 
 
 def plot_posterior_per_stats(

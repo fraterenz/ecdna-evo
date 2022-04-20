@@ -6,50 +6,13 @@
 //! To add a new dynamical quantity, register it in the enum `Dynamic` and
 //! implement the trait `Name` and `Update` and modify `Dynamic::save`.
 
-use crate::data::{write2file, EcDNADistribution, ToFile};
-use crate::gillespie;
-use crate::run::{Run, Started};
-use crate::{GillespieTime, NbIndividuals};
-use anyhow::Context;
+use anyhow::{bail, Context};
+use ecdna_data::data::EcDNADistribution;
+use ecdna_sim::event::GillespieTime;
+use ecdna_sim::{write2file, NbIndividuals};
 use enum_dispatch::enum_dispatch;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
-
-/// The main trait for the `Dynamic` which updates the dynamical measurement
-/// based on the state of the `Run` for each iteration. It allows the
-/// communication between the `Dynamic` and the `Run`.
-///
-/// # How can I implement `Update`?
-/// Types that are `Dynamic` must implement `Update` which defines how to update
-/// the dynamical measurement based on the state of the `Run` at each iteration.
-///
-/// An example of `Dynamic`al measurement keeping track of the number of cells
-/// with any copy of ecDNA per iteration:
-///
-/// ```no_run
-/// use ecdna_evo::dynamics::Update;
-/// use ecdna_evo::run::{Run, Started};
-/// use ecdna_evo::NbIndividuals;
-///
-/// pub struct NPlus {
-///     /// Record the number of cells w/ ecDNA for each iteration.
-///     nplus_dynamics: Vec<NbIndividuals>,
-/// }
-///
-/// impl Update for NPlus {
-///     fn update(&mut self, run: &Run<Started>) {
-///         self.nplus_dynamics.push(run.get_nplus());
-///     }
-/// }
-/// ```
-
-#[enum_dispatch]
-pub trait Update {
-    /// Update the measurement based on the `run` for each iteration, i.e.
-    /// defines how to interact with `Run` to update the quantity of interest
-    /// for each iteration.
-    fn update(&mut self, run: &Run<Started>);
-}
 
 #[derive(Clone, Default, Debug)]
 pub struct Dynamics(Vec<Dynamic>);
@@ -91,9 +54,15 @@ impl From<Vec<Dynamic>> for Dynamics {
     }
 }
 
+/// Trait to write the dynamics to file
+#[enum_dispatch]
+pub trait Save {
+    fn save(&self, path2file: &Path) -> anyhow::Result<()>;
+}
+
 /// The quantities of interest estimated from the state of the `Run` for each
 /// iteration. Add new dynamical quantities here.
-#[enum_dispatch(Update, Name, ToFile)]
+#[enum_dispatch(Update, Name, Save)]
 #[derive(Clone, Debug)]
 pub enum Dynamic {
     /// Number of cells w/ any ecDNA copy per iteration
@@ -151,16 +120,10 @@ pub struct NPlus {
     name: String,
 }
 
-impl ToFile for NPlus {
+impl Save for NPlus {
     fn save(&self, path2file: &Path) -> anyhow::Result<()> {
         write2file(&self.nplus_dynamics, path2file, None, false)?;
         Ok(())
-    }
-}
-
-impl Update for NPlus {
-    fn update(&mut self, run: &Run<Started>) {
-        self.nplus_dynamics.push(run.get_nplus());
     }
 }
 
@@ -177,6 +140,10 @@ impl NPlus {
             .push(initial_ecdna.into_vec_no_minus().len() as NbIndividuals);
         NPlus { nplus_dynamics, name: "nplus".to_string() }
     }
+
+    pub fn store_nplus(&mut self, nplus: NbIndividuals) {
+        self.nplus_dynamics.push(nplus)
+    }
 }
 
 /// Compute the population dynamics of cells w/o ecDNAs.
@@ -187,16 +154,10 @@ pub struct NMinus {
     name: String,
 }
 
-impl ToFile for NMinus {
+impl Save for NMinus {
     fn save(&self, path2file: &Path) -> anyhow::Result<()> {
         write2file(&self.nminus_dynamics, path2file, None, false)?;
         Ok(())
-    }
-}
-
-impl Update for NMinus {
-    fn update(&mut self, run: &Run<Started>) {
-        self.nminus_dynamics.push(*run.get_nminus());
     }
 }
 
@@ -211,6 +172,10 @@ impl NMinus {
         let mut nminus_dynamics = Vec::with_capacity(max_iter);
         nminus_dynamics.push(*initial_ecdna.get_nminus());
         NMinus { nminus_dynamics, name: "nminus".to_string() }
+    }
+
+    pub fn store_nminus(&mut self, nminus: NbIndividuals) {
+        self.nminus_dynamics.push(nminus)
     }
 }
 
@@ -235,31 +200,24 @@ impl MeanDyn {
         Ok(MeanDyn { mean, name: "mean_dynamics".to_string() })
     }
 
-    pub fn ecdna_distr_mean(&self, run: &Run<Started>) -> f32 {
-        //! The mean of the ecDNA distribution for the current iteration.
-        let ntot = run.get_nminus() + run.get_nplus();
-        match gillespie::fast_mean_computation(
-            *self.mean.last().unwrap(),
-            &run.get_gillespie_event().kind,
-            ntot,
-        ) {
-            Some(mean) => mean,
-            // slow version: traverse the whole vector of the ecDNA distribution
-            None => run.mean_ecdna(),
+    pub fn store_mean(&mut self, mean: f32) {
+        self.mean.push(mean)
+    }
+
+    pub fn get_previous_mean(&self) -> anyhow::Result<f32> {
+        match self.mean.last() {
+            None => {
+                bail!("Cannot retrieve the mean from the previous iteration")
+            }
+            Some(&mean) => Ok(mean),
         }
     }
 }
 
-impl ToFile for MeanDyn {
+impl Save for MeanDyn {
     fn save(&self, path2file: &Path) -> anyhow::Result<()> {
         write2file(&self.mean, path2file, None, false)?;
         Ok(())
-    }
-}
-
-impl Update for MeanDyn {
-    fn update(&mut self, run: &Run<Started>) {
-        self.mean.push(self.ecdna_distr_mean(run));
     }
 }
 
@@ -276,13 +234,6 @@ pub struct Moments {
     /// Object to compute the mean in a clever way
     mean: MeanDyn,
     name: String,
-}
-
-impl Update for Moments {
-    fn update(&mut self, run: &Run<Started>) {
-        self.mean.update(run);
-        self.variance.push(run.variance_ecdna(self.mean.mean.last().unwrap()));
-    }
 }
 
 impl Name for Moments {
@@ -306,9 +257,18 @@ impl Moments {
 
         Ok(Moments { variance, mean, name: "var_dynamics".to_string() })
     }
+
+    pub fn store_moments(&mut self, mean: f32, variance: f32) {
+        self.mean.store_mean(mean);
+        self.variance.push(variance);
+    }
+
+    pub fn get_previous_mean(&self) -> anyhow::Result<f32> {
+        self.mean.get_previous_mean()
+    }
 }
 
-impl ToFile for Moments {
+impl Save for Moments {
     fn save(&self, path2file: &Path) -> anyhow::Result<()> {
         let file = path2file.file_name().unwrap().to_owned();
         let path2mean =
@@ -330,13 +290,6 @@ pub struct GillespieT {
     name: String,
 }
 
-impl Update for GillespieT {
-    fn update(&mut self, run: &Run<Started>) {
-        self.time
-            .push(self.time.last().unwrap() + run.get_gillespie_event().time);
-    }
-}
-
 impl Name for GillespieT {
     fn get_name(&self) -> &String {
         &self.name
@@ -349,9 +302,22 @@ impl GillespieT {
         time.push(0f32);
         GillespieT { time, name: "time".to_string() }
     }
+
+    pub fn store_time(&mut self, time: f32) {
+        self.time.push(time)
+    }
+
+    pub fn get_previous_time(&self) -> anyhow::Result<f32> {
+        match self.time.last() {
+            None => {
+                bail!("Cannot retrieve the gillespie time from the previous iteration")
+            }
+            Some(&time) => Ok(time),
+        }
+    }
 }
 
-impl ToFile for GillespieT {
+impl Save for GillespieT {
     fn save(&self, path2file: &Path) -> anyhow::Result<()> {
         write2file(&self.time, path2file, None, false)?;
         Ok(())

@@ -1,8 +1,10 @@
 [workspace]
 members = [
-    "ecdna-evo",
     "ecdna",
-    "preprocess",
+    "ecdna-data",
+    "ecdna-dynamics",
+    "ecdna-preprocess",
+    "ecdna-sim",
 ]
 
 [profile.release]
