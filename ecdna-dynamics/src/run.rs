@@ -39,8 +39,17 @@ pub struct Run<S: RunState> {
     bd_process: BirthDeathProcess,
     /// Initial state of the system
     pub init_state: InitialState,
-    pub seed: Seed,
+    seed: Seed,
     rng: Pcg64Mcg,
+}
+
+impl<S> Run<S>
+where
+    S: RunState,
+{
+    pub fn get_seed(&self) -> &Seed {
+        &self.seed
+    }
 }
 
 /// The simulation of the run has started, the stochastic birth-death process
@@ -353,7 +362,7 @@ impl Run<Started> {
 
 impl Run<Ended> {
     pub fn undersample_ecdna(
-        self,
+        mut self,
         nb_cells: &NbIndividuals,
         idx: usize,
     ) -> Self {
@@ -362,10 +371,7 @@ impl Run<Ended> {
             .state
             .data
             .ecdna
-            .undersample_data(
-                nb_cells,
-                &mut Pcg64Mcg::seed_from_u64(*self.seed.get_seed()),
-            )
+            .undersample_data(nb_cells, &mut self.rng)
             .unwrap();
 
         assert_eq!(
@@ -740,6 +746,8 @@ impl ContinueGrowth for CellCulture {
     ) -> anyhow::Result<Run<Started>> {
         //! In cell culture experiments, growth restart from subsample of the
         //! whole population.
+        let idx = run.idx;
+        let run = run.undersample_ecdna(&sample_size, idx);
         ensure!(&run.nb_cells() == sample_size);
         Ok(run.into())
     }
@@ -760,8 +768,8 @@ impl ContinueGrowth for PatientStudy {
         run: Run<Ended>,
         sample_size: &NbIndividuals,
     ) -> anyhow::Result<Run<Started>> {
-        //! In patient studies, growth restart from subsample of the whole population.
-        ensure!(&run.nb_cells() > sample_size);
+        //! In patient studies, growth restart from the whole population.
+        ensure!(&run.nb_cells() >= sample_size);
         Ok(run.into())
     }
 }

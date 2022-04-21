@@ -198,6 +198,6 @@ mod tests {
         let mut rng = Pcg64Mcg::seed_from_u64(seed);
         let (_, time2) = bd.next_event(pop1, pop2, &mut rng);
 
-        time1 == time2
+        (time1 - time2).abs() < f32::EPSILON
     }
 }

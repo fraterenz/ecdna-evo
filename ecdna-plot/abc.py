@@ -37,40 +37,52 @@ class App:
     stats: bool
     verbosity: bool
 
+def abc_is_subsampled(data: pd.DataFrame) -> bool:
+    """When the runs have been subsampled"""
+    return data[data.columns[0]].isna().any()
+
 
 def infer_nb_timepoints(data: pd.DataFrame, verbosity: bool) -> int:
-    nb_timepoints = data.idx.value_counts().unique()
-    assert (
-        nb_timepoints.shape[0] == 1
-    ), "Found runs with different nb of timepoints {}".format(nb_timepoints)
+    if abc_is_subsampled(data):
+        # should not be possibile because each run should have its own id, unless
+        # abc has been ran with subsampling (else clause)
+        # assert data.idx.value_counts().unique() == 1, "Found abc runs with same id"
+        nb_timepoints = data[["idx", "cells"]].groupby("idx").count().cells.unique()
+    else:
+        nb_timepoints = data[[data.columns[0], "idx", "cells"]].groupby([data.columns[0], "idx"]).count().cells.unique()
+    assert nb_timepoints.shape[0] == 1, "Found runs with different nb of timepoints {}".format(nb_timepoints)
 
     nb_timepoints = int(nb_timepoints[0])
     if verbosity:
-        print("Found {} timpoints".format(nb_timepoints))
+        print("Found {} timepoints".format(nb_timepoints))
     return nb_timepoints
-
 
 def load(path2abc: Path, verbosity: bool) -> Tuple[pd.DataFrame, int]:
     abc: pd.DataFrame = pd.read_csv(path2abc, header=0, low_memory=False)
     abc.drop(abc[abc.idx == "idx"].index, inplace=True)
     abc.dropna(how="all", inplace=True)
-    abc.loc[:, "idx"] = abc.idx.astype("uint32")
-    # abc.loc[:, abc.columns[0]] = abc[abc.columns[0]].astype("uint32")
-    for col in abc.columns[2:-2]:
+    if verbosity:
+        print(abc.head())
+    for col in abc.columns[1:3]:
+        abc[col] = abc[col].astype("uint")
+    for col in abc.columns[3:-2]:
         abc[col] = abc[col].astype("float")
     for col in abc.columns[-2:]:
         abc[col] = abc[col].astype("uint")
+    abc["cells"] = abc["cells"].astype("uint")
 
     if verbosity:
         print(abc.head())
+        print(abc.tail())
         print(abc.dtypes)
+        print(abc.shape)
+	# TODO rm
+    print(abc.f1.describe())
     return (abc, infer_nb_timepoints(abc, verbosity))
 
 
 def run(app: App):
     """Plot posterior distribution of the fitness coefficient"""
-    (abc, nb_timepoints) = load(app.abc, app.verbosity)
-
     if app.stats:
         path2save = commons.create_path2save(
             app.path2save,
@@ -84,6 +96,7 @@ def run(app: App):
                 )
             ),
         )
+        (abc, nb_timepoints) = load(app.abc, app.verbosity)
         plot_posterior_per_stats(
             app.thresholds, abc, path2save, nb_timepoints, app.theta, app.verbosity
         )
@@ -96,6 +109,7 @@ def run(app: App):
                 )
             ),
         )
+        (abc, nb_timepoints) = load(app.abc, app.verbosity)
         plot_post(
             app.thresholds, abc, path2save, nb_timepoints, app.theta, app.verbosity
         )

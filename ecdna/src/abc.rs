@@ -3,7 +3,7 @@
 use ecdna_data::data::{EcDNADistribution, Entropy, Frequency, Mean};
 use ecdna_data::patient::SequencingData;
 use ecdna_dynamics::run::{DNACopy, Ended, Run};
-use ecdna_sim::NbIndividuals;
+use ecdna_sim::{NbIndividuals, Seed};
 use serde::Serialize;
 use std::fs::{self, OpenOptions};
 use std::path::Path;
@@ -41,6 +41,7 @@ impl ABCRejection {
             builder.entropy(entropy.distance(run));
         }
 
+        let seed = *run.get_seed();
         let idx = run.idx.to_string();
         if let Some(run) = run.get_parental_run() {
             builder.parental_idx(*run);
@@ -53,8 +54,9 @@ impl ABCRejection {
         result.f2 = rates[1];
         result.d1 = rates[2];
         result.d2 = rates[3];
-        result.cells = *sample.get_tumour_size();
+        result.cells = run.nb_cells();
 
+        result.seed = seed;
         result.idx = idx;
 
         let ntot = run.init_state.get_distribution().nb_cells();
@@ -95,6 +97,8 @@ pub struct ABCResult {
     parental_idx: Option<usize>,
     #[builder(setter(skip))]
     idx: String,
+    #[builder(setter(skip))]
+    seed: Seed,
     #[builder(setter(strip_option), default)]
     ecdna: Option<f32>,
     #[builder(setter(strip_option), default)]

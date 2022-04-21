@@ -179,8 +179,6 @@ impl BayesianApp {
                         run.clone().undersample_ecdna(&sample_size, i);
                     results.test(&simulated_sample, patient_sample);
                 }
-                let idx = run.idx;
-                let run = run.undersample_ecdna(&sample_size, idx);
                 (results, self.growth.restart_growth(run, &sample_size)?)
             } else {
                 let mut results = ABCResults::with_capacity(1usize);
@@ -217,6 +215,7 @@ impl Perform for BayesianApp {
         }
 
         (0..self.runs)
+            //.into_iter()
             .into_par_iter()
             .progress_count(self.runs as u64)
             .for_each(|idx| {
@@ -397,11 +396,8 @@ impl DynamicalApp {
         ensure!(tumour_size >= sample_size);
 
         let filename = run.filename();
-        let abspath_with_undersampling = if tumour_size > sample_size {
-            abspath.to_owned().join(format!("{}cells", sample_size))
-        } else {
-            abspath.to_owned()
-        };
+        let abspath_with_undersampling =
+            abspath.to_owned().join(format!("{}cells", sample_size));
 
         // undersample dynamics and restart the growth for the next timepoint
         let (dynamics, run) = if tumour_size > sample_size {
@@ -496,41 +492,56 @@ impl Perform for DynamicalApp {
 
 impl Tarball for DynamicalApp {
     fn compress(self) -> anyhow::Result<()> {
-        for d in self.dynamics.iter() {
-            if self.verbosity > 0 {
-                println!(
-                    "{} Creating tarball for dynamics {}",
-                    Utc::now(),
-                    d.get_name()
-                );
-            }
-            let src = self.absolute_path.clone().join(d.get_name());
-            let dest = self.relative_path.clone().join(d.get_name());
-            if self.verbosity > 0 {
-                println!("src {:#?} dest {:#?} ", src, dest);
-            }
-            compress_dir(&dest, &src, self.verbosity)
-                .expect("Cannot compress dynamics");
-        }
+        for (_, sample_size) in self.experiments.iter() {
+            let src_sample = self
+                .absolute_path
+                .clone()
+                .join(format!("{}cells", sample_size));
+            let dest_sample = self
+                .relative_path
+                .clone()
+                .join(format!("{}cells", sample_size));
 
-        // specific case with moments dynamics (saving the mean)
-        for path in fs::read_dir(&self.absolute_path)? {
-            match path {
-                Ok(p) => {
-                    if p.path().ends_with("mean_dynamics") {
-                        let src =
-                            self.absolute_path.clone().join("mean_dynamics");
-                        let dest =
-                            self.relative_path.clone().join("mean_dynamics");
-                        if self.verbosity > 0 {
-                            println!("src {:#?} dest {:#?} ", src, dest);
-                        }
-                        compress_dir(&dest, &src, self.verbosity)
-                            .expect("Cannot compress mean_dynamics");
-                    }
+            for d in self.dynamics.iter() {
+                if self.verbosity > 0 {
+                    println!(
+                        "{} Creating tarball for dynamics {}",
+                        Utc::now(),
+                        d.get_name()
+                    );
                 }
-                _ => {
-                    return Ok(());
+                let src = src_sample.clone().join(d.get_name());
+                let dest = dest_sample.clone().join(d.get_name());
+                if self.verbosity > 0 {
+                    println!("src {:#?} dest {:#?} ", src, dest);
+                }
+                compress_dir(&dest, &src, self.verbosity)
+                    .expect("Cannot compress dynamics");
+            }
+
+            // specific case with moments dynamics (saving the mean)
+            for path in fs::read_dir(&self.absolute_path)? {
+                match path {
+                    Ok(p) => {
+                        if p.path().ends_with("mean_dynamics") {
+                            let src = self
+                                .absolute_path
+                                .clone()
+                                .join("mean_dynamics");
+                            let dest = self
+                                .relative_path
+                                .clone()
+                                .join("mean_dynamics");
+                            if self.verbosity > 0 {
+                                println!("src {:#?} dest {:#?} ", src, dest);
+                            }
+                            compress_dir(&dest, &src, self.verbosity)
+                                .expect("Cannot compress mean_dynamics");
+                        }
+                    }
+                    _ => {
+                        return Ok(());
+                    }
                 }
             }
         }
@@ -732,12 +743,22 @@ impl Dynamical {
             matches.value_of_t("delta2").unwrap_or_else(|e| e.exit());
 
         // population and sample sizes
-        let tumour_sizes = match matches.values_of_t("tumour_size") {
-            Ok(sizes) => Some(sizes),
+        let tumour_sizes = match matches.values_of_t("sizes") {
+            Ok(sizes) => {
+                assert!(sizes.last().unwrap() == &cells,
+                    "The last value of `sizes` must have the same number of cells as provided by `cells` argument");
+                Some(sizes)
+            }
             _ => None,
         };
-        let sample_sizes = match matches.values_of_t("sample_sizes") {
-            Ok(sizes) => Some(sizes),
+        let sample_sizes = match matches.values_of_t("samples") {
+            Ok(sizes) => {
+                assert!(tumour_sizes
+                    .as_ref()
+                    .map_or(true, |v| v.len() == sizes.len()),
+                    "Must supply the same number of values for arguments `sizes` and `samples`");
+                Some(sizes)
+            }
             _ => None,
         };
 

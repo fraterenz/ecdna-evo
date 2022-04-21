@@ -9,6 +9,8 @@ use std::{
     path::Path,
 };
 
+use serde::Serialize;
+
 #[cfg(test)]
 #[macro_use(quickcheck)]
 extern crate quickcheck_macros;
@@ -16,7 +18,7 @@ extern crate quickcheck_macros;
 /// Number of individual cells present in the system.
 pub type NbIndividuals = u64;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize)]
 pub struct Seed(u64);
 
 impl Seed {

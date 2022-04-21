@@ -83,8 +83,20 @@ pub fn clap_app() -> Command<'static> {
                         If none is specified, simulate all.\n"
 					)
             )
-            .arg(arg!(--sizes ...).help("Number of cells present in the tumour when samples have been collected"))
-            .arg(arg!(--samples ...).help("Number of cells present in the samples"))
+            .arg(Arg::new("sizes")
+                .long("sizes")
+                .multiple_values(true)
+                .takes_value(true)
+                .requires("samples")
+                .required(false)
+                .help("Number of cells present in the tumour when samples have been collected. The number of occurences of this argument must match those of `samples`."))
+            .arg(Arg::new("samples")
+                .long("samples")
+                .multiple_values(true)
+                .takes_value(true)
+                .requires("sizes")
+                .required(false)
+                .help("Number of cells present in the samples. When this argument is present, must also specify the argument `sizes` for each `samples` value."))
             .arg(
                 arg!(--patient <name>"Patient name used to save the results."))
             .arg(
