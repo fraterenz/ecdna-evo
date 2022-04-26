@@ -31,15 +31,15 @@ class App:
     def run(self):
         found_nplus, found_nminus = False, False
         if self.nplus:
-            loaded = []
+            nplus = []
             path2save = commons.create_path2save(self.path2dir, Path("nplus.pdf"))
             for plus in self.nplus:
                 df = commons.load_unformatted_csv(plus)
-                loaded.append(df)
+                nplus.append(df)
                 if self.verbosity > 0:
                     print(df.head())
             self.plot(
-                loaded,
+                nplus,
                 path2save,
                 xlabel="Tumour cells",
                 ylabel="Cells with ecDNA copies",
@@ -49,31 +49,52 @@ class App:
             found_nplus = True
         if self.nminus:
             path2save = commons.create_path2save(self.path2dir, Path("nminus.pdf"))
-            loaded = []
+            nminus = []
             for minus in self.nminus:
                 df = commons.load_unformatted_csv(minus)
-                loaded.append(df)
+                nminus.append(df)
                 if self.verbosity > 0:
                     print(df.head())
             self.plot(
-                loaded,
+                nminus,
                 path2save,
                 xlabel="Tumour cells",
-                ylabel="Cells without any ecDNA copies",
+                ylabel="Cells w/o any ecDNA copies",
                 legend=False,
                 loglog=True,
                 fontsize=18,
             )
             found_nminus = True
+            print(nminus)
         if self.time:
-            if found_nplus:
-                pass
-            elif found_nminus:
-                pass
-            else:
+            if not (found_nplus and found_nminus):
                 raise ValueError(
                     "Cannot plot the gillepsie time without nplus or nminus"
                 )
+            else:
+                loaded = []
+                for time in self.time:
+                    df = commons.load_unformatted_csv(time)
+                    loaded.append(df)
+                    if self.verbosity > 0:
+                        print(df.head())
+
+                path2save = commons.create_path2save(self.path2dir, Path("time.pdf"))
+                self.plot(loaded, path2save, legend=False)
+
+                if found_nplus:
+                    path2save = commons.create_path2save(self.path2dir, Path("nplus_growth.pdf"))
+                    self.plot_xy(loaded, nplus, path2save)
+                if found_nminus:
+                    path2save = commons.create_path2save(self.path2dir, Path("nminus_growth.pdf"))
+                    self.plot_xy(loaded, nminus, path2save)
+                if found_nplus and found_nminus:
+                    path2save = commons.create_path2save(self.path2dir, Path("population.pdf"))
+                    population = []
+                    for (plus, minus) in zip(nplus, nminus):
+                        population.append(plus.add(minus, axis="columns"))
+                    self.plot_xy(loaded, population, path2save)
+
         if self.mean:
             loaded = []
             path2save = commons.create_path2save(self.path2dir, Path("mean.pdf"))
@@ -108,10 +129,10 @@ class App:
             loaded = []
             path2save = commons.create_path2save(self.path2dir, Path("frequency.pdf"))
             # assume order matches
-            for (nplus, nminus) in zip(self.nplus, self.nminus):
-                plus = commons.load_unformatted_csv(nplus)
-                minus = commons.load_unformatted_csv(nminus)
-                frequency = plus / (plus + minus)
+            for (plus, minus) in zip(nplus, nminus):
+                # plus = commons.load_unformatted_csv(nplus)
+                # minus = commons.load_unformatted_csv(nminus)
+                frequency = plus.div(plus.add(minus, axis="columns"), axis="columns")
                 loaded.append(frequency)
 
                 if self.verbosity > 0:
@@ -212,9 +233,30 @@ class App:
     ):
         # TODO legend with labels
         fig, ax = plt.subplots(1, 1)
+        # df has shape (iterations x runs)
         for df, c in zip(data, commons.PALETTE.colors):
+            print(df)
             df.plot(ax=ax, alpha=0.2, color=c, **kwargs)
             df.mean(axis=1).plot(ax=ax, alpha=1, color=c, linestyle="--", **kwargs)
+        ax.tick_params(axis="y", labelsize=18, which="both", width=1)
+        ax.tick_params(axis="x", labelsize=18, which="both", width=1)
+        ax.set_xlabel(ax.xaxis.get_label().get_text(), fontsize=18)
+        ax.set_ylabel(ax.yaxis.get_label().get_text(), fontsize=18)
+        print("Saving figure to", path2save)
+        fig.savefig(fname=path2save, bbox_inches="tight")
+
+    def plot_xy(
+        self,
+        data_x: List[pd.DataFrame],
+        data_y: List[pd.DataFrame],
+        path2save: Path,
+        **kwargs,
+    ):
+        # TODO legend with labels
+        fig, ax = plt.subplots(1, 1)
+        for df_x, df_y, c in zip(data_x, data_y, commons.PALETTE.colors):
+            ax.plot(df_x, df_y, alpha=0.2, color=c, **kwargs)
+            # ax.plot(df_x, df_y.mean(axis=1), alpha=1, color=c, linestyle="--", **kwargs)
         ax.tick_params(axis="y", labelsize=18, which="both", width=1)
         ax.tick_params(axis="x", labelsize=18, which="both", width=1)
         ax.set_xlabel(ax.xaxis.get_label().get_text(), fontsize=18)
@@ -300,7 +342,7 @@ def build_app() -> App:
         "--save",
         metavar="FILE",
         dest="path2dir",
-        required=False,
+        required=True,
         type=str,
         help="Path to directory where to store the results",
     )

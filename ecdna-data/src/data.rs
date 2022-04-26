@@ -140,7 +140,7 @@ pub struct EcDNASummary {
     pub entropy: Entropy,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Data {
     pub ecdna: EcDNADistribution,
     pub summary: EcDNASummary,

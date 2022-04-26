@@ -9,7 +9,7 @@ from collections import UserDict
 from pathlib import Path
 from dataclasses import dataclass
 from collections import UserDict
-from typing import NewType, Tuple
+from typing import NewType, Tuple, List
 from itertools import combinations
 from . import commons
 
@@ -32,10 +32,11 @@ class App:
 
     abc: Path
     thresholds: Thresholds
-    theta: str
+    theta: List[str]
     path2save: Path
     stats: bool
     verbosity: bool
+
 
 def abc_is_subsampled(data: pd.DataFrame) -> bool:
     """When the runs have been subsampled"""
@@ -49,13 +50,38 @@ def infer_nb_timepoints(data: pd.DataFrame, verbosity: bool) -> int:
         # assert data.idx.value_counts().unique() == 1, "Found abc runs with same id"
         nb_timepoints = data[["idx", "cells"]].groupby("idx").count().cells.unique()
     else:
-        nb_timepoints = data[[data.columns[0], "idx", "cells"]].groupby([data.columns[0], "idx"]).count().cells.unique()
-    assert nb_timepoints.shape[0] == 1, "Found runs with different nb of timepoints {}".format(nb_timepoints)
+        nb_timepoints = (
+            data[["parental_idx", "idx", "cells"]]
+            .groupby([data.columns[0], "idx"])
+            .count()
+            .cells.unique()
+        )
+    assert (
+        nb_timepoints.shape[0] == 1
+    ), "Found runs with different nb of timepoints {}".format(nb_timepoints)
 
     nb_timepoints = int(nb_timepoints[0])
     if verbosity:
         print("Found {} timepoints".format(nb_timepoints))
     return nb_timepoints
+
+
+def abc_longitudinal(
+    data: pd.DataFrame, my_query: str, nb_timepoints: int, verbosity: bool
+) -> pd.DataFrame:
+    """when multiple timepoints are present, runs can have the idx. In this
+    case, we want to plot runs for which the query is satisfied for **all**
+    their timepoints: groupby idx (same run with different nb timepoints),
+    then apply query on those timepoints, then keep run only if all timepoints
+    match query, i.e. shape[0] == timepoints. Finally, take only once the
+    fitness coefficient to avoid saving it multiple times"""
+    return (
+        data.groupby(["parental_idx", "idx"]).filter(
+            lambda x: (x.query(my_query)).shape[0] == nb_timepoints
+        )
+        # .drop_duplicates(["parental_idx", "idx"])
+    )
+
 
 def load(path2abc: Path, verbosity: bool) -> Tuple[pd.DataFrame, int]:
     abc: pd.DataFrame = pd.read_csv(path2abc, header=0, low_memory=False)
@@ -63,56 +89,95 @@ def load(path2abc: Path, verbosity: bool) -> Tuple[pd.DataFrame, int]:
     abc.dropna(how="all", inplace=True)
     if verbosity:
         print(abc.head())
-    for col in abc.columns[1:3]:
-        abc[col] = abc[col].astype("uint")
-    for col in abc.columns[3:-2]:
-        abc[col] = abc[col].astype("float")
-    for col in abc.columns[-2:]:
-        abc[col] = abc[col].astype("uint")
+    abc.rename(columns={abc.columns[0]: "parental_idx"}, inplace=True)
+    try:  # can be nan when no subsampling
+        abc["parental_idx"] = abc["parental_idx"].astype("uint")
+    except ValueError:
+        assert abc["parental_idx"].isna().any()
+        abc["parental_idx"] = abc["parental_idx"].astype("float")
+
+    abc["idx"] = abc["idx"].astype("uint")
+    abc["seed"] = abc["seed"].astype("uint")
     abc["cells"] = abc["cells"].astype("uint")
+    abc["init_cells"] = abc["init_cells"].astype("uint")
+
+    # init_copies can be NaN when the run started with custom ecDNA distribution
+    try:
+        abc["init_copies"] = abc["init_copies"].astype("uint")
+    except ValueError:
+        abc["init_copies"] = abc["init_copies"].astype("float")
+
+    abc["ecdna"] = abc["ecdna"].astype("float")
+    abc["mean"] = abc["mean"].astype("float")
+    abc["frequency"] = abc["frequency"].astype("float")
+    abc["entropy"] = abc["entropy"].astype("float")
+    abc["f1"] = abc["f1"].astype("float")
+    abc["f2"] = abc["f2"].astype("float")
+    abc["d1"] = abc["d1"].astype("float")
+    abc["d2"] = abc["d2"].astype("float")
+    abc["init_mean"] = abc["init_mean"].astype("float")
 
     if verbosity:
         print(abc.head())
         print(abc.tail())
         print(abc.dtypes)
         print(abc.shape)
-	# TODO rm
-    print(abc.f1.describe())
+        print(abc.f1.describe())
+
     return (abc, infer_nb_timepoints(abc, verbosity))
 
 
 def run(app: App):
     """Plot posterior distribution of the fitness coefficient"""
-    if app.stats:
-        path2save = commons.create_path2save(
-            app.path2save,
-            Path(
-                "{}mean_{}frequency_{}entropy_{}ecdna_{}_subplots.pdf".format(
-                    app.thresholds["mean"],
-                    app.thresholds["frequency"],
-                    app.thresholds["entropy"],
-                    app.thresholds["ecdna"],
-                    app.theta,
-                )
-            ),
-        )
-        (abc, nb_timepoints) = load(app.abc, app.verbosity)
-        plot_posterior_per_stats(
-            app.thresholds, abc, path2save, nb_timepoints, app.theta, app.verbosity
-        )
-    else:
-        path2save = commons.create_path2save(
-            app.path2save,
-            Path(
-                "{}relative_{}ecdna_{}.pdf".format(
-                    app.thresholds["mean"], app.thresholds["ecdna"], app.theta
-                )
-            ),
-        )
-        (abc, nb_timepoints) = load(app.abc, app.verbosity)
-        plot_post(
-            app.thresholds, abc, path2save, nb_timepoints, app.theta, app.verbosity
-        )
+    for theta in app.theta:
+        print("Generating posterior for", theta)
+        if app.stats:
+            path2save = commons.create_path2save(
+                app.path2save,
+                Path(
+                    "{}mean_{}frequency_{}entropy_{}ecdna_{}_subplots.pdf".format(
+                        app.thresholds["mean"],
+                        app.thresholds["frequency"],
+                        app.thresholds["entropy"],
+                        app.thresholds["ecdna"],
+                        theta,
+                    )
+                ),
+            )
+            (abc, nb_timepoints) = load(app.abc, app.verbosity)
+            plot_posterior_per_stats(
+                app.thresholds, abc, path2save, nb_timepoints, theta, app.verbosity
+            )
+        else:
+            path2save = commons.create_path2save(
+                app.path2save,
+                Path(
+                    "{}relative_{}ecdna_{}.pdf".format(
+                        app.thresholds["mean"], app.thresholds["ecdna"], theta
+                    )
+                ),
+            )
+            (abc, nb_timepoints) = load(app.abc, app.verbosity)
+            plot_post(
+                app.thresholds, abc, path2save, nb_timepoints, theta, app.verbosity
+            )
+
+    # plot distances
+    path2save = commons.create_path2save(
+        app.path2save,
+        Path("hisograms.pdf"),
+    )
+    fig, axs = plt.subplots(2, 2, tight_layout=True)
+    n_bins = 100
+    axs[0, 0].hist(abc.ecdna, bins=n_bins)
+    axs[0, 0].set_title("KS distance distribution")
+    axs[0, 1].hist(abc["mean"], bins=n_bins)  # ylabel=)
+    axs[0, 1].set_title("Mean rel distance")
+    axs[1, 0].hist(abc["frequency"], bins=n_bins)
+    axs[1, 0].set_title("Frequency rel distance")
+    axs[1, 1].hist(abc["entropy"], bins=n_bins)
+    axs[1, 1].set_title("Entropy rel distance")
+    plt.savefig(path2save)
 
 
 def build_app() -> App:
@@ -134,8 +199,8 @@ def build_app() -> App:
     parser.add_argument(
         "--theta",
         dest="theta",
-        required=True,
-        choices=["f1", "d1", "d2", "init_copies"],
+        nargs="+",
+        choices=["f1", "d1", "d2", "copies"],
         help="Parameter to infer",
     )
 
@@ -196,10 +261,15 @@ def build_app() -> App:
     stats = args["stats"]
     assert abc.parent.is_dir()
 
+    # list of quantities for which we want to approximate the posterior distribution
+    theta_list = [
+        theta if theta != "copies" else "init_copies" for theta in args["theta"]
+    ]
+
     return App(
         abc,
         Thresholds(thresholds),
-        args["theta"],
+        theta_list,
         abc.parent,
         stats,
         args["verbosity"],
@@ -229,7 +299,7 @@ def plot_death(death, ax, title=None):
 
 
 def plot_copies(copies, ax, title=None):
-    plot_rates(copies, (0, copies.max()), 120, ax, title)
+    plot_rates(copies, (0, copies.max().iloc[0] + 1), 120, ax, title)
 
 
 def plot_rates(rates, range_hist: Tuple[float, float], bins: int, ax, title=None):
@@ -237,7 +307,7 @@ def plot_rates(rates, range_hist: Tuple[float, float], bins: int, ax, title=None
     `rates`. Here `title` is the title of the axis `ax`."""
     ax.hist(rates, bins=bins, range=range_hist, align="mid")
     ax.set_title(title)
-    ax.tick_params(axis='both', labelsize=20)
+    ax.tick_params(axis="both", labelsize=20)
 
 
 def plot_posterior_per_stats(
@@ -261,7 +331,15 @@ def plot_posterior_per_stats(
         for the_thresholds in combinations(thresholds.items(), r):
             # iter over the (stats, threshold) for each combination
             ax = axes[np.unravel_index(i, MYSHAPE)]
-            plot_posterior(the_thresholds, abc, ax, nb_timepoints, theta, verbosity)
+            plot_posterior(
+                the_thresholds,
+                abc,
+                ax,
+                nb_timepoints,
+                theta,
+                verbosity,
+                stats_mode=True,
+            )
             clean = ",".join(
                 [
                     PLOTTING_STATS[stat]
@@ -291,7 +369,10 @@ def plot_posterior_per_stats(
     plt.close(fig_tot)
 
 
-def plot_posterior(thresholds, abc, ax, nb_timepoints, theta, verbosity):
+def plot_posterior(
+    thresholds, abc, ax, nb_timepoints, theta, verbosity, stats_mode=False
+):
+    assert theta in set(abc.columns), "Cannot find column '{}' in data".format(theta)
     my_query = ""
     stats = []
     for threshold in thresholds:
@@ -299,25 +380,23 @@ def plot_posterior(thresholds, abc, ax, nb_timepoints, theta, verbosity):
         stats.append(threshold[0])
     my_query = my_query.rstrip(" & ")
     print(my_query)
-    if nb_timepoints == 1:
-        to_plot = abc.loc[abc[stats].query(my_query).index, theta]
-    else:
-        # when multiple timepoints are present, runs can have the idx. In this
-        # case, # we want to plot runs for which the query is satisfied for
-        # **all** their # timepoints: groupby idx (same run with different
-        # timepoints), then apply query on those timepoints, then keep run only
-        # if all timepoints match query, i.e. shape[0] == timepoints. Finally,
-        # take only once the fitness # coefficient to avoid saving it multiple
-        # times
-        to_plot = (
-            abc.groupby("idx")
-            .filter(lambda x: (x.query(my_query)).shape[0] == nb_timepoints)
-            .drop_duplicates(["idx"])[theta]
-        )
+    to_plot = abc.loc[abc[stats].query(my_query).index, :]
+    if nb_timepoints > 1:
+        if verbosity:
+            print("Running longitudinal ABC")
+        # abc_longitudinal(to_plot, my_query, nb_timepoints, verbosity) TODO?
+        # to_plot.drop(index=to_plot[to_plot["cells"] == 10000].index, inplace=True)
+        # assert to_plot.cells.unique() == 1000000, to_plot.cells.unique()
+        # print(to_plot)
+    to_plot.drop(columns=set(to_plot.columns) - set([theta]), inplace=True)
     if verbosity:
         print(to_plot)
     if theta == "f1":
-        plot_fitness(to_plot, ax, list(stats))
+        plot_fitness(to_plot, ax, title=list(stats) if stats_mode else None)
+        if not stats_mode:
+            ax.set_xlabel(
+                r"Posterior distribution for $\rho_1^*$", fontsize=24, usetex=True
+            )
     elif theta in {"d1", "d2"}:
         plot_death(to_plot, ax, list(stats))
     elif theta == "init_copies":

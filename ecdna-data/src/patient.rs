@@ -1,8 +1,10 @@
 //! A `Patient` is a collection of `SequencingData` that have been collected and sequenced from the same tumour mass but at different timepoints.
 use crate::data::{EcDNADistribution, Entropy, Frequency, Mean};
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, ensure, Context};
 use ecdna_sim::NbIndividuals;
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -20,6 +22,26 @@ pub struct SequencingData {
     /// The number of malignant cells in the whole tumour mass when the sample has been collected.
     pub tumour_size: NbIndividuals,
     pub name: String,
+}
+
+impl Eq for SequencingData {}
+
+impl Ord for SequencingData {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.tumour_size.cmp(&other.tumour_size)
+    }
+}
+
+impl PartialOrd for SequencingData {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for SequencingData {
+    fn eq(&self, other: &Self) -> bool {
+        self.tumour_size == other.tumour_size
+    }
 }
 
 impl SequencingDataBuilder {
@@ -90,11 +112,23 @@ impl Patient {
         self.samples.is_empty()
     }
 
-    pub fn add_sample(&mut self, sample: SequencingData) {
+    pub fn is_sorted(&self) -> bool {
+        self.samples
+            .windows(2)
+            .all(|sample| sample[0].tumour_size <= sample[1].tumour_size)
+    }
+
+    pub fn add_sample(
+        &mut self,
+        sample: SequencingData,
+    ) -> anyhow::Result<()> {
         if self.verbosity > 0 {
             println!("Adding sample {} to patient {}", sample.name, self.name);
         }
-        self.samples.push(sample)
+        ensure!(!self.hash_set().contains(&sample.name));
+        self.samples.push(sample);
+        self.samples.sort();
+        Ok(())
     }
 
     pub fn save(self) -> anyhow::Result<()> {
@@ -117,7 +151,7 @@ impl Patient {
         if self.verbosity > 0 {
             println!("Loading patient from {:#?}", self.path2json());
         }
-        let mut patient: Patient = serde_json::from_str(
+        let patient: Patient = serde_json::from_str(
             &fs::read_to_string(&self.path2json()).with_context(|| {
                 format!("Cannot load patient from {:#?}", self.path2json())
             })?,
@@ -130,7 +164,9 @@ impl Patient {
             println!("Samples for patient before loading {:#?}", self.samples);
         }
 
-        self.samples.append(&mut patient.samples);
+        for other_sample in patient.samples.into_iter() {
+            self.add_sample(other_sample)?;
+        }
 
         if self.verbosity > 1 {
             println!("Samples for patient after loading {:#?}", self.samples);
@@ -146,15 +182,23 @@ impl Patient {
         if verbosity > 0 {
             println!("Loading patient from {:#?}", path);
         }
-        serde_json::from_str(&fs::read_to_string(path).with_context(|| {
-            format!("Cannot load patient from {:#?}", path)
-        })?)
-        .with_context(|| {
-            format!("Cannot deserialize patient from {:#?}", path)
-        })
+        let mut patient: Patient =
+            serde_json::from_str(&fs::read_to_string(path).with_context(
+                || format!("Cannot load patient from {:#?}", path),
+            )?)
+            .with_context(|| {
+                format!("Cannot deserialize patient from {:#?}", path)
+            })?;
+
+        patient.samples.sort();
+        Ok(patient)
     }
 
     pub fn path2json(&self) -> PathBuf {
         PathBuf::from(format!("results/preprocessed/{}.json", self.name))
+    }
+
+    fn hash_set(&self) -> HashSet<String> {
+        self.samples.iter().map(|sample| sample.name.clone()).collect()
     }
 }

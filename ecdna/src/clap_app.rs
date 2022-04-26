@@ -73,6 +73,7 @@ pub fn clap_app() -> Command<'static> {
                 .possible_values(
                     &["nplus", "nminus", "mean", "moments", "time"]
                 )
+                .multiple_values(true)
                 .help(
 						"Quantities computed for each iteration (dynamical).\n\
 						\t- nplus: track the number of cells w/ ecDNA for each iteration.\n\

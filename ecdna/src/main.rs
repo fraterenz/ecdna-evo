@@ -25,7 +25,7 @@ fn main() {
             .into(),
     };
 
-    app.run().unwrap(); // TODO
+    app.run().with_context(|| "Cannot run the app").unwrap(); // TODO
 
     std::process::exit(match app.compress() {
         Ok(_) => {

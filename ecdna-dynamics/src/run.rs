@@ -29,7 +29,7 @@ pub type DNACopy = u16;
 /// and [`Ended`].
 ///
 /// [typestate pattern]: https://github.com/cbiffle/m4vga-rs/blob/a1e2ba47eaeb4864f0d8b97637611d9460ce5c4d/notes/20190131-typestate.md
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Run<S: RunState> {
     state: S,
 
@@ -54,13 +54,14 @@ where
 
 /// The simulation of the run has started, the stochastic birth-death process
 /// has started looping over the iterations.
+#[derive(Debug)]
 pub struct Started {
     /// State of the system at one particular iteration
     system: System,
 }
 
 /// The simulation of the run has ended, which is ready to be saved.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Ended {
     /// Gillespie time at the end of the run
     gillespie_time: GillespieTime,
@@ -80,13 +81,16 @@ impl RunState for Ended {}
 /// start with the data of the ended `Run`.
 impl From<Run<Ended>> for Run<Started> {
     fn from(run: Run<Ended>) -> Self {
-        let state: Started = run.state.into();
+        let last_iter = run.state.last_iter;
+        let ecdna = run.state.data.ecdna.clone();
+        let init_state = InitialState::new(ecdna, last_iter);
+        let state = run.state.into();
 
         Run {
             idx: run.idx,
             bd_process: run.bd_process,
             state,
-            init_state: run.init_state,
+            init_state,
             seed: run.seed,
             rng: run.rng,
         }
@@ -144,6 +148,14 @@ impl Run<Started> {
         self.state.system.nplus_cells()
     }
 
+    pub fn get_init_state(&self) -> &InitialState {
+        &self.init_state
+    }
+
+    pub fn get_init_iter(&self) -> &usize {
+        &self.init_state.init_iter
+    }
+
     pub fn mean_ecdna(&self) -> f32 {
         //! Average of ecDNA copy number distribution within the population for
         //! the current iteration.
@@ -195,11 +207,14 @@ impl Run<Started> {
         let mut nminus = *self.get_nminus();
 
         // if we start from an initial state having more than one cell, must prepare
-        // the dynamics by filling them with const values
-        if let Some(dynamics) = dynamics {
-            for _ in 0..self.state.system.ntot() {
-                for d in dynamics.iter_mut() {
-                    d.update(&self);
+        // the dynamics by filling them with const values, unless we are restarting
+        // the run
+        if self.init_state.init_iter <= 1 {
+            if let Some(dynamics) = dynamics {
+                for _ in 0..self.state.system.ntot() {
+                    for d in dynamics.iter_mut() {
+                        d.update(&self);
+                    }
                 }
             }
         }
@@ -747,7 +762,7 @@ impl ContinueGrowth for CellCulture {
         //! In cell culture experiments, growth restart from subsample of the
         //! whole population.
         let idx = run.idx;
-        let run = run.undersample_ecdna(&sample_size, idx);
+        let run = run.undersample_ecdna(sample_size, idx);
         ensure!(&run.nb_cells() == sample_size);
         Ok(run.into())
     }

@@ -75,7 +75,10 @@ fn main() {
     let new_sample = new_sample(app);
     let (name, path) = (patient.name.clone(), patient.path2json());
 
-    patient.add_sample(new_sample);
+    if let Err(e) = patient.add_sample(new_sample) {
+        eprintln!("Error, cannot add sample to patient due to:\n{}", e);
+        process::exit(1)
+    }
 
     process::exit(match patient.save() {
         Ok(_) => {

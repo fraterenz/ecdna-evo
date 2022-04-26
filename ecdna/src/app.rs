@@ -112,7 +112,7 @@ impl BayesianApp {
 
         if config.verbosity > 0 {
             println!(
-                "Initial ecDNA distribution {:#?} with {:#?}",
+                "Initial ecDNA distribution {:#?} with {:#?} for the simulations",
                 ecdna, summary
             );
         }
@@ -167,7 +167,7 @@ impl BayesianApp {
                     "Sample is undersample but the sample size is not known",
                 );
                 // trade-off between computational time and accuracy
-                let nb_samples = 100usize;
+                let nb_samples = 10usize;
                 let mut results = ABCResults::with_capacity(nb_samples);
                 // create multiple subsamples of the same run and save the results
                 // in the same file `path`. It's ok as long as cells is not too
@@ -192,11 +192,6 @@ impl BayesianApp {
 
 impl Perform for BayesianApp {
     fn run(&mut self) -> anyhow::Result<()> {
-        ensure!(
-            self.patient.samples.len() == 1,
-            "Cannot run Bayesian app with multiple patient's samples"
-        );
-
         println!(
             "{} Start ABC with {} runs for patient {}",
             Utc::now(),
@@ -214,8 +209,10 @@ impl Perform for BayesianApp {
             );
         }
 
+        ensure!(self.patient.is_sorted());
+
         (0..self.runs)
-            //.into_iter()
+            // .into_iter()
             .into_par_iter()
             .progress_count(self.runs as u64)
             .for_each(|idx| {
@@ -396,14 +393,18 @@ impl DynamicalApp {
         ensure!(tumour_size >= sample_size);
 
         let filename = run.filename();
-        let abspath_with_undersampling =
-            abspath.to_owned().join(format!("{}cells", sample_size));
+        let abspath_with_undersampling = abspath.to_owned().join(format!(
+            "{}sample{}cells",
+            sample_size,
+            run.get_ecdna().nb_cells()
+        ));
 
         // undersample dynamics and restart the growth for the next timepoint
         let (dynamics, run) = if tumour_size > sample_size {
             let idx = run.idx;
-            let run = run.undersample_ecdna(sample_size, idx);
-            run.save_ecdna(&abspath_with_undersampling);
+            run.clone()
+                .undersample_ecdna(sample_size, idx)
+                .save_ecdna(&abspath_with_undersampling);
             let run = self.growth.restart_growth(run, sample_size)?;
             // this will result in dynamics having different values for the
             // same gillesipe time: is it a problem?
@@ -492,15 +493,15 @@ impl Perform for DynamicalApp {
 
 impl Tarball for DynamicalApp {
     fn compress(self) -> anyhow::Result<()> {
-        for (_, sample_size) in self.experiments.iter() {
+        for (tumour_size, sample_size) in self.experiments.iter() {
             let src_sample = self
                 .absolute_path
                 .clone()
-                .join(format!("{}cells", sample_size));
+                .join(format!("{}sample{}cells", sample_size, tumour_size));
             let dest_sample = self
                 .relative_path
                 .clone()
-                .join(format!("{}cells", sample_size));
+                .join(format!("{}sample{}cells", sample_size, tumour_size));
 
             for d in self.dynamics.iter() {
                 if self.verbosity > 0 {
@@ -520,18 +521,13 @@ impl Tarball for DynamicalApp {
             }
 
             // specific case with moments dynamics (saving the mean)
-            for path in fs::read_dir(&self.absolute_path)? {
+            for path in fs::read_dir(&src_sample)? {
                 match path {
                     Ok(p) => {
                         if p.path().ends_with("mean_dynamics") {
-                            let src = self
-                                .absolute_path
-                                .clone()
-                                .join("mean_dynamics");
-                            let dest = self
-                                .relative_path
-                                .clone()
-                                .join("mean_dynamics");
+                            let src = src_sample.clone().join("mean_dynamics");
+                            let dest =
+                                dest_sample.clone().join("mean_dynamics");
                             if self.verbosity > 0 {
                                 println!("src {:#?} dest {:#?} ", src, dest);
                             }
@@ -762,9 +758,11 @@ impl Dynamical {
             _ => None,
         };
 
-        let growth = matches
-            .value_of_t("experiment")
-            .unwrap_or_else(|_| String::from("patient"));
+        let growth = if matches.is_present("culture") {
+            String::from("culture")
+        } else {
+            String::from("patient")
+        };
 
         let seed: u64 = matches.value_of_t("seed").unwrap_or(26u64);
 

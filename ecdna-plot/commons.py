@@ -7,10 +7,10 @@ from matplotlib import colors
 PALETTE = colors.ListedColormap(["#2b8cbe", "#636363", "red", "yellow"])
 
 
-def create_path2save(path2dir: Path, filename: Path) -> Path:
+def create_path2save(path2dir: Path, filename: Path, exist_ok=False) -> Path:
     assert path2dir.is_dir()
     path = path2dir / filename
-    path.touch(exist_ok=False)
+    path.touch(exist_ok=exist_ok)
     return path
 
 
