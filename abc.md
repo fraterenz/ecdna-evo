@@ -36,7 +36,8 @@ This file has the following structure:
 | f1           | float        | Selection coefficient of the cells w/ ecDNA                                                 |
 | f2           | float        | Selection coefficient of the cells w/o ecDNA                                                |
 | d1           | float        | Death coefficient of the cells w/ ecDNA                                                     |
-| cells        | NbIndividuals| Number of cells in the system when the abc rejection algorithm was ran                      |
+| cells        | NbIndividuals| Number of cells in the sample when the abc rejection algorithm was ran                      |
+| tumour_cells | NbIndividuals| Number of cells in the tumour population when the abc rejection algorithm was ran           |
 | init_mean    | float        | Mean of the ecDNA distribution used to initialize the system                                |
 | init_cells   | NbIndividuals| Number of cells used to initialize the system                                               |
 | init_copies  | int          | Copies of ecDNA used to initialize the system                                               |

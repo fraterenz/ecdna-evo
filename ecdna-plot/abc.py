@@ -99,6 +99,7 @@ def load(path2abc: Path, verbosity: bool) -> Tuple[pd.DataFrame, int]:
     abc["idx"] = abc["idx"].astype("uint")
     abc["seed"] = abc["seed"].astype("uint")
     abc["cells"] = abc["cells"].astype("uint")
+    abc["tumour_cells"] = abc["tumour_cells"].astype("uint")
     abc["init_cells"] = abc["init_cells"].astype("uint")
 
     # init_copies can be NaN when the run started with custom ecDNA distribution

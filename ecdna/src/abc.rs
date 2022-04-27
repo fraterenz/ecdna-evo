@@ -55,6 +55,7 @@ impl ABCRejection {
         result.d1 = rates[2];
         result.d2 = rates[3];
         result.cells = run.nb_cells();
+        result.tumour_cells = *sample.get_tumour_size();
 
         result.seed = seed;
         result.idx = idx;
@@ -118,6 +119,8 @@ pub struct ABCResult {
     #[builder(setter(skip))]
     cells: NbIndividuals,
     #[builder(setter(skip))]
+    tumour_cells: NbIndividuals,
+    #[builder(setter(skip))]
     init_mean: f32,
     #[builder(setter(skip))]
     init_cells: NbIndividuals,
@@ -133,11 +136,6 @@ impl ABCResults {
     ) -> anyhow::Result<()> {
         //! Save the results of the abc inference for a run in a folder abc, where there is one file for each (parental) run and the name of the file corresponds to the parental run.
         let path2save = path2folder.to_owned();
-        // let path2save = if subsamples.is_some() {
-        //     path2folder.to_owned().join("samples")
-        // } else {
-        //     path2folder.to_owned()
-        // };
         let filename = match self.0[0].parental_idx {
             Some(run) => run.to_string(),
             None => self.0[0].idx.clone(),
