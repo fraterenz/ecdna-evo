@@ -1,21 +1,40 @@
 #!/usr/bn/env python
 # coding: utf-8
 """Plot the bayesian inferences."""
+from types import UnionType
 import matplotlib.pyplot as plt
 import numpy as np
 import argparse
 import pandas as pd
+import math
+import seaborn as sns
+from matplotlib.ticker import MaxNLocator
 from collections import UserDict
 from pathlib import Path
 from dataclasses import dataclass
+from enum import Enum, unique
 from collections import UserDict
-from typing import NewType, Tuple, List
+from typing import NewType, Tuple, List, Union
 from itertools import combinations
 from . import commons
 
 PLOTTING_STATS = {"ecdna": "D", "mean": "M", "frequency": "F", "entropy": "E"}
+THETA_MAPPING = {
+    "f1": "\\rho_1",
+    "init_copies": "\\gamma",
+    "d1": "\\delta_1",
+    "d2": "\\delta_2",
+}
 MYSHAPE = (len(PLOTTING_STATS), len(PLOTTING_STATS))
 Thresholds = NewType("Thresholds", UserDict[str, float])
+
+
+@unique
+class Plot(Enum):
+    # one graph with the posterior distribution
+    SIMPLE = 0
+    STATS = 1
+    TIMEPOINTS = 2
 
 
 @dataclass
@@ -34,7 +53,7 @@ class App:
     thresholds: Thresholds
     theta: List[str]
     path2save: Path
-    stats: bool
+    plot: Plot
     verbosity: bool
 
 
@@ -43,24 +62,32 @@ def abc_is_subsampled(data: pd.DataFrame) -> bool:
     return not data["parental_idx"].isna().any()
 
 
-def infer_nb_timepoints(data: pd.DataFrame, verbosity: bool) -> int:
-    if abc_is_subsampled(data):
-        nb_timepoints = (
-            data[["parental_idx", "idx", "cells"]]
-            .groupby(["parental_idx", "idx"])
-            .count()
-            .cells.unique()
-        )
-    else:
-        nb_timepoints = data[["idx", "cells"]].groupby("idx").count().cells.unique()
-    assert (
-        nb_timepoints.shape[0] == 1
-    ), "Found runs with different nb of timepoints {}".format(nb_timepoints)
+def query_from_thresholds(thresholds) -> Tuple[str, List[str]]:
+    """Create a query and stats from the thresholds"""
+    my_query = ""
+    stats = []
+    for threshold in thresholds:
+        my_query += "(`{}` < {}) & ".format(*threshold)
+        stats.append(threshold[0])
+    my_query = my_query.rstrip(" & ")
+    print(my_query)
+    return my_query, stats
 
-    nb_timepoints = int(nb_timepoints[0])
+
+def infer_timepoints(data: pd.DataFrame, verbosity: bool) -> List[int]:
+    idx2analyze = "parental_idx" if abc_is_subsampled(data) else "idx"
+    # tumour cells of the timepoint found for each run idx2analyze
+    cells = data[[idx2analyze, "tumour_cells"]].drop_duplicates()
+
+    assert (
+        cells.groupby(idx2analyze).count().tumour_cells.unique().shape[0] == 1
+    ), "Found runs with different nb of timepoints"
+
+    cells = cells.tumour_cells.drop_duplicates().tolist()
     if verbosity:
-        print("Found {} timepoints".format(nb_timepoints))
-    return nb_timepoints
+        print("Found {} timepoints with cells {}".format(len(cells), cells))
+
+    return cells
 
 
 def abc_longitudinal(
@@ -72,6 +99,8 @@ def abc_longitudinal(
     then apply query on those timepoints, then keep run only if all timepoints
     match query, i.e. shape[0] == timepoints. Finally, take only once the
     fitness coefficient to avoid saving it multiple times"""
+    if verbosity:
+        print("Running longitudinal ABC")
     return (
         data.groupby(["parental_idx", "idx"]).filter(
             lambda x: (x.query(my_query)).shape[0] == nb_timepoints
@@ -80,13 +109,15 @@ def abc_longitudinal(
     )
 
 
-def load(path2abc: Path, verbosity: bool) -> Tuple[pd.DataFrame, int]:
+def load(path2abc: Path, verbosity: bool) -> Tuple[pd.DataFrame, List[int]]:
+    if verbosity > 0:
+        print("Loading data")
     abc: pd.DataFrame = pd.read_csv(path2abc, header=0, low_memory=False)
     abc.drop(abc[abc.idx == "idx"].index, inplace=True)
     abc.dropna(how="all", inplace=True)
     if verbosity:
         print(abc.head())
-    abc.rename(columns={abc.columns[0]: "parental_idx"}, inplace=True)
+    abc.rename(columns={str(abc.columns[0]): "parental_idx"}, inplace=True)
     try:  # can be nan when no subsampling
         abc["parental_idx"] = abc["parental_idx"].astype("uint")
     except ValueError:
@@ -104,6 +135,10 @@ def load(path2abc: Path, verbosity: bool) -> Tuple[pd.DataFrame, int]:
         abc["init_copies"] = abc["init_copies"].astype("uint")
     except ValueError:
         abc["init_copies"] = abc["init_copies"].astype("float")
+        # when restart (longitudinal analysis) the init_copies are the same of
+        # the previous subsampled run
+        abc["init_copies"].fillna(method="ffill", inplace=True)
+        abc["init_copies"] = abc["init_copies"].astype("uint")
 
     abc["ecdna"] = abc["ecdna"].astype("float")
     abc["mean"] = abc["mean"].astype("float")
@@ -122,14 +157,37 @@ def load(path2abc: Path, verbosity: bool) -> Tuple[pd.DataFrame, int]:
         print(abc.shape)
         print(abc.f1.describe())
 
-    return (abc, infer_nb_timepoints(abc, verbosity))
+    return (abc, infer_timepoints(abc, verbosity))
 
 
 def run(app: App):
     """Plot posterior distribution of the fitness coefficient"""
+    (abc, timepoints) = load(app.abc, app.verbosity)
+
+    print("Checking priors first")
+
+    path2save = commons.create_path2save(app.path2save, Path("priors.pdf"))
+    fig, ax = plt.subplots(1, 1, tight_layout=True)
+    sns.pairplot(abc[app.theta], diag_kws={"bins": 100})
+    plt.savefig(path2save)
+
+    if app.verbosity:
+        print("distributions\n", abc[app.theta].describe())
+
+    correlation = abc[app.theta].corr()
+    if app.verbosity:
+        print("correlation: ", correlation)
+    # process to find if any high values are found
+    # 1. remove diag elements which are 1 by def
+    np.fill_diagonal(correlation.to_numpy(), 0.0)
+    # 2. find if any high values
+    highly_correlated = correlation[correlation >= 0.5].any().any()
+    if highly_correlated:
+        print("\t--WARNING: high correlation between the priors ", app.theta)
+
     for theta in app.theta:
         print("Generating posterior for", theta)
-        if app.stats:
+        if app.plot is Plot.STATS:
             path2save = commons.create_path2save(
                 app.path2save,
                 Path(
@@ -142,56 +200,119 @@ def run(app: App):
                     )
                 ),
             )
-            (abc, nb_timepoints) = load(app.abc, app.verbosity)
             plot_posterior_per_stats(
-                app.thresholds, abc, path2save, nb_timepoints, theta, app.verbosity
+                app.thresholds, abc, path2save, timepoints, theta, app.verbosity
             )
-        else:
-            path2save = commons.create_path2save(
-                app.path2save,
-                Path(
-                    "{}relative_{}ecdna_{}.pdf".format(
-                        app.thresholds["mean"], app.thresholds["ecdna"], theta
+        elif app.plot in {Plot.SIMPLE, Plot.TIMEPOINTS}:
+            try:
+                path2save = commons.create_path2save(
+                    app.path2save,
+                    Path(
+                        "{}relative_{}ecdna_{}.pdf".format(
+                            app.thresholds["mean"], app.thresholds["ecdna"], theta
+                        )
+                    ),
+                )
+            except FileExistsError as e:
+                if not app.plot is Plot.TIMEPOINTS:
+                    raise e
+            else:
+                plot_post(
+                    app.thresholds, abc, path2save, timepoints, theta, app.verbosity
+                )
+
+            try:
+                path2save = commons.create_path2save(
+                    app.path2save,
+                    Path("{}_priors.pdf".format(theta)),
+                )
+            except FileExistsError as e:
+                if app.verbosity > 0:
+                    print(
+                        "Skipping generation of distances because file already present"
                     )
-                ),
-            )
-            (abc, nb_timepoints) = load(app.abc, app.verbosity)
-            plot_post(
-                app.thresholds, abc, path2save, nb_timepoints, theta, app.verbosity
+            else:
+                fig, ax = plt.subplots(1, 1, tight_layout=True)
+                abc[theta].plot(kind="hist", ax=ax, bins=100, fontsize=18)
+                xlabel = r"Priors for ${}^*$".format(THETA_MAPPING[theta])
+                ax.set_xlabel(xlabel, fontsize=24, usetex=True)
+                ax.set_ylabel("")
+                plt.savefig(path2save)
+
+            if app.plot is Plot.TIMEPOINTS:
+                assert (
+                    len(timepoints) > 1
+                ), "Found app timepoints but only one timepoint"
+                path2save = commons.create_path2save(
+                    app.path2save,
+                    Path(
+                        "{}relative_{}ecdna_{}_timepoints.pdf".format(
+                            app.thresholds["mean"],
+                            app.thresholds["ecdna"],
+                            theta,
+                        )
+                    ),
+                )
+                plot_posterior_per_timepoints(
+                    app.thresholds,
+                    abc,
+                    path2save,
+                    timepoints,
+                    theta,
+                    app.verbosity,
+                )
+        else:
+            raise ValueError(
+                "Wrong value of app.plot {}, must be one of {}".format(app.plot, Plot)
             )
 
     # plot distances
-    path2save = commons.create_path2save(
-        app.path2save,
-        Path("hisograms.pdf"),
-    )
-    fig, axs = plt.subplots(2, 2, tight_layout=True)
-    n_bins = 100
-    axs[0, 0].hist(abc.ecdna, bins=n_bins)
-    axs[0, 0].set_title("KS distance distribution")
-    axs[0, 1].hist(abc["mean"], bins=n_bins)  # ylabel=)
-    axs[0, 1].set_title("Mean rel distance")
-    axs[1, 0].hist(abc["frequency"], bins=n_bins)
-    axs[1, 0].set_title("Frequency rel distance")
-    axs[1, 1].hist(abc["entropy"], bins=n_bins)
-    axs[1, 1].set_title("Entropy rel distance")
-    plt.savefig(path2save)
+    try:
+        path2save = commons.create_path2save(
+            app.path2save,
+            Path("hisograms.pdf"),
+        )
+    except FileExistsError as e:
+        if app.verbosity > 0:
+            print("Skipping generation of distances because file already present")
+    else:
+        fig, axs = plt.subplots(2, 2, tight_layout=True)
+        n_bins = 100
+        axs[0, 0].hist(abc.ecdna, bins=n_bins)
+        axs[0, 0].set_title("KS distance distribution")
+        axs[0, 1].hist(abc["mean"], bins=n_bins)  # ylabel=)
+        axs[0, 1].set_title("Mean rel distance")
+        axs[1, 0].hist(abc["frequency"], bins=n_bins)
+        axs[1, 0].set_title("Frequency rel distance")
+        axs[1, 1].hist(abc["entropy"], bins=n_bins)
+        axs[1, 1].set_title("Entropy rel distance")
+        plt.savefig(path2save)
 
 
 def build_app() -> App:
     """Parse and returns the app"""
-    # create the top-level parser
     parser = argparse.ArgumentParser(
         description="Plot posterior distribution (histograms) for the parameters theta inferred by ABC."
     )
 
-    parser.add_argument(
+    plot = parser.add_mutually_exclusive_group()
+
+    plot.add_argument(
         "--stats",
         dest="stats",
         required=False,
         action="store_true",
         default=False,
         help="Plot posterior for combinations of statistics",
+    )
+
+    plot.add_argument(
+        "--timepoints",
+        dest="timepoints",
+        required=False,
+        action="store_true",
+        default=False,
+        help="Plot posterior for combinations of timepoints",
     )
 
     parser.add_argument(
@@ -256,10 +377,16 @@ def build_app() -> App:
     )
     thresholds["ecdna"] = float(args["ecdna"])
     abc = Path(args["path2abc"])
-    stats = args["stats"]
     assert abc.parent.is_dir()
 
-    # list of quantities for which we want to approximate the posterior distribution
+    if args["stats"]:
+        plot = Plot.STATS
+    elif args["timepoints"]:
+        plot = Plot.TIMEPOINTS
+    else:
+        plot = Plot.SIMPLE
+
+    # list of quantities used to approximate the posterior distribution
     theta_list = [
         theta if theta != "copies" else "init_copies" for theta in args["theta"]
     ]
@@ -269,7 +396,7 @@ def build_app() -> App:
         Thresholds(thresholds),
         theta_list,
         abc.parent,
-        stats,
+        plot,
         args["verbosity"],
     )
 
@@ -298,6 +425,7 @@ def plot_death(death, ax, title=None):
 
 def plot_copies(copies, ax, title=None):
     plot_rates(copies, (0, copies.max().iloc[0] + 1), 120, ax, title)
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 
 
 def plot_rates(rates, range_hist: Tuple[float, float], bins: int, ax, title=None):
@@ -308,8 +436,50 @@ def plot_rates(rates, range_hist: Tuple[float, float], bins: int, ax, title=None
     ax.tick_params(axis="both", labelsize=20)
 
 
+def plot_posterior_per_timepoints(
+    thresholds: Thresholds, abc, path2save, timepoints: List[int], theta, verbosity
+):
+    shape = (math.ceil(len(timepoints) / 3), 3)
+    fig_tot, axes = plt.subplots(*shape, sharex=True)
+    my_query, stats = query_from_thresholds(thresholds.items())
+
+    for (i, cells) in enumerate(timepoints):
+        ax = axes[np.unravel_index(i, shape)]
+        plot_posterior(
+            abc=abc[abc["tumour_cells"] == cells],
+            ax=ax,
+            timepoints=[cells],
+            theta=theta,
+            my_query=my_query,
+            stats=stats,
+            xlabel=None,
+            title="{:.0E} cells".format(cells),
+            verbosity=verbosity,
+        )
+        ax.set_title(ax.get_title(), {"fontsize": 10})
+        ax.tick_params(axis="both", size=2, which="major", labelsize=4)
+        ax.tick_params(
+            axis="both",
+            size=2,
+            which="major",
+            labelsize=5,
+        )
+
+    # emtpy plots
+    empty_axes = list(range(len(timepoints), shape[0]))
+    if len(empty_axes) > 0:
+        for ax in axes[np.unravel_index(empty_axes, shape)]:
+            ax.axis("off")
+            fig_tot.axes.append(ax)
+
+    fig_tot.subplots_adjust(hspace=0.5)
+    print("Saving figure to", path2save)
+    fig_tot.savefig(fname=path2save, bbox_inches="tight")
+    plt.close(fig_tot)
+
+
 def plot_posterior_per_stats(
-    thresholds: Thresholds, abc, path2save, nb_timepoints, theta, verbosity
+    thresholds: Thresholds, abc, path2save, timepoints: List[int], theta, verbosity
 ):
     """Plot the posterior distribution for the fitness coefficient
     for each combination of statistics.
@@ -329,23 +499,19 @@ def plot_posterior_per_stats(
         for the_thresholds in combinations(thresholds.items(), r):
             # iter over the (stats, threshold) for each combination
             ax = axes[np.unravel_index(i, MYSHAPE)]
+            my_query, stats = query_from_thresholds(the_thresholds)
             plot_posterior(
-                the_thresholds,
-                abc,
-                ax,
-                nb_timepoints,
-                theta,
-                verbosity,
-                stats_mode=True,
+                abc=abc,
+                ax=ax,
+                timepoints=timepoints,
+                theta=theta,
+                my_query=my_query,
+                stats=stats,
+                title=None,
+                xlabel=None,
+                verbosity=verbosity,
             )
-            clean = ",".join(
-                [
-                    PLOTTING_STATS[stat]
-                    for stat in "".join(
-                        [e for e in ax.get_title() if e not in {"[", "]", "'", " "}]
-                    ).split(",")
-                ]
-            )
+            clean = ",".join([PLOTTING_STATS[stat] for stat in stats])
             ax.set_title(clean, {"fontsize": 10})
             ax.tick_params(axis="both", size=2, which="major", labelsize=4)
             ax.tick_params(
@@ -368,21 +534,20 @@ def plot_posterior_per_stats(
 
 
 def plot_posterior(
-    thresholds, abc, ax, nb_timepoints, theta, verbosity, stats_mode=False
+    abc,
+    ax,
+    timepoints: List[int],
+    theta,
+    my_query: str,
+    stats: List[str],
+    xlabel: None | str,
+    title: None | str,
+    verbosity,
 ):
     assert theta in set(abc.columns), "Cannot find column '{}' in data".format(theta)
-    my_query = ""
-    stats = []
-    for threshold in thresholds:
-        my_query += "(`{}` < {}) & ".format(*threshold)
-        stats.append(threshold[0])
-    my_query = my_query.rstrip(" & ")
-    print(my_query)
     to_plot = abc.loc[abc[stats].query(my_query).index, :]
-    if nb_timepoints > 1:
-        if verbosity:
-            print("Running longitudinal ABC")
-        abc_longitudinal(to_plot, my_query, nb_timepoints, verbosity)
+    if len(timepoints) > 1:
+        abc_longitudinal(to_plot, my_query, len(timepoints), verbosity)
         # to_plot.drop(index=to_plot[to_plot["cells"] == 10000].index, inplace=True)
         # assert to_plot.cells.unique() == 1000000, to_plot.cells.unique()
         # print(to_plot)
@@ -390,27 +555,39 @@ def plot_posterior(
     if verbosity:
         print(to_plot)
     if theta == "f1":
-        plot_fitness(to_plot, ax, title=list(stats) if stats_mode else None)
-        if not stats_mode:
-            ax.set_xlabel(
-                r"Posterior distribution for $\rho_1^*$", fontsize=24, usetex=True
-            )
+        plot_fitness(to_plot, ax, title=title)
     elif theta in {"d1", "d2"}:
         plot_death(to_plot, ax, list(stats))
     elif theta == "init_copies":
-        plot_copies(to_plot, ax, list(stats))
+        plot_copies(to_plot, ax, title=title)
     else:
         raise ValueError(
             "{} not valid: theta must be either `f1`, `d1`, `d2` or `init_copies`".format(
                 theta
             )
         )
+    ax.set_xlabel(xlabel, fontsize=24, usetex=True)
 
 
-def plot_post(thresholds: Thresholds, abc, path2save, nb_timepoints, theta, verbosity):
+def plot_post(
+    thresholds: Thresholds, abc, path2save, timepoints: List[int], theta, verbosity
+):
     fig, ax = plt.subplots(1, 1)
-    plot_posterior(thresholds.items(), abc, ax, nb_timepoints, theta, verbosity)
-    # ax.tick_params(axis="both", size=2, which="major", labelsize=4)
+    xlabel = r"Posterior distribution for ${}^*$".format(THETA_MAPPING[theta])
+    title = None
+    my_query, stats = query_from_thresholds(thresholds.items())
+
+    plot_posterior(
+        abc,
+        ax,
+        timepoints,
+        theta,
+        my_query=my_query,
+        stats=stats,
+        xlabel=xlabel,
+        title=title,
+        verbosity=verbosity,
+    )
     fig.axes.append(ax)
     fig.subplots_adjust(hspace=0.5)
     print("Saving figure to", path2save)
