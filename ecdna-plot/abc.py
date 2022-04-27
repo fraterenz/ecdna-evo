@@ -39,23 +39,20 @@ class App:
 
 
 def abc_is_subsampled(data: pd.DataFrame) -> bool:
-    """When the runs have been subsampled"""
-    return data[data.columns[0]].isna().any()
+    """When the runs have been subsampled before running ABC"""
+    return not data["parental_idx"].isna().any()
 
 
 def infer_nb_timepoints(data: pd.DataFrame, verbosity: bool) -> int:
     if abc_is_subsampled(data):
-        # should not be possibile because each run should have its own id, unless
-        # abc has been ran with subsampling (else clause)
-        # assert data.idx.value_counts().unique() == 1, "Found abc runs with same id"
-        nb_timepoints = data[["idx", "cells"]].groupby("idx").count().cells.unique()
-    else:
         nb_timepoints = (
             data[["parental_idx", "idx", "cells"]]
-            .groupby([data.columns[0], "idx"])
+            .groupby(["parental_idx", "idx"])
             .count()
             .cells.unique()
         )
+    else:
+        nb_timepoints = data[["idx", "cells"]].groupby("idx").count().cells.unique()
     assert (
         nb_timepoints.shape[0] == 1
     ), "Found runs with different nb of timepoints {}".format(nb_timepoints)
@@ -385,7 +382,7 @@ def plot_posterior(
     if nb_timepoints > 1:
         if verbosity:
             print("Running longitudinal ABC")
-        # abc_longitudinal(to_plot, my_query, nb_timepoints, verbosity) TODO?
+        abc_longitudinal(to_plot, my_query, nb_timepoints, verbosity)
         # to_plot.drop(index=to_plot[to_plot["cells"] == 10000].index, inplace=True)
         # assert to_plot.cells.unique() == 1000000, to_plot.cells.unique()
         # print(to_plot)
