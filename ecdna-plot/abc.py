@@ -3,6 +3,7 @@
 """Plot the bayesian inferences."""
 from types import UnionType
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import numpy as np
 import argparse
 import pandas as pd
@@ -20,10 +21,10 @@ from . import commons
 
 PLOTTING_STATS = {"ecdna": "D", "mean": "M", "frequency": "F", "entropy": "E"}
 THETA_MAPPING = {
-    "f1": "\\rho_1",
-    "init_copies": "\\gamma",
-    "d1": "\\delta_1",
-    "d2": "\\delta_2",
+    "f1": "$\\rho_1^*$",
+    "init_copies": "$\\gamma^*$",
+    "d1": "$\\delta_1^*$",
+    "d2": "$\\delta_2^*$",
 }
 MYSHAPE = (len(PLOTTING_STATS), len(PLOTTING_STATS))
 Thresholds = NewType("Thresholds", UserDict[str, float])
@@ -189,7 +190,26 @@ def run(app: App):
     fig, ax = plt.subplots(1, 1, tight_layout=True)
     my_query, stats = query_from_thresholds(app.thresholds.items())
     to_plot = abc.loc[abc[stats].query(my_query).index, :]
-    sns.pairplot(to_plot[app.theta], kind="kde")
+    to_plot.rename(columns=THETA_MAPPING, inplace=True)
+    sns.set(
+        "paper",
+        rc={
+            "text.usetex": True,
+            "axes.labelsize": "xx-large",
+            "axes.titlesize": "xx-large",
+            "xtick.labelsize": "x-large",
+            "ytick.labelsize": "x-large",
+        },
+    )
+    sns.pairplot(
+        to_plot[[THETA_MAPPING[theta] for theta in app.theta]],
+        kind="kde",
+    )
+    # with mpl.rc_context({"text.usetex": True}):
+    #     sns.pairplot(
+    #         to_plot[[THETA_MAPPING[theta] for theta in app.theta]],
+    #         kind="kde",
+    #     )
     plt.savefig(path2save)
 
     for theta in app.theta:
@@ -423,6 +443,7 @@ def plot_rates(rates, range_hist: Tuple[float, float], bins: int, ax, title=None
     ax.hist(rates, bins=bins, range=range_hist, align="mid")
     ax.set_title(title)
     ax.tick_params(axis="both", labelsize=20)
+    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
 
 def plot_posterior_per_timepoints(
@@ -562,7 +583,7 @@ def plot_post(
     thresholds: Thresholds, abc, path2save, timepoints: List[int], theta, verbosity
 ):
     fig, ax = plt.subplots(1, 1)
-    xlabel = r"Posterior distribution for ${}^*$".format(THETA_MAPPING[theta])
+    xlabel = r"Posterior distribution for {}".format(THETA_MAPPING[theta])
     title = None
     my_query, stats = query_from_thresholds(thresholds.items())
 
