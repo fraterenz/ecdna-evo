@@ -185,6 +185,13 @@ def run(app: App):
     if highly_correlated:
         print("\t--WARNING: high correlation between the priors ", app.theta)
 
+    path2save = commons.create_path2save(app.path2save, Path("posteriors.pdf"))
+    fig, ax = plt.subplots(1, 1, tight_layout=True)
+    my_query, stats = query_from_thresholds(app.thresholds.items())
+    to_plot = abc.loc[abc[stats].query(my_query).index, :]
+    sns.pairplot(to_plot[app.theta], kind="kde")
+    plt.savefig(path2save)
+
     for theta in app.theta:
         print("Generating posterior for", theta)
         if app.plot is Plot.STATS:
@@ -220,24 +227,6 @@ def run(app: App):
                 plot_post(
                     app.thresholds, abc, path2save, timepoints, theta, app.verbosity
                 )
-
-            try:
-                path2save = commons.create_path2save(
-                    app.path2save,
-                    Path("{}_priors.pdf".format(theta)),
-                )
-            except FileExistsError as e:
-                if app.verbosity > 0:
-                    print(
-                        "Skipping generation of distances because file already present"
-                    )
-            else:
-                fig, ax = plt.subplots(1, 1, tight_layout=True)
-                abc[theta].plot(kind="hist", ax=ax, bins=100, fontsize=18)
-                xlabel = r"Priors for ${}^*$".format(THETA_MAPPING[theta])
-                ax.set_xlabel(xlabel, fontsize=24, usetex=True)
-                ax.set_ylabel("")
-                plt.savefig(path2save)
 
             if app.plot is Plot.TIMEPOINTS:
                 assert (
