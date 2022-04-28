@@ -1,6 +1,6 @@
 //! Rates of the birth-death process.
 use enum_dispatch::enum_dispatch;
-use rand::{Rng, SeedableRng};
+use rand::Rng;
 use rand_distr::{Distribution, Open01, Uniform};
 use rand_pcg::Pcg64Mcg;
 use std::convert::From;
@@ -10,13 +10,12 @@ use std::ops::Mul;
 use crate::process::{
     BirthDeath, BirthDeath1, BirthDeath2, BirthDeathProcess, PureBirth,
 };
-use crate::{NbIndividuals, Seed};
+use crate::NbIndividuals;
 
 #[derive(Clone, Debug)]
 pub struct Range<T> {
     min: T,
     max: T,
-    rng: Pcg64Mcg,
 }
 
 impl<T> Default for Range<T>
@@ -24,11 +23,7 @@ where
     T: num_traits::Zero + num_traits::One,
 {
     fn default() -> Self {
-        Range {
-            min: T::zero(),
-            max: T::one(),
-            rng: Pcg64Mcg::seed_from_u64(*Seed::default().get_seed()),
-        }
+        Range { min: T::zero(), max: T::one() }
     }
 }
 
@@ -44,15 +39,15 @@ where
         + rand_distr::uniform::SampleUniform
         + std::cmp::PartialOrd,
 {
-    pub fn new(min: T, max: T, seed: Seed) -> Range<T> {
+    pub fn new(min: T, max: T) -> Range<T> {
         if min >= max {
             panic!("Found min {} greater than max {}", min, max)
         }
-        Range { min, max, rng: Pcg64Mcg::seed_from_u64(*seed.get_seed()) }
+        Range { min, max }
     }
 
-    pub fn sample_uniformly(&mut self) -> T {
-        Uniform::new(&self.min, &self.max).sample(&mut self.rng)
+    pub fn sample_uniformly(&mut self, rng: &mut Pcg64Mcg) -> T {
+        Uniform::new(&self.min, &self.max).sample(rng)
     }
 }
 
@@ -75,18 +70,12 @@ pub struct Rates {
 }
 
 impl Rates {
-    pub fn new(
-        f1: &[f32],
-        f2: &[f32],
-        d1: &[f32],
-        d2: &[f32],
-        seed: Seed,
-    ) -> Self {
+    pub fn new(f1: &[f32], f2: &[f32], d1: &[f32], d2: &[f32]) -> Self {
         Rates {
-            fitness1: ProliferationRate::new(f1, seed),
-            fitness2: ProliferationRate::new(f2, seed),
-            death1: DeathRate::new(d1, seed),
-            death2: DeathRate::new(d2, seed),
+            fitness1: ProliferationRate::new(f1),
+            fitness2: ProliferationRate::new(f2),
+            death1: DeathRate::new(d1),
+            death2: DeathRate::new(d2),
         }
     }
 
@@ -104,7 +93,7 @@ impl Rates {
 /// die
 impl Default for Rates {
     fn default() -> Self {
-        Rates::new(&[1f32], &[1f32], &[0f32], &[0f32], Seed::default())
+        Rates::new(&[1f32], &[1f32], &[0f32], &[0f32])
     }
 }
 
@@ -116,10 +105,10 @@ pub enum Rate {
 }
 
 impl Rate {
-    pub fn new(rates: &[f32], seed: Seed) -> Self {
+    pub fn new(rates: &[f32]) -> Self {
         match *rates {
             [rate] => Rate::Scalar(rate),
-            [min, max] => Rate::Range(Range::new(min, max, seed)),
+            [min, max] => Rate::Range(Range::new(min, max)),
             _ => {
                 panic!(
                     "Cannot create Rate with more than two rates {:#?}",
@@ -173,17 +162,17 @@ pub struct ProliferationRate(pub Rate);
 /// By default a proliferation rate is 1 (neutral case)
 impl Default for ProliferationRate {
     fn default() -> Self {
-        ProliferationRate::new(&[1f32], Seed::default())
+        ProliferationRate::new(&[1f32])
     }
 }
 
 impl ProliferationRate {
-    pub fn new(rates: &[f32], seed: Seed) -> Self {
+    pub fn new(rates: &[f32]) -> Self {
         assert!(
             !rates.iter().any(|val| val < &0f32),
             "ProliferationRate cannot be negative"
         );
-        ProliferationRate(Rate::new(rates, seed))
+        ProliferationRate(Rate::new(rates))
     }
 }
 
@@ -193,12 +182,12 @@ impl ProliferationRate {
 pub struct DeathRate(pub Rate);
 
 impl DeathRate {
-    pub fn new(rates: &[f32], seed: Seed) -> Self {
+    pub fn new(rates: &[f32]) -> Self {
         assert!(
             !rates.iter().any(|val| val < &0f32),
             "DeathRate cannot be negative"
         );
-        DeathRate(Rate::new(rates, seed))
+        DeathRate(Rate::new(rates))
     }
 
     pub fn is_zero(&self) -> bool {
@@ -219,15 +208,6 @@ impl std::str::FromStr for ProliferationRate {
 impl From<f32> for ProliferationRate {
     fn from(val: f32) -> Self {
         ProliferationRate(Rate::Scalar(val))
-    }
-}
-
-impl From<ProliferationRate> for GillespieRate {
-    fn from(rate: ProliferationRate) -> Self {
-        match rate.0 {
-            Rate::Scalar(v) => v,
-            Rate::Range(mut range) => range.sample_uniformly(),
-        }
     }
 }
 
@@ -260,15 +240,6 @@ impl std::str::FromStr for DeathRate {
 impl From<f32> for DeathRate {
     fn from(val: f32) -> Self {
         DeathRate(Rate::Scalar(val))
-    }
-}
-
-impl From<DeathRate> for GillespieRate {
-    fn from(rate: DeathRate) -> Self {
-        match rate.0 {
-            Rate::Scalar(v) => v,
-            Rate::Range(mut range) => range.sample_uniformly(),
-        }
     }
 }
 

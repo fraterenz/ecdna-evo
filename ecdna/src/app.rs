@@ -18,6 +18,8 @@ use ecdna_sim::{
 use enum_dispatch::enum_dispatch;
 use flate2::{write::GzEncoder, Compression};
 use indicatif::ParallelProgressIterator;
+use rand::SeedableRng;
+use rand_pcg::Pcg64Mcg;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use std::{
     collections::HashSet,
@@ -212,22 +214,21 @@ impl Perform for BayesianApp {
         ensure!(self.patient.is_sorted());
 
         (0..self.runs)
-            // .into_iter()
             .into_par_iter()
             .progress_count(self.runs as u64)
             .for_each(|idx| {
                 // create initi distribution: sample the initial copies for the single malignant
                 // clone (ie the first cell in the tumour with X copies of ecDNAs).
                 let seed_run = idx as u64 + self.seed;
+                let mut rng = Pcg64Mcg::seed_from_u64(seed_run);
+
                 let initial_state = match *self.init_copies {
                     [initial_copy] => {
                         InitialState::new_from_one_copy(initial_copy, 0usize)
                     }
-                    [min, max] => InitialState::random(Range::new(
-                        min,
-                        max,
-                        Seed::new(seed_run),
-                    )),
+                    [min, max] => {
+                        InitialState::random(Range::new(min, max), &mut rng)
+                    }
                     _ => panic!("Max 2 values, found more than 2"),
                 };
 
@@ -237,7 +238,6 @@ impl Perform for BayesianApp {
                     &self.rho2,
                     &self.delta1,
                     &self.delta2,
-                    Seed::new(seed_run),
                 );
 
                 let mut run = Run::new(
@@ -246,6 +246,7 @@ impl Perform for BayesianApp {
                     initial_state,
                     rates.clone(),
                     Seed::new(seed_run),
+                    &mut rng,
                 );
 
                 // for all sequecing experiments
@@ -327,7 +328,6 @@ impl DynamicalApp {
             &[config.rho2],
             &[config.delta1],
             &[config.delta2],
-            Seed::new(config.seed),
         );
         let max_iter = rates.estimate_max_iter(&config.cells);
 
@@ -443,13 +443,16 @@ impl Perform for DynamicalApp {
                     self.ecdna.clone(),
                     self.ecdna.nb_cells() as usize,
                 );
+                let seed_run = idx as u64 + self.seed;
+                let mut rng = Pcg64Mcg::seed_from_u64(seed_run);
 
                 let mut run = Run::new(
                     idx,
                     0f32,
                     initial_state,
                     self.rates.clone(),
-                    Seed::new(idx as u64 + self.seed),
+                    Seed::new(seed_run),
+                    &mut rng,
                 );
 
                 let mut dynamics = self.dynamics.clone();

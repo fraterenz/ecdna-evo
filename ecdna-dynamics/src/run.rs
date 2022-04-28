@@ -116,13 +116,14 @@ impl Run<Started> {
         init_state: InitialState,
         rates: Rates,
         seed: Seed,
+        rng: &mut Pcg64Mcg,
     ) -> Self {
         //! Use the `parameters` and the `rates` to initialize a realization of
         //! a birth-death stochastic process.
 
         Run {
             idx,
-            bd_process: BirthDeathProcess::new(rates),
+            bd_process: BirthDeathProcess::new(rates, rng),
             init_state: init_state.clone(),
             state: Started {
                 system: System {
@@ -466,11 +467,11 @@ pub struct InitialState {
 }
 
 impl InitialState {
-    pub fn random(mut range: Range<u16>) -> Self {
+    pub fn random(mut range: Range<u16>, rng: &mut Pcg64Mcg) -> Self {
         InitialState {
             init_iter: 0usize,
             init_distribution: EcDNADistribution::from(vec![
-                range.sample_uniformly()
+                range.sample_uniformly(rng)
             ]),
         }
     }

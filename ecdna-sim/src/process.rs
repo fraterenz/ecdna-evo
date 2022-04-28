@@ -60,7 +60,7 @@ pub enum BirthDeathProcess {
 }
 
 impl BirthDeathProcess {
-    pub fn new(rates: Rates) -> BirthDeathProcess {
+    pub fn new(rates: Rates, rng: &mut Pcg64Mcg) -> BirthDeathProcess {
         //! Creates a new stochastic process. This will sample the rates (for
         //! abc).
         //!
@@ -81,22 +81,22 @@ impl BirthDeathProcess {
         //! individuals of both populations can proliferate and die
 
         let f1 = match rates.fitness1.0 {
-            Rate::Range(mut range) => range.sample_uniformly(),
+            Rate::Range(mut range) => range.sample_uniformly(rng),
             Rate::Scalar(v) => v,
         };
 
         let f2 = match rates.fitness2.0 {
-            Rate::Range(mut range) => range.sample_uniformly(),
+            Rate::Range(mut range) => range.sample_uniformly(rng),
             Rate::Scalar(v) => v,
         };
 
         let d1 = match rates.death1.0 {
-            Rate::Range(mut range) => range.sample_uniformly(),
+            Rate::Range(mut range) => range.sample_uniformly(rng),
             Rate::Scalar(v) => v,
         };
 
         let d2 = match rates.death2.0 {
-            Rate::Range(mut range) => range.sample_uniformly(),
+            Rate::Range(mut range) => range.sample_uniformly(rng),
             Rate::Scalar(v) => v,
         };
 

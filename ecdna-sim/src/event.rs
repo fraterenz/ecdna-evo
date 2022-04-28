@@ -214,18 +214,21 @@ pub fn fast_mean_computation(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{process::BirthDeathProcess, rate::Rates, Seed};
+    use crate::{process::BirthDeathProcess, rate::Rates};
     use quickcheck::{Arbitrary, Gen};
+    use rand::SeedableRng;
 
     impl Arbitrary for BirthDeathProcess {
         fn arbitrary(g: &mut Gen) -> BirthDeathProcess {
-            BirthDeathProcess::new(Rates::new(
-                &[PositiveRate::arbitrary(g).0],
-                &[PositiveRate::arbitrary(g).0],
-                &[PositiveRate::arbitrary(g).0],
-                &[PositiveRate::arbitrary(g).0],
-                Seed::new(u64::arbitrary(g)),
-            ))
+            BirthDeathProcess::new(
+                Rates::new(
+                    &[PositiveRate::arbitrary(g).0],
+                    &[PositiveRate::arbitrary(g).0],
+                    &[PositiveRate::arbitrary(g).0],
+                    &[PositiveRate::arbitrary(g).0],
+                ),
+                &mut Pcg64Mcg::from_entropy(),
+            )
         }
     }
 
