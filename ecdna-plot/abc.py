@@ -56,6 +56,7 @@ class App:
     theta: List[str]
     path2save: Path
     plot: Plot
+    png: bool
     verbosity: bool
 
 
@@ -168,22 +169,26 @@ def run(app: App):
 
     print("Checking priors first")
 
-    path2save = commons.create_path2save(app.path2save, Path("priors.pdf"))
-    with mpl.rc_context(
-        {
-            "xtick.top": False,
-            "xtick.bottom": False,
-            "ytick.left": False,
-            "ytick.right": False,
-            "xtick.minor.visible": False,
-            "ytick.minor.visible": False,
-        }
-    ):
-        fig, ax = plt.subplots(1, 1, tight_layout=True)
-        sns.pairplot(
-            abc[app.theta].rename(columns=THETA_MAPPING), diag_kws={"bins": 100}
-        )
-    plt.savefig(path2save)
+    try:
+        path2save = commons.create_path2save(app.path2save, Path("priors.pdf"))
+    except FileExistsError:
+        pass
+    else:
+        with mpl.rc_context(
+            {
+                "xtick.top": False,
+                "xtick.bottom": False,
+                "ytick.left": False,
+                "ytick.right": False,
+                "xtick.minor.visible": False,
+                "ytick.minor.visible": False,
+            }
+        ):
+            fig, ax = plt.subplots(1, 1, tight_layout=True)
+            sns.pairplot(
+                abc[app.theta].rename(columns=THETA_MAPPING), diag_kws={"bins": 100}
+            )
+        savefig(path2save, fig, app.png, app.verbosity)
 
     if app.verbosity:
         print("distributions\n", abc[app.theta].describe())
@@ -199,46 +204,45 @@ def run(app: App):
     if highly_correlated:
         print("\t--WARNING: high correlation between the priors ", app.theta)
 
-    path2save = commons.create_path2save(app.path2save, Path("posteriors.pdf"))
-    fig, ax = plt.subplots(1, 1, tight_layout=True)
-    my_query, stats = query_from_thresholds(app.thresholds.items())
-    to_plot = abc.loc[abc[stats].query(my_query).index, :]
-    to_plot.rename(columns=THETA_MAPPING, inplace=True)
-    # sns.set(
-    #     "poster",
-    #     rc={
-    #         "text.usetex": True,
-    #         "axes.labelsize": "xx-large",
-    #         "axes.titlesize": "xx-large",
-    #         "xtick.labelsize": "x-large",
-    #         "ytick.labelsize": "x-large",
-    #     },
-    # )
-    with mpl.rc_context(
-        {
-            "axes.grid": True,
-            "xtick.top": False,
-            "xtick.bottom": False,
-            "ytick.left": False,
-            "ytick.right": False,
-            "xtick.minor.visible": False,
-            "ytick.minor.visible": False,
-        }
-    ):
-        g = sns.pairplot(
-            to_plot[[THETA_MAPPING[theta] for theta in app.theta]],
-            kind="kde",
-        )
-        g.axes[-1, 0].xaxis.set_major_locator(MultipleLocator(2))
-        g.axes[0, 0].yaxis.set_major_locator(MultipleLocator(2))
-        # g.fig.suptitle("Inferrences", y=1.08)  # y= some height>1
+    try:
+        path2save = commons.create_path2save(app.path2save, Path("posteriors.pdf"))
+    except FileExistsError:
+        pass
+    else:
+        fig, ax = plt.subplots(1, 1, tight_layout=True)
+        my_query, stats = query_from_thresholds(app.thresholds.items())
+        to_plot = abc.loc[abc[stats].query(my_query).index, :]
+        to_plot.rename(columns=THETA_MAPPING, inplace=True)
+        # sns.set(
+        #     "poster",
+        #     rc={
+        #         "text.usetex": True,
+        #         "axes.labelsize": "xx-large",
+        #         "axes.titlesize": "xx-large",
+        #         "xtick.labelsize": "x-large",
+        #         "ytick.labelsize": "x-large",
+        #     },
+        # )
+        with mpl.rc_context(
+            {
+                "axes.grid": True,
+                "xtick.top": False,
+                "xtick.bottom": False,
+                "ytick.left": False,
+                "ytick.right": False,
+                "xtick.minor.visible": False,
+                "ytick.minor.visible": False,
+            }
+        ):
+            g = sns.pairplot(
+                to_plot[[THETA_MAPPING[theta] for theta in app.theta]],
+                kind="kde",
+            )
+            g.axes[-1, 0].xaxis.set_major_locator(MultipleLocator(2))
+            g.axes[0, 0].yaxis.set_major_locator(MultipleLocator(2))
+            # g.fig.suptitle("Inferrences", y=1.08)  # y= some height>1
 
-    # with mpl.rc_context({"text.usetex": True}):
-    #     sns.pairplot(
-    #         to_plot[[THETA_MAPPING[theta] for theta in app.theta]],
-    #         kind="kde",
-    #     )
-    plt.savefig(path2save)
+        savefig(path2save, fig, app.png, app.verbosity)
 
     for theta in app.theta:
         print("Generating posterior for", theta)
@@ -256,7 +260,13 @@ def run(app: App):
                 ),
             )
             plot_posterior_per_stats(
-                app.thresholds, abc, path2save, timepoints, theta, app.verbosity
+                app.thresholds,
+                abc,
+                path2save,
+                app.png,
+                timepoints,
+                theta,
+                app.verbosity,
             )
         elif app.plot in {Plot.SIMPLE, Plot.TIMEPOINTS}:
             try:
@@ -273,7 +283,13 @@ def run(app: App):
                     raise e
             else:
                 plot_post(
-                    app.thresholds, abc, path2save, timepoints, theta, app.verbosity
+                    app.thresholds,
+                    abc,
+                    path2save,
+                    app.png,
+                    timepoints,
+                    theta,
+                    app.verbosity,
                 )
 
             if app.plot is Plot.TIMEPOINTS:
@@ -296,6 +312,7 @@ def run(app: App):
                     path2save,
                     timepoints,
                     theta,
+                    app.png,
                     app.verbosity,
                 )
         else:
@@ -323,7 +340,7 @@ def run(app: App):
         axs[1, 0].set_xlabel("Frequency distance")
         axs[1, 1].hist(abc["entropy"], bins=n_bins)
         axs[1, 1].set_xlabel("Entropy distance")
-        plt.savefig(path2save)
+        savefig(path2save, fig, app.png, app.verbosity)
 
 
 def build_app() -> App:
@@ -358,6 +375,15 @@ def build_app() -> App:
         nargs="+",
         choices=["f1", "d1", "d2", "copies"],
         help="Parameter to infer",
+    )
+
+    parser.add_argument(
+        "--png",
+        dest="png",
+        required=False,
+        default=False,
+        action="store_true",
+        help="Use flag to generate png copies of the pdf plots",
     )
 
     parser.add_argument(
@@ -434,6 +460,7 @@ def build_app() -> App:
         theta_list,
         abc.parent,
         plot,
+        args["png"],
         args["verbosity"],
     )
 
@@ -450,6 +477,17 @@ def accuracy(df, stats: list):
     acc_by_stat = df.loc[all_row, stats].sum(axis=0)
     # divide to get accuracy from counts
     return acc_grouped / df.shape[0], acc_by_stat / df.shape[0]
+
+
+def savefig(path2save: Path, fig, png: bool, verbosity: bool):
+    if verbosity:
+        print("Saving figure to", path2save)
+    fig.savefig(fname=path2save, bbox_inches="tight")
+    if png:
+        fig.savefig(fname=path2save.with_suffix(".png"), bbox_inches="tight", dpi=600)
+        if verbosity:
+            print("Saved also a png copy")
+    plt.close(fig)
 
 
 def plot_fitness(fitness, ax, title=None, xlabel=None):
@@ -484,7 +522,13 @@ def plot_rates(rates, range_hist: Tuple[float, float], bins: int, ax, title, xla
 
 
 def plot_posterior_per_timepoints(
-    thresholds: Thresholds, abc, path2save, timepoints: List[int], theta, verbosity
+    thresholds: Thresholds,
+    abc,
+    path2save,
+    timepoints: List[int],
+    theta,
+    png: bool,
+    verbosity,
 ):
     shape = (math.ceil(len(timepoints) / 3), 3)
     fig_tot, axes = plt.subplots(*shape, sharex=True)
@@ -520,13 +564,17 @@ def plot_posterior_per_timepoints(
             fig_tot.axes.append(ax)
 
     fig_tot.subplots_adjust(hspace=0.5)
-    print("Saving figure to", path2save)
-    fig_tot.savefig(fname=path2save, bbox_inches="tight")
-    plt.close(fig_tot)
+    savefig(path2save, fig_tot, png, verbosity)
 
 
 def plot_posterior_per_stats(
-    thresholds: Thresholds, abc, path2save, timepoints: List[int], theta, verbosity
+    thresholds: Thresholds,
+    abc,
+    path2save,
+    png: bool,
+    timepoints: List[int],
+    theta,
+    verbosity,
 ):
     """Plot the posterior distribution for the fitness coefficient
     for each combination of statistics.
@@ -561,6 +609,7 @@ def plot_posterior_per_stats(
             clean = ",".join([PLOTTING_STATS[stat] for stat in stats])
             ax.set_title(clean, {"fontsize": 10})
             ax.tick_params(axis="both", size=2, which="major", labelsize=4)
+            ax.tick_params(axis="both", size=0, which="minor", labelsize=4)
             ax.tick_params(
                 axis="both",
                 size=2,
@@ -575,9 +624,7 @@ def plot_posterior_per_stats(
     ax.axis("off")
     fig_tot.axes.append(ax)
     fig_tot.subplots_adjust(hspace=0.5)
-    print("Saving figure to", path2save)
-    fig_tot.savefig(fname=path2save, bbox_inches="tight")
-    plt.close(fig_tot)
+    savefig(path2save, fig_tot, png, verbosity)
 
 
 def plot_posterior(
@@ -616,10 +663,16 @@ def plot_posterior(
 
 
 def plot_post(
-    thresholds: Thresholds, abc, path2save, timepoints: List[int], theta, verbosity
+    thresholds: Thresholds,
+    abc,
+    path2save,
+    png: bool,
+    timepoints: List[int],
+    theta,
+    verbosity,
 ):
     fig, ax = plt.subplots(1, 1)
-    xlabel = r"Posterior distribution {}".format(THETA_MAPPING[theta])
+    xlabel = r"Inferred {}".format(THETA_MAPPING[theta])
     title = None
     my_query, stats = query_from_thresholds(thresholds.items())
 
@@ -636,9 +689,7 @@ def plot_post(
     )
     fig.axes.append(ax)
     fig.subplots_adjust(hspace=0.5)
-    print("Saving figure to", path2save)
-    fig.savefig(fname=path2save, bbox_inches="tight")
-    plt.close(fig)
+    savefig(path2save, fig, png, verbosity)
 
 
 if __name__ == "__main__":
