@@ -9,7 +9,7 @@ import argparse
 import pandas as pd
 import math
 import seaborn as sns
-from matplotlib.ticker import MaxNLocator
+from matplotlib.ticker import MaxNLocator, MultipleLocator
 from collections import UserDict
 from pathlib import Path
 from dataclasses import dataclass
@@ -28,6 +28,7 @@ THETA_MAPPING = {
 }
 MYSHAPE = (len(PLOTTING_STATS), len(PLOTTING_STATS))
 Thresholds = NewType("Thresholds", UserDict[str, float])
+plt.style.use("./ecdna-plot/paper.mplstyle")
 
 
 @unique
@@ -168,8 +169,20 @@ def run(app: App):
     print("Checking priors first")
 
     path2save = commons.create_path2save(app.path2save, Path("priors.pdf"))
-    fig, ax = plt.subplots(1, 1, tight_layout=True)
-    sns.pairplot(abc[app.theta], diag_kws={"bins": 100})
+    with mpl.rc_context(
+        {
+            "xtick.top": False,
+            "xtick.bottom": False,
+            "ytick.left": False,
+            "ytick.right": False,
+            "xtick.minor.visible": False,
+            "ytick.minor.visible": False,
+        }
+    ):
+        fig, ax = plt.subplots(1, 1, tight_layout=True)
+        sns.pairplot(
+            abc[app.theta].rename(columns=THETA_MAPPING), diag_kws={"bins": 100}
+        )
     plt.savefig(path2save)
 
     if app.verbosity:
@@ -191,20 +204,35 @@ def run(app: App):
     my_query, stats = query_from_thresholds(app.thresholds.items())
     to_plot = abc.loc[abc[stats].query(my_query).index, :]
     to_plot.rename(columns=THETA_MAPPING, inplace=True)
-    sns.set(
-        "paper",
-        rc={
-            "text.usetex": True,
-            "axes.labelsize": "xx-large",
-            "axes.titlesize": "xx-large",
-            "xtick.labelsize": "x-large",
-            "ytick.labelsize": "x-large",
-        },
-    )
-    sns.pairplot(
-        to_plot[[THETA_MAPPING[theta] for theta in app.theta]],
-        kind="kde",
-    )
+    # sns.set(
+    #     "poster",
+    #     rc={
+    #         "text.usetex": True,
+    #         "axes.labelsize": "xx-large",
+    #         "axes.titlesize": "xx-large",
+    #         "xtick.labelsize": "x-large",
+    #         "ytick.labelsize": "x-large",
+    #     },
+    # )
+    with mpl.rc_context(
+        {
+            "axes.grid": True,
+            "xtick.top": False,
+            "xtick.bottom": False,
+            "ytick.left": False,
+            "ytick.right": False,
+            "xtick.minor.visible": False,
+            "ytick.minor.visible": False,
+        }
+    ):
+        g = sns.pairplot(
+            to_plot[[THETA_MAPPING[theta] for theta in app.theta]],
+            kind="kde",
+        )
+        g.axes[-1, 0].xaxis.set_major_locator(MultipleLocator(2))
+        g.axes[0, 0].yaxis.set_major_locator(MultipleLocator(2))
+        # g.fig.suptitle("Inferrences", y=1.08)  # y= some height>1
+
     # with mpl.rc_context({"text.usetex": True}):
     #     sns.pairplot(
     #         to_plot[[THETA_MAPPING[theta] for theta in app.theta]],
@@ -288,13 +316,13 @@ def run(app: App):
         fig, axs = plt.subplots(2, 2, tight_layout=True)
         n_bins = 100
         axs[0, 0].hist(abc.ecdna, bins=n_bins)
-        axs[0, 0].set_title("KS distance distribution")
+        axs[0, 0].set_xlabel("KS distance")
         axs[0, 1].hist(abc["mean"], bins=n_bins)  # ylabel=)
-        axs[0, 1].set_title("Mean rel distance")
+        axs[0, 1].set_xlabel("Mean distance")
         axs[1, 0].hist(abc["frequency"], bins=n_bins)
-        axs[1, 0].set_title("Frequency rel distance")
+        axs[1, 0].set_xlabel("Frequency distance")
         axs[1, 1].hist(abc["entropy"], bins=n_bins)
-        axs[1, 1].set_title("Entropy rel distance")
+        axs[1, 1].set_xlabel("Entropy distance")
         plt.savefig(path2save)
 
 
@@ -424,25 +452,34 @@ def accuracy(df, stats: list):
     return acc_grouped / df.shape[0], acc_by_stat / df.shape[0]
 
 
-def plot_fitness(fitness, ax, title=None):
-    plot_rates(fitness, (0.9, 3.1), 120, ax, title)
+def plot_fitness(fitness, ax, title=None, xlabel=None):
+    plot_rates(fitness, (0.9, 3.1), 120, ax, title, xlabel)
 
 
-def plot_death(death, ax, title=None):
-    plot_rates(death, (0, 1.1), 120, ax, title)
+def plot_death(death, ax, title=None, xlabel=None):
+    plot_rates(death, (0, 1.1), 120, ax, title, xlabel)
 
 
-def plot_copies(copies, ax, title=None):
-    plot_rates(copies, (0, copies.max().iloc[0] + 1), 120, ax, title)
+def plot_copies(copies, ax, title=None, xlabel=None):
+    plot_rates(copies, (0, copies.max().iloc[0] + 1), 120, ax, title, xlabel)
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 
 
-def plot_rates(rates, range_hist: Tuple[float, float], bins: int, ax, title=None):
+def plot_rates(rates, range_hist: Tuple[float, float], bins: int, ax, title, xlabel):
     """Modify inplace the ax by plotting the hist of the posterior distribution
     `rates`. Here `title` is the title of the axis `ax`."""
-    ax.hist(rates, bins=bins, range=range_hist, align="mid")
+    rates.plot(
+        kind="hist",
+        ax=ax,
+        bins=bins,
+        range=range_hist,
+        align="mid",
+        legend=False,
+    )
     ax.set_title(title)
-    ax.tick_params(axis="both", labelsize=20)
+    # ax.tick_params(axis="both", labelsize=20)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel("")
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
 
@@ -565,25 +602,24 @@ def plot_posterior(
     if verbosity:
         print(to_plot)
     if theta == "f1":
-        plot_fitness(to_plot, ax, title=title)
+        plot_fitness(to_plot, ax, title=title, xlabel=xlabel)
     elif theta in {"d1", "d2"}:
-        plot_death(to_plot, ax, list(stats))
+        plot_death(to_plot, ax, list(stats), xlabel)
     elif theta == "init_copies":
-        plot_copies(to_plot, ax, title=title)
+        plot_copies(to_plot, ax, title=title, xlabel=xlabel)
     else:
         raise ValueError(
             "{} not valid: theta must be either `f1`, `d1`, `d2` or `init_copies`".format(
                 theta
             )
         )
-    ax.set_xlabel(xlabel, fontsize=24, usetex=True)
 
 
 def plot_post(
     thresholds: Thresholds, abc, path2save, timepoints: List[int], theta, verbosity
 ):
     fig, ax = plt.subplots(1, 1)
-    xlabel = r"Posterior distribution for {}".format(THETA_MAPPING[theta])
+    xlabel = r"Posterior distribution {}".format(THETA_MAPPING[theta])
     title = None
     my_query, stats = query_from_thresholds(thresholds.items())
 
