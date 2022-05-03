@@ -200,7 +200,7 @@ def run(app: App):
     # 1. remove diag elements which are 1 by def
     np.fill_diagonal(correlation.to_numpy(), 0.0)
     # 2. find if any high values
-    highly_correlated = correlation[correlation >= 0.5].any().any()
+    highly_correlated = correlation[correlation >= 0.1].any().any()
     if highly_correlated:
         print("\t--WARNING: high correlation between the priors ", app.theta)
 
