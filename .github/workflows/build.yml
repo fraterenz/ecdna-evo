@@ -1,9 +1,11 @@
 name: build
 
-on: push
+on:
+  push:
+    paths:
+      - 'ecdna-plot/**'
 
 jobs:
-
   build:
     name: Build python package
     runs-on: ubuntu-latest
