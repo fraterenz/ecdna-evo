@@ -118,8 +118,7 @@ impl Run<Started> {
         seed: Seed,
         rng: &mut Pcg64Mcg,
     ) -> Self {
-        //! Use the `parameters` and the `rates` to initialize a realization of
-        //! a birth-death stochastic process.
+        //! Initialize a stoachastic realization of a birth-death process.
 
         Run {
             idx,
@@ -223,7 +222,7 @@ impl Run<Started> {
         let (time, condition) = {
             loop {
                 // Compute the next event using Gillespie algorithm based on the
-                // stochastic process defined by `process`
+                // stochastic process
                 let event =
                     self.bd_process.gillespie(nplus, nminus, &mut self.rng);
                 self.update(event, dynamics);
@@ -231,12 +230,10 @@ impl Run<Started> {
                 nminus = *self.get_nminus();
                 iter += 1;
 
-                // StopIteration appears when there are no cells anymore
-                // (due to cell death), when the iteration has reached
-                // the maximal number of iterations nb_iter >=
-                // self.max_iter or maximal number of cells
-                // (self.max_cells), i.e. when the iteration has
-                // generated a tumor of self.max_cells size
+                // StopIteration appears when there are no cells anymore (due to
+                // cell death), when the iteration has reached the max number of
+                // iterations nb_iter >= self.max_iter or maximal number of cells
+                // i.e. when the iteration has generated a tumor of max_cells size
                 if nplus + nminus == 0u64 {
                     break (
                         self.state.system.event.time,
@@ -467,16 +464,21 @@ pub struct InitialState {
 }
 
 impl InitialState {
-    pub fn random(mut range: Range<u16>, rng: &mut Pcg64Mcg) -> Self {
+    pub fn random(min: u16, max: u16, rng: &mut Pcg64Mcg) -> Self {
+        //! Create an `InitialState` with one cell with a random number of ecDNA
+        //! copies, sampled uniformly from a range defined by `min` and `max`.
         InitialState {
             init_iter: 0usize,
-            init_distribution: EcDNADistribution::from(vec![
-                range.sample_uniformly(rng)
-            ]),
+            init_distribution: EcDNADistribution::from(vec![Range::new(
+                min, max,
+            )
+            .sample_uniformly(rng)]),
         }
     }
 
     pub fn new_from_one_copy(init_copy: DNACopy, init_iter: usize) -> Self {
+        //! Create an `InitialState` with one cell with `init_copy` number of
+        //! ecDNA copies.
         InitialState {
             init_iter,
             init_distribution: EcDNADistribution::from(vec![init_copy]),

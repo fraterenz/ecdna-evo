@@ -71,6 +71,12 @@ pub struct Rates {
 
 impl Rates {
     pub fn new(f1: &[f32], f2: &[f32], d1: &[f32], d2: &[f32]) -> Self {
+        //! Create new `Rates`.
+        //!
+        //! Arguments must have len 1 or 2:
+        //!     1. with len 1: the rate will be create with that value
+        //!     2. with len 2: the rate will be sampled uniformly between an
+        //!     interval specified by the two values
         Rates {
             fitness1: ProliferationRate::new(f1),
             fitness2: ProliferationRate::new(f2),
@@ -172,6 +178,8 @@ impl ProliferationRate {
             !rates.iter().any(|val| val < &0f32),
             "ProliferationRate cannot be negative"
         );
+        assert!(!rates.is_empty());
+        assert!(rates.len() <= 2);
         ProliferationRate(Rate::new(rates))
     }
 }
@@ -187,6 +195,8 @@ impl DeathRate {
             !rates.iter().any(|val| val < &0f32),
             "DeathRate cannot be negative"
         );
+        assert!(!rates.is_empty());
+        assert!(rates.len() <= 2);
         DeathRate(Rate::new(rates))
     }
 

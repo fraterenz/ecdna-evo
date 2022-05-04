@@ -11,10 +11,7 @@ use ecdna_dynamics::run::{
     CellCulture, ContinueGrowth, DNACopy, Ended, Growth, InitialState,
     PatientStudy, Run, Started, Update,
 };
-use ecdna_sim::{
-    rate::{Range, Rates},
-    NbIndividuals, Seed,
-};
+use ecdna_sim::{rate::Rates, NbIndividuals, Seed};
 use enum_dispatch::enum_dispatch;
 use flate2::{write::GzEncoder, Compression};
 use indicatif::ParallelProgressIterator;
@@ -160,17 +157,18 @@ impl BayesianApp {
         &self,
         run: Run<Ended>,
         abspath: &Path,
-        patient_sample: &SequencingData,
+        sequecing_sample: &SequencingData,
         sample_size: &Option<NbIndividuals>,
     ) -> anyhow::Result<Run<Started>> {
         let (results, run) =
-            if let Some(true) = patient_sample.is_undersampled() {
+            if let Some(true) = sequecing_sample.is_undersampled() {
                 let sample_size = sample_size.expect(
                     "Sample is undersample but the sample size is not known",
                 );
                 // trade-off between computational time and accuracy
                 let nb_samples = 10usize;
                 let mut results = ABCResults::with_capacity(nb_samples);
+
                 // create multiple subsamples of the same run and save the results
                 // in the same file `path`. It's ok as long as cells is not too
                 // big because deep copies of the ecDNA distribution for each
@@ -179,12 +177,12 @@ impl BayesianApp {
                     // returns new ecDNA distribution with cells NPlus cells (clone)
                     let simulated_sample =
                         run.clone().undersample_ecdna(&sample_size, i);
-                    results.test(&simulated_sample, patient_sample);
+                    results.test(&simulated_sample, sequecing_sample);
                 }
                 (results, self.growth.restart_growth(run, &sample_size)?)
             } else {
                 let mut results = ABCResults::with_capacity(1usize);
-                results.test(&run, patient_sample);
+                results.test(&run, sequecing_sample);
                 (results, run.into())
             };
         results.save(abspath)?;
@@ -217,8 +215,6 @@ impl Perform for BayesianApp {
             .into_par_iter()
             .progress_count(self.runs as u64)
             .for_each(|idx| {
-                // create initi distribution: sample the initial copies for the single malignant
-                // clone (ie the first cell in the tumour with X copies of ecDNAs).
                 let seed_run = idx as u64 + self.seed;
                 let mut rng = Pcg64Mcg::seed_from_u64(seed_run);
 
@@ -226,10 +222,8 @@ impl Perform for BayesianApp {
                     [initial_copy] => {
                         InitialState::new_from_one_copy(initial_copy, 0usize)
                     }
-                    [min, max] => {
-                        InitialState::random(Range::new(min, max), &mut rng)
-                    }
-                    _ => panic!("Max 2 values, found more than 2"),
+                    [min, max] => InitialState::random(min, max, &mut rng),
+                    _ => panic!("Max 2 values, found more than 2 or empty"),
                 };
 
                 // create rates from ranges: sample parameters from [min, max]
