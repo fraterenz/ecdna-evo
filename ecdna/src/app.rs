@@ -390,7 +390,7 @@ impl DynamicalApp {
         let abspath_with_undersampling = abspath.to_owned().join(format!(
             "{}sample{}cells",
             sample_size,
-            run.get_ecdna().nb_cells()
+            run.nb_cells()
         ));
 
         // undersample dynamics and restart the growth for the next timepoint

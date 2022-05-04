@@ -408,6 +408,10 @@ impl Run<Ended> {
         }
     }
 
+    pub fn set_iter(&mut self, iter: usize) {
+        self.state.last_iter = iter
+    }
+
     pub fn save_ecdna(&self, path: &Path) {
         self.state.data.save(path, &PathBuf::from(format!("{}", self.idx)));
     }
@@ -765,7 +769,10 @@ impl ContinueGrowth for CellCulture {
         //! In cell culture experiments, growth restart from subsample of the
         //! whole population.
         let idx = run.idx;
-        let run = run.undersample_ecdna(sample_size, idx);
+        let mut run = run.undersample_ecdna(sample_size, idx);
+        // when cell culture, restart the next cells "plating" with the iter as
+        // the sample size
+        run.set_iter((*sample_size) as usize);
         ensure!(&run.nb_cells() == sample_size);
         Ok(run.into())
     }
