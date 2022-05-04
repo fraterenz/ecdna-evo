@@ -209,7 +209,6 @@ def run(app: App):
     except FileExistsError:
         pass
     else:
-        fig, ax = plt.subplots(1, 1, tight_layout=True)
         my_query, stats = query_from_thresholds(app.thresholds.items())
         to_plot = abc.loc[abc[stats].query(my_query).index, :]
         to_plot.rename(columns=THETA_MAPPING, inplace=True)
@@ -242,7 +241,7 @@ def run(app: App):
             g.axes[0, 0].yaxis.set_major_locator(MultipleLocator(2))
             # g.fig.suptitle("Inferrences", y=1.08)  # y= some height>1
 
-        savefig(path2save, fig, app.png, app.verbosity)
+            savefig(path2save, g, app.png, app.verbosity)
 
     for theta in app.theta:
         print("Generating posterior for", theta)
@@ -324,7 +323,7 @@ def run(app: App):
     try:
         path2save = commons.create_path2save(
             app.path2save,
-            Path("hisograms.pdf"),
+            Path("distances.pdf"),
         )
     except FileExistsError as e:
         if app.verbosity > 0:
@@ -487,7 +486,11 @@ def savefig(path2save: Path, fig, png: bool, verbosity: bool):
         fig.savefig(fname=path2save.with_suffix(".png"), bbox_inches="tight", dpi=600)
         if verbosity:
             print("Saved also a png copy")
-    plt.close(fig)
+    try:
+        plt.close(fig)
+    except TypeError:
+        assert isinstance(fig, sns.axisgrid.PairGrid)
+        pass
 
 
 def plot_fitness(fitness, ax, title=None, xlabel=None):
