@@ -61,15 +61,14 @@ pub fn write2file<T: std::fmt::Display>(
         if let Some(h) = header {
             writeln!(buffer, "{}", h)?;
         }
-        write!(buffer, "{:.4}", data.first().unwrap())?;
-        for ele in data.iter().skip(1) {
-            write!(buffer, ",{:.4}", ele)?;
+        for ele in data.iter() {
+            write!(buffer, "{:.4},", ele)?;
         }
         if endline {
             writeln!(buffer)?;
         }
     } else {
-        write!(buffer, "{}", f32::NAN)?;
+        write!(buffer, "{},", f32::NAN)?;
     }
     Ok(())
 }

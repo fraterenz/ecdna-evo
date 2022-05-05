@@ -142,7 +142,9 @@ pub struct EcDNASummary {
 
 #[derive(Clone, Debug)]
 pub struct Data {
+    /// Histogram representation of the ecDNA distribution (with `NMinus` cells)
     pub ecdna: EcDNADistribution,
+    /// Summary statistics of the ecDNA distribution (mean, frequency and entropy)
     pub summary: EcDNASummary,
 }
 

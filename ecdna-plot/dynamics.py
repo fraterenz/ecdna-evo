@@ -65,7 +65,6 @@ class App:
                 fontsize=18,
             )
             found_nminus = True
-            print(nminus)
         if self.time:
             if not (found_nplus and found_nminus):
                 raise ValueError(
@@ -235,7 +234,8 @@ class App:
         fig, ax = plt.subplots(1, 1)
         # df has shape (iterations x runs)
         for df, c in zip(data, commons.PALETTE.colors):
-            print(df)
+            if self.verbosity > 0:
+                print(df)
             df.plot(ax=ax, alpha=0.2, color=c, **kwargs)
             df.mean(axis=1).plot(ax=ax, alpha=1, color=c, linestyle="--", **kwargs)
         ax.tick_params(axis="y", labelsize=18, which="both", width=1)

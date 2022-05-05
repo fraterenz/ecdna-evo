@@ -31,7 +31,8 @@ def load_unformatted_csv(path: Path) -> pd.DataFrame:
             f = tar.extractfile(member)
             if f is not None:
                 col = member.name.split("/")[-1].rstrip(".csv")
-                run = f.read().decode().rstrip("\n").split(",")
+                # skip the last trailing comma separator
+                run = f.read().decode().rstrip("\n").split(",")[:-1]
                 data[col] = pd.Series(run, index=range(len(run)))
                 if len(data[col]) > max_entries:
                     max_entries = len(data[col])
