@@ -491,9 +491,7 @@ impl Tarball for DynamicalApp {
             HashSet::with_capacity(self.experiments.len());
 
         for experiment in self.experiments.iter() {
-            dbg!(&experiment);
             if !visited.contains(&experiment) {
-                dbg!(&experiment);
                 let src_sample =
                     self.absolute_path.clone().join(format!("{}", experiment));
                 let dest_sample =
@@ -872,7 +870,6 @@ fn compress_dir(
 
     ensure!(dest_path_archive.is_relative());
     ensure!(src_path_dir.is_absolute());
-    dbg!(&dest_path_archive);
 
     // open stream, create encoder to compress and create tar builder to
     // create tarball
