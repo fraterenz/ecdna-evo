@@ -20,7 +20,7 @@ use rand_pcg::Pcg64Mcg;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use std::{
     collections::HashSet,
-    fs,
+    fmt, fs,
     ops::Deref,
     path::{Path, PathBuf},
 };
@@ -453,22 +453,19 @@ impl Perform for DynamicalApp {
 
                 // for all sequecing experiemnts
                 for experiment in self.experiments.iter() {
-                    let (tumour_cells, sample_cells) =
-                        (experiment.0, experiment.1);
-
                     // simulate and update both the run and the dynamics
                     let run_ended = run.simulate(
                         &mut Some(&mut dynamics),
-                        &tumour_cells,
-                        self.rates.estimate_max_iter(&tumour_cells),
+                        &experiment.tumour_cells,
+                        self.rates.estimate_max_iter(&experiment.tumour_cells),
                     );
                     (run, dynamics) = self
                         .save(
                             run_ended,
                             &self.absolute_path,
                             dynamics,
-                            &tumour_cells,
-                            &sample_cells,
+                            &experiment.tumour_cells,
+                            &experiment.sample_cells,
                         )
                         .with_context(|| format!("Cannot save run {}", idx))
                         .unwrap();
@@ -490,52 +487,60 @@ impl Perform for DynamicalApp {
 
 impl Tarball for DynamicalApp {
     fn compress(self) -> anyhow::Result<()> {
-        for (tumour_size, sample_size) in self.experiments.iter() {
-            let src_sample = self
-                .absolute_path
-                .clone()
-                .join(format!("{}sample{}cells", sample_size, tumour_size));
-            let dest_sample = self
-                .relative_path
-                .clone()
-                .join(format!("{}sample{}cells", sample_size, tumour_size));
+        let mut visited: HashSet<Experiment> =
+            HashSet::with_capacity(self.experiments.len());
 
-            for d in self.dynamics.iter() {
-                if self.verbosity > 0 {
-                    println!(
-                        "{} Creating tarball for dynamics {}",
-                        Utc::now(),
-                        d.get_name()
-                    );
-                }
-                let src = src_sample.clone().join(d.get_name());
-                let dest = dest_sample.clone().join(d.get_name());
-                if self.verbosity > 0 {
-                    println!("src {:#?} dest {:#?} ", src, dest);
-                }
-                compress_dir(&dest, &src, self.verbosity)
-                    .expect("Cannot compress dynamics");
-            }
+        for experiment in self.experiments.iter() {
+            dbg!(&experiment);
+            if !visited.contains(&experiment) {
+                dbg!(&experiment);
+                let src_sample =
+                    self.absolute_path.clone().join(format!("{}", experiment));
+                let dest_sample =
+                    self.relative_path.clone().join(format!("{}", experiment));
 
-            // specific case with moments dynamics (saving the mean)
-            for path in fs::read_dir(&src_sample)? {
-                match path {
-                    Ok(p) => {
-                        if p.path().ends_with("mean_dynamics") {
-                            let src = src_sample.clone().join("mean_dynamics");
-                            let dest =
-                                dest_sample.clone().join("mean_dynamics");
-                            if self.verbosity > 0 {
-                                println!("src {:#?} dest {:#?} ", src, dest);
+                for d in self.dynamics.iter() {
+                    if self.verbosity > 0 {
+                        println!(
+                            "{} Creating tarball for dynamics {}",
+                            Utc::now(),
+                            d.get_name()
+                        );
+                    }
+                    let src = src_sample.clone().join(d.get_name());
+                    let dest = dest_sample.clone().join(d.get_name());
+                    if self.verbosity > 0 {
+                        println!("src {:#?} dest {:#?} ", src, dest);
+                    }
+                    compress_dir(&dest, &src, self.verbosity)
+                        .expect("Cannot compress dynamics");
+                }
+
+                // specific case with moments dynamics (saving the mean)
+                for path in fs::read_dir(&src_sample)? {
+                    match path {
+                        Ok(p) => {
+                            if p.path().ends_with("mean_dynamics") {
+                                let src =
+                                    src_sample.clone().join("mean_dynamics");
+                                let dest =
+                                    dest_sample.clone().join("mean_dynamics");
+                                if self.verbosity > 0 {
+                                    println!(
+                                        "src {:#?} dest {:#?} ",
+                                        src, dest
+                                    );
+                                }
+                                compress_dir(&dest, &src, self.verbosity)
+                                    .expect("Cannot compress mean_dynamics");
                             }
-                            compress_dir(&dest, &src, self.verbosity)
-                                .expect("Cannot compress mean_dynamics");
+                        }
+                        _ => {
+                            return Ok(());
                         }
                     }
-                    _ => {
-                        return Ok(());
-                    }
                 }
+                visited.insert((*experiment).clone());
             }
         }
         Ok(())
@@ -802,12 +807,24 @@ impl InitialStateLoader for Dynamical {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct Experiment {
+    tumour_cells: NbIndividuals,
+    sample_cells: NbIndividuals,
+}
+
+impl fmt::Display for Experiment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}samples{}cells", self.sample_cells, self.tumour_cells)
+    }
+}
+
 /// Collection of population and sample sizes specifying the longitudinal timepoints.
 /// The population size indicates the number of cells in the tumour population
 /// when the timepoint has been collected, and the sample size the number of cells
 /// sequenced from the subsampling of the whole tumour.
 #[derive(Debug)]
-pub struct Experiments(Vec<(NbIndividuals, NbIndividuals)>);
+pub struct Experiments(Vec<Experiment>);
 
 impl Experiments {
     pub fn new(
@@ -819,16 +836,24 @@ impl Experiments {
             "Found incosistent number of tumour and sample sizes"
         );
         ensure!(!tumour_sizes.is_empty());
+        let mut experiments: Vec<Experiment> =
+            Vec::with_capacity(tumour_sizes.len());
 
-        let experiments: Vec<(NbIndividuals, NbIndividuals)> =
-            tumour_sizes.into_iter().zip(sample_sizes.into_iter()).collect();
+        for (tumour_size, sample_size) in
+            tumour_sizes.into_iter().zip(sample_sizes.into_iter())
+        {
+            experiments.push(Experiment {
+                tumour_cells: tumour_size,
+                sample_cells: sample_size,
+            })
+        }
 
         Ok(Experiments(experiments))
     }
 }
 
 impl Deref for Experiments {
-    type Target = Vec<(NbIndividuals, NbIndividuals)>;
+    type Target = Vec<Experiment>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -847,6 +872,7 @@ fn compress_dir(
 
     ensure!(dest_path_archive.is_relative());
     ensure!(src_path_dir.is_absolute());
+    dbg!(&dest_path_archive);
 
     // open stream, create encoder to compress and create tar builder to
     // create tarball
