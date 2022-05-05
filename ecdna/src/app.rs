@@ -388,9 +388,8 @@ impl DynamicalApp {
 
         let filename = run.filename();
         let abspath_with_undersampling = abspath.to_owned().join(format!(
-            "{}sample{}cells",
-            sample_size,
-            run.nb_cells()
+            "{}",
+            Experiment::new(run.nb_cells(), *sample_size)
         ));
 
         // undersample dynamics and restart the growth for the next timepoint
@@ -491,7 +490,7 @@ impl Tarball for DynamicalApp {
             HashSet::with_capacity(self.experiments.len());
 
         for experiment in self.experiments.iter() {
-            if !visited.contains(&experiment) {
+            if !visited.contains(experiment) {
                 let src_sample =
                     self.absolute_path.clone().join(format!("{}", experiment));
                 let dest_sample =
@@ -809,6 +808,15 @@ impl InitialStateLoader for Dynamical {
 pub struct Experiment {
     tumour_cells: NbIndividuals,
     sample_cells: NbIndividuals,
+}
+
+impl Experiment {
+    pub fn new(
+        tumour_cells: NbIndividuals,
+        sample_cells: NbIndividuals,
+    ) -> Self {
+        Experiment { tumour_cells, sample_cells }
+    }
 }
 
 impl fmt::Display for Experiment {
