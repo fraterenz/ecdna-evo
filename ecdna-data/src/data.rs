@@ -540,9 +540,8 @@ impl EcDNADistribution {
 
 #[cfg(test)]
 mod tests {
-    use crate::DNACopy;
-
     use super::*;
+    use crate::DNACopy;
     use ecdna_sim::NbIndividuals;
     use fake::Fake;
     use quickcheck::Gen;
@@ -584,6 +583,21 @@ mod tests {
         let ecdna = EcDNADistribution::from(original_data);
         let hist = HashMap::from([(0u16, 1u64), (2u16, 2u64), (10u16, 1u64)]);
         assert_eq!(ecdna.distribution, hist);
+    }
+
+    #[quickcheck]
+    fn ecdna_into_vec_no_nminus(distribution: Vec<u16>) -> bool {
+        let mut expected = distribution
+            .clone()
+            .into_iter()
+            .filter(|x| x > &0u16)
+            .collect::<Vec<u16>>();
+        expected.sort_unstable();
+
+        let mut got =
+            EcDNADistribution::from(distribution).into_vec_no_minus();
+        got.sort_unstable();
+        got == expected
     }
 
     #[test_case(vec![0u16, 1u16, 2u16] => Mean(1f32)  ; "Balanced input")]

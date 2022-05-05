@@ -203,8 +203,6 @@ impl Run<Started> {
         //! If the some `dynamics` are given, those quantities will be
         //! calculated using the [`Update`] method.
         let mut iter = self.init_state.init_iter;
-        let mut nplus = self.get_nplus();
-        let mut nminus = *self.get_nminus();
 
         // if we start from an initial state having more than one cell, must prepare
         // the dynamics by filling them with const values, unless we are restarting
@@ -219,43 +217,47 @@ impl Run<Started> {
             }
         }
 
-        let (time, condition) = {
+        let (time, condition, ntot) = {
             loop {
-                // Compute the next event using Gillespie algorithm based on the
-                // stochastic process
-                let event =
-                    self.bd_process.gillespie(nplus, nminus, &mut self.rng);
-                self.update(event, dynamics);
-                nplus = self.get_nplus();
-                nminus = *self.get_nminus();
-                iter += 1;
+                let ntot = self.get_nplus() + *self.get_nminus();
 
                 // StopIteration appears when there are no cells anymore (due to
                 // cell death), when the iteration has reached the max number of
                 // iterations nb_iter >= self.max_iter or maximal number of cells
                 // i.e. when the iteration has generated a tumor of max_cells size
-                if nplus + nminus == 0u64 {
+                if ntot == 0u64 {
                     break (
                         self.state.system.event.time,
                         EndRun::NoIndividualsLeft,
+                        ntot,
                     );
                 };
                 if iter >= max_iter {
                     break (
                         self.state.system.event.time,
                         EndRun::MaxItersReached,
+                        ntot,
                     );
                 };
-                if nplus + nminus >= *max_cells {
+                if &ntot >= max_cells {
                     break (
                         self.state.system.event.time,
                         EndRun::MaxIndividualsReached,
+                        ntot,
                     );
                 }
+
+                // Compute the next event using Gillespie algorithm based on the
+                // stochastic process
+                let event = self.bd_process.gillespie(
+                    self.get_nplus(),
+                    *self.get_nminus(),
+                    &mut self.rng,
+                );
+                self.update(event, dynamics);
+                iter += 1;
             }
         };
-
-        let ntot = nminus + nplus;
 
         if let BirthDeathProcess::PureBirth(_) = &self.bd_process {
             assert!(ntot > 0, "No cells found with PureBirth process")
