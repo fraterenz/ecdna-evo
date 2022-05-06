@@ -60,9 +60,15 @@ pub trait Save {
     fn save(&self, path2file: &Path) -> anyhow::Result<()>;
 }
 
+/// Remove all rec
+#[enum_dispatch]
+pub trait Clear {
+    fn clear(&mut self);
+}
+
 /// The quantities of interest estimated from the state of the `Run` for each
 /// iteration. Add new dynamical quantities here.
-#[enum_dispatch(Update, Name, Save)]
+#[enum_dispatch(Clear, Name, Save, Update)]
 #[derive(Clone, Debug)]
 pub enum Dynamic {
     /// Number of cells w/ any ecDNA copy per iteration
@@ -133,6 +139,12 @@ impl Name for NPlus {
     }
 }
 
+impl Clear for NPlus {
+    fn clear(&mut self) {
+        self.nplus_dynamics.clear()
+    }
+}
+
 impl NPlus {
     pub fn new(max_iter: usize, initial_ecdna: EcDNADistribution) -> Self {
         let mut nplus_dynamics = Vec::with_capacity(max_iter);
@@ -164,6 +176,12 @@ impl Save for NMinus {
 impl Name for NMinus {
     fn get_name(&self) -> &String {
         &self.name
+    }
+}
+
+impl Clear for NMinus {
+    fn clear(&mut self) {
+        self.nminus_dynamics.clear()
     }
 }
 
@@ -227,6 +245,12 @@ impl Name for MeanDyn {
     }
 }
 
+impl Clear for MeanDyn {
+    fn clear(&mut self) {
+        self.mean.clear()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Moments {
     /// Record the variance of the ecDNA distribution for each iteration.
@@ -239,6 +263,13 @@ pub struct Moments {
 impl Name for Moments {
     fn get_name(&self) -> &String {
         &self.name
+    }
+}
+
+impl Clear for Moments {
+    fn clear(&mut self) {
+        self.mean.clear();
+        self.variance.clear();
     }
 }
 
@@ -293,6 +324,12 @@ pub struct GillespieT {
 impl Name for GillespieT {
     fn get_name(&self) -> &String {
         &self.name
+    }
+}
+
+impl Clear for GillespieT {
+    fn clear(&mut self) {
+        self.time.clear()
     }
 }
 

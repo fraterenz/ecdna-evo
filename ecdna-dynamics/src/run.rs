@@ -39,6 +39,8 @@ pub struct Run<S: RunState> {
     bd_process: BirthDeathProcess,
     /// Initial state of the system
     pub init_state: InitialState,
+    /// How many times the run has been restarted (longitudinal analyses)
+    pub restarted: u8,
     seed: Seed,
     rng: Pcg64Mcg,
 }
@@ -83,6 +85,7 @@ impl From<Run<Ended>> for Run<Started> {
     fn from(run: Run<Ended>) -> Self {
         let last_iter = run.state.last_iter;
         let ecdna = run.state.data.ecdna.clone();
+        let restarted = run.restarted + 1;
         let init_state = InitialState::new(ecdna, last_iter);
         let state = run.state.into();
 
@@ -91,6 +94,7 @@ impl From<Run<Ended>> for Run<Started> {
             bd_process: run.bd_process,
             state,
             init_state,
+            restarted,
             seed: run.seed,
             rng: run.rng,
         }
@@ -133,6 +137,7 @@ impl Run<Started> {
                     event: Event { kind: AdvanceRun::Init, time },
                 },
             },
+            restarted: 0,
             seed,
             rng: Pcg64Mcg::seed_from_u64(*seed.get_seed()),
         }
@@ -197,6 +202,7 @@ impl Run<Started> {
         dynamics: &mut Option<&mut Dynamics>,
         max_cells: &NbIndividuals,
         max_iter: usize,
+        initial_fill_dynamics: bool,
     ) -> Run<Ended> {
         //! Simulate one realisation of the birth-death stochastic process.
         //!
@@ -207,9 +213,10 @@ impl Run<Started> {
         // if we start from an initial state having more than one cell, must prepare
         // the dynamics by filling them with const values, unless we are restarting
         // the run
-        if self.init_state.init_iter <= 1 {
+        if initial_fill_dynamics {
             if let Some(dynamics) = dynamics {
-                for _ in 0..self.state.system.ntot() {
+                // -1 because the init has already been carried out previously
+                for _ in 0..self.state.system.ntot() - 1 {
                     for d in dynamics.iter_mut() {
                         d.update(&self);
                     }
@@ -263,16 +270,17 @@ impl Run<Started> {
             assert!(ntot > 0, "No cells found with PureBirth process")
         }
 
-        let (idx, process, init_state) =
-            (self.idx, self.bd_process.clone(), self.init_state.clone());
-
-        let (seed, rng) = (
+        let (idx, process, init_state, seed, rng, restarted) = (
+            self.idx,
+            self.bd_process.clone(),
+            self.init_state.clone(),
             self.seed,
             Pcg64Mcg::from_rng(self.rng.clone())
                 .expect("Cannot create rng from the run"),
+            self.restarted,
         );
 
-        let data = self.create_data(&ntot, &condition);
+        let data = self.create_data(&condition);
 
         Run {
             idx,
@@ -284,22 +292,20 @@ impl Run<Started> {
                 sampled_run: None,
                 last_iter: iter,
             },
+            restarted,
             seed,
             rng,
         }
     }
 
-    fn create_data(
-        self,
-        ntot: &NbIndividuals,
-        stop_condition: &EndRun,
-    ) -> Data {
+    fn create_data(self, stop_condition: &EndRun) -> Data {
+        let ntot = self.state.system.ntot();
         let ecdna_distr = self.state.system.ecdna_distr.0;
         let nplus = ecdna_distr.len() as NbIndividuals;
         let mut counts: HashMap<DNACopy, NbIndividuals> = HashMap::new();
 
         if ecdna_distr.is_empty() {
-            if ntot == &0u64 {
+            if ntot == 0u64 {
                 match stop_condition {
                     EndRun::NoIndividualsLeft => {
                         // no cells left, return NAN
@@ -321,6 +327,7 @@ impl Run<Started> {
                 }
             } else {
                 // no nplus cells left, return 0
+                counts.insert(0u16, ntot);
                 return Data {
                     ecdna: EcDNADistribution::from(counts),
                     summary: EcDNASummary {
@@ -330,9 +337,9 @@ impl Run<Started> {
                     },
                 };
             }
-        } else if ntot == &0 {
+        } else if ntot == 0 {
             panic!("Found wrong value of ntot: cannot create data when ntot is 0 and the ecDNA distribution is not empty")
-        } else if ntot < &(ecdna_distr.len() as NbIndividuals) {
+        } else if ntot < (ecdna_distr.len() as NbIndividuals) {
             panic!("Found wrong value of ntot: should be equal or greater than the number of cells w/ ecDNA, found smaller")
         }
 
@@ -345,7 +352,7 @@ impl Run<Started> {
         counts.insert(0u16, ntot - nplus);
 
         let ecdna = EcDNADistribution::from(counts);
-        assert_eq!(ecdna.nb_cells(), *ntot);
+        assert_eq!(ecdna.nb_cells(), ntot);
         let entropy = Entropy::try_from(&ecdna).unwrap();
         // do not try_from to avoid traversing the distribution vector
         let mean = Mean(sum as f32 / ecdna.nb_cells() as f32);
@@ -405,6 +412,7 @@ impl Run<Ended> {
                 last_iter: self.state.last_iter,
                 sampled_run: Some(self.idx),
             },
+            restarted: self.restarted,
             seed: self.seed,
             rng: self.rng,
         }
@@ -579,7 +587,7 @@ impl From<EcDNADistribution> for EcDNADistributionNPlus {
 }
 
 impl EcDNADistributionNPlus {
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
@@ -772,9 +780,7 @@ impl ContinueGrowth for CellCulture {
         //! whole population.
         let idx = run.idx;
         let mut run = run.undersample_ecdna(sample_size, idx);
-        // when cell culture, restart the next cells "plating" with the iter as
-        // the sample size
-        run.set_iter((*sample_size) as usize);
+        run.set_iter(0);
         ensure!(&run.nb_cells() == sample_size);
         Ok(run.into())
     }
@@ -850,16 +856,20 @@ impl Update for NMinus {
 
 impl Update for MeanDyn {
     fn update(&mut self, run: &Run<Started>) {
-        let mean = match fast_mean_computation(
-            self.get_previous_mean()
-                .with_context(|| "Cannot update the dynamical mean")
-                .unwrap(),
-            &run.get_gillespie_event().kind,
-            run.get_nminus() + run.get_nplus(),
-        ) {
-            Some(mean) => mean,
-            // slow version: traverse the whole vector of the ecDNA distribution
-            None => run.mean_ecdna(),
+        let mean = if self.get_previous_mean().is_err() {
+            run.mean_ecdna()
+        } else {
+            match fast_mean_computation(
+                self.get_previous_mean()
+                    .with_context(|| "Cannot update the dynamical mean")
+                    .unwrap(),
+                &run.get_gillespie_event().kind,
+                run.get_nminus() + run.get_nplus(),
+            ) {
+                Some(mean) => mean,
+                // slow version: traverse the whole vector of the ecDNA distribution
+                None => run.mean_ecdna(),
+            }
         };
         self.store_mean(mean);
     }
@@ -867,16 +877,20 @@ impl Update for MeanDyn {
 
 impl Update for Moments {
     fn update(&mut self, run: &Run<Started>) {
-        let mean = match fast_mean_computation(
-            self.get_previous_mean()
-                .with_context(|| "Cannot update the dynamical mean")
-                .unwrap(),
-            &run.get_gillespie_event().kind,
-            run.get_nminus() + run.get_nplus(),
-        ) {
-            Some(mean) => mean,
-            // slow version: traverse the whole vector of the ecDNA distribution
-            None => run.mean_ecdna(),
+        let mean = if self.get_previous_mean().is_err() {
+            run.mean_ecdna()
+        } else {
+            match fast_mean_computation(
+                self.get_previous_mean()
+                    .with_context(|| "Cannot update the dynamical mean")
+                    .unwrap(),
+                &run.get_gillespie_event().kind,
+                run.get_nminus() + run.get_nplus(),
+            ) {
+                Some(mean) => mean,
+                // slow version: traverse the whole vector of the ecDNA distribution
+                None => run.mean_ecdna(),
+            }
         };
         self.store_moments(mean, run.variance_ecdna(&mean));
     }
@@ -884,10 +898,10 @@ impl Update for Moments {
 
 impl Update for GillespieT {
     fn update(&mut self, run: &Run<Started>) {
-        let time = self
-            .get_previous_time()
-            .with_context(|| "Cannot update the gillespie time")
-            .unwrap();
-        self.store_time(time + run.get_gillespie_event().time);
+        let gillespie_time = run.get_gillespie_event().time;
+        self.store_time(
+            self.get_previous_time()
+                .map_or_else(|_| gillespie_time, |time| time + gillespie_time),
+        )
     }
 }

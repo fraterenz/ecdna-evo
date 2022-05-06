@@ -6,7 +6,7 @@ use ecdna_data::{
     data::{EcDNADistribution, EcDNASummary, Entropy, Frequency, Mean},
     patient::{Patient, SequencingData},
 };
-use ecdna_dynamics::dynamics::{Dynamic, Dynamics, Name, Save};
+use ecdna_dynamics::dynamics::{Clear, Dynamic, Dynamics, Name, Save};
 use ecdna_dynamics::run::{
     CellCulture, ContinueGrowth, DNACopy, Ended, Growth, InitialState,
     PatientStudy, Run, Started, Update,
@@ -245,10 +245,12 @@ impl Perform for BayesianApp {
 
                 // for all sequecing experiments
                 for sample in self.patient.samples.iter() {
+                    let restarted = run.restarted > 0;
                     let run_ended = run.simulate(
                         &mut None,
                         &sample.tumour_size,
                         rates.estimate_max_iter(&sample.tumour_size),
+                        !restarted,
                     );
                     run = self
                         .save(
@@ -301,6 +303,7 @@ pub struct DynamicalApp {
     pub runs: usize,
     pub rates: Rates,
     pub dynamics: Dynamics,
+    /// Final size of the tumour, i.e. number of cells
     pub size: NbIndividuals,
     pub ecdna: EcDNADistribution,
     pub experiments: Experiments,
@@ -385,6 +388,10 @@ impl DynamicalApp {
         sample_size: &NbIndividuals,
     ) -> anyhow::Result<(Run<Started>, Dynamics)> {
         ensure!(tumour_size >= sample_size);
+        ensure!(
+            !run.get_ecdna().is_empty(),
+            "Found an empty ecDNA distribution for the run"
+        );
 
         let filename = run.filename();
         let abspath_with_undersampling = abspath.to_owned().join(format!(
@@ -392,17 +399,17 @@ impl DynamicalApp {
             Experiment::new(run.nb_cells(), *sample_size)
         ));
 
-        // undersample dynamics and restart the growth for the next timepoint
-        let (dynamics, run) = if tumour_size > sample_size {
+        let (mut dynamics, run) = if tumour_size > sample_size {
             let idx = run.idx;
             run.clone()
                 .undersample_ecdna(sample_size, idx)
                 .save_ecdna(&abspath_with_undersampling);
             let run = self.growth.restart_growth(run, sample_size)?;
-            // this will result in dynamics having different values for the
-            // same gillesipe time: is it a problem?
-            for d in dynamics.iter_mut() {
-                d.update(&run);
+            if let Growth::CellCulture(_) = self.growth {
+                // remove all dynamics except the last entry
+                for d in dynamics.iter_mut() {
+                    d.update(&run);
+                }
             }
             (dynamics, run)
         } else {
@@ -418,6 +425,18 @@ impl DynamicalApp {
             d.save(&file2path).unwrap();
         }
 
+        let (dynamics, run) = if tumour_size > sample_size {
+            for d in dynamics.iter_mut() {
+                if let Growth::CellCulture(_) = self.growth {
+                    // remove all dynamics except the last entry
+                    d.clear();
+                }
+            }
+            (dynamics, run)
+        } else {
+            (dynamics, run)
+        };
+
         Ok((run, dynamics))
     }
 }
@@ -429,8 +448,9 @@ impl Perform for DynamicalApp {
         }
 
         (0..self.runs)
-            .into_par_iter()
-            .progress_count(self.runs as u64)
+            .into_iter()
+            // .into_par_iter()
+            // .progress_count(self.runs as u64)
             .for_each(|idx| {
                 let initial_state = InitialState::new(
                     self.ecdna.clone(),
@@ -452,11 +472,13 @@ impl Perform for DynamicalApp {
 
                 // for all sequecing experiemnts
                 for experiment in self.experiments.iter() {
+                    let restarted = run.restarted > 0;
                     // simulate and update both the run and the dynamics
                     let run_ended = run.simulate(
                         &mut Some(&mut dynamics),
                         &experiment.tumour_cells,
                         self.rates.estimate_max_iter(&experiment.tumour_cells),
+                        !restarted,
                     );
                     (run, dynamics) = self
                         .save(

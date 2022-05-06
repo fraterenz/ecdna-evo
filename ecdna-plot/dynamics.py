@@ -41,8 +41,8 @@ class App:
             self.plot(
                 nplus,
                 path2save,
-                xlabel="Tumour cells",
-                ylabel="Cells with ecDNA copies",
+                xlabel="Iterations",
+                ylabel="Cells w/ ecDNAs",
                 legend=False,
                 loglog=True,
             )
@@ -58,13 +58,29 @@ class App:
             self.plot(
                 nminus,
                 path2save,
-                xlabel="Tumour cells",
-                ylabel="Cells w/o any ecDNA copies",
+                xlabel="Iterations",
+                ylabel="Cells w/o any ecDNAs",
                 legend=False,
                 loglog=True,
                 fontsize=18,
             )
             found_nminus = True
+        if found_nplus and found_nminus:
+            path2save = commons.create_path2save(
+                self.path2dir, Path("population_iterations.pdf")
+            )
+            population = []
+            for plus, minus in zip(nplus, nminus):
+                population.append(plus.add(minus, axis="columns"))
+            self.plot(
+                population,
+                path2save,
+                xlabel="Iterations",
+                ylabel="Total number of cells",
+                legend=False,
+                loglog=True,
+                fontsize=18,
+            )
         if self.time:
             if not (found_nplus and found_nminus):
                 raise ValueError(
@@ -82,16 +98,19 @@ class App:
                 self.plot(loaded, path2save, legend=False)
 
                 if found_nplus:
-                    path2save = commons.create_path2save(self.path2dir, Path("nplus_growth.pdf"))
+                    path2save = commons.create_path2save(
+                        self.path2dir, Path("nplus_growth.pdf")
+                    )
                     self.plot_xy(loaded, nplus, path2save)
                 if found_nminus:
-                    path2save = commons.create_path2save(self.path2dir, Path("nminus_growth.pdf"))
+                    path2save = commons.create_path2save(
+                        self.path2dir, Path("nminus_growth.pdf")
+                    )
                     self.plot_xy(loaded, nminus, path2save)
                 if found_nplus and found_nminus:
-                    path2save = commons.create_path2save(self.path2dir, Path("population.pdf"))
-                    population = []
-                    for (plus, minus) in zip(nplus, nminus):
-                        population.append(plus.add(minus, axis="columns"))
+                    path2save = commons.create_path2save(
+                        self.path2dir, Path("population.pdf")
+                    )
                     self.plot_xy(loaded, population, path2save)
 
         if self.mean:
