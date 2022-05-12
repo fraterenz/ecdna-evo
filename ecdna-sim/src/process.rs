@@ -200,4 +200,18 @@ mod tests {
 
         (time1 - time2).abs() < f32::EPSILON
     }
+
+    #[test]
+    #[ignore = "TODO"]
+    fn next_event_inf() {
+        let mut rng = Pcg64Mcg::seed_from_u64(26u64);
+        let bd: BirthDeathProcess = BirthDeath {
+            r1: 1.1777155e20,
+            r2: f32::INFINITY,
+            d1: 6.1562,
+            d2: f32::INFINITY,
+        }
+        .into();
+        println!("{:#?}", bd.next_event(0u64, 0u64, &mut rng));
+    }
 }

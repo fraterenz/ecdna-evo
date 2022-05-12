@@ -124,7 +124,7 @@ class App:
             self.plot(
                 loaded,
                 path2save,
-                xlabel="Tumour cells",
+                xlabel="Iterations",
                 ylabel="Average ecDNA copies per cell",
                 legend=False,
             )
@@ -139,7 +139,7 @@ class App:
             self.plot(
                 loaded,
                 path2save,
-                xlabel="Tumour cells",
+                xlabel="Iterations",
                 ylabel="Average ecDNA copies per cell",
                 legend=False,
             )
@@ -158,7 +158,7 @@ class App:
             self.plot(
                 loaded,
                 path2save,
-                xlabel="Tumour cells",
+                xlabel="Iterations",
                 ylabel="Frequency of cells w/ ecDNA copies",
                 legend=False,
                 logx=True,

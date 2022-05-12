@@ -689,16 +689,17 @@ mod tests {
         seed: u64,
         mut distribution: Vec<u16>,
     ) -> bool {
-        if distribution.is_empty() {
-            distribution.push(0u16);
-            distribution.push(1u16);
-            distribution.push(2u16);
+        let mut rng = Pcg64Mcg::seed_from_u64(seed);
+        if distribution.len() < 30 {
+            for _ in 0..50 {
+                distribution.push(rng.gen());
+            }
         }
 
         let nb_cells: NbIndividuals = distribution.len() as NbIndividuals - 1;
 
         let mut rng = Pcg64Mcg::seed_from_u64(seed);
-        let ecdna = EcDNADistribution::from(distribution.clone());
+        let ecdna = EcDNADistribution::from(distribution);
         let ecdna = ecdna
             .distribution
             .into_iter()
@@ -722,25 +723,83 @@ mod tests {
     }
 
     #[quickcheck]
-    fn ecdna_undersample_reproducible(
+    fn ecdna_undersample_sample_reproducible_different_trials(
         seed: u64,
         mut distribution: Vec<u16>,
     ) -> bool {
-        if distribution.is_empty() {
-            distribution.push(0u16);
-            distribution.push(1u16);
-            distribution.push(2u16);
+        let mut rng = Pcg64Mcg::seed_from_u64(seed);
+        if distribution.len() <= 4 {
+            for _ in 0..5 {
+                distribution.push(rng.gen());
+            }
         }
 
         let nb_cells: NbIndividuals = distribution.len() as NbIndividuals - 1;
 
+        let ecdna = EcDNADistribution::from(distribution);
+        let ecdna = ecdna
+            .distribution
+            .into_iter()
+            .collect::<Vec<(DNACopy, NbIndividuals)>>();
+        let sampler =
+            WeightedIndex::new(ecdna.iter().map(|item| item.1)).unwrap();
+
+        let first = EcDNADistribution::sample_distribution(
+            ecdna.clone(),
+            nb_cells,
+            sampler.clone(),
+            &mut rng,
+        );
+
+        let second = EcDNADistribution::sample_distribution(
+            ecdna, nb_cells, sampler, &mut rng,
+        );
+
+        first != second
+    }
+
+    #[quickcheck]
+    fn ecdna_undersample_reproducible(
+        seed: u64,
+        mut distribution: Vec<u16>,
+    ) -> bool {
         let mut rng = Pcg64Mcg::seed_from_u64(seed);
-        let ecdna = EcDNADistribution::from(distribution.clone());
+        if distribution.len() < 30 {
+            for _ in 0..50 {
+                distribution.push(rng.gen());
+            }
+        }
+
+        let mut rng = Pcg64Mcg::seed_from_u64(seed);
+        let nb_cells: NbIndividuals = distribution.len() as NbIndividuals - 1;
+
+        let ecdna = EcDNADistribution::from(distribution);
         let first = ecdna.clone().undersample(&nb_cells, &mut rng);
 
         let mut rng = Pcg64Mcg::seed_from_u64(seed);
 
         ecdna.undersample(&nb_cells, &mut rng) == first
+    }
+
+    #[quickcheck]
+    fn ecdna_undersample_reproducible_different_trials(
+        seed: u64,
+        mut distribution: Vec<u16>,
+    ) -> bool {
+        let mut rng = Pcg64Mcg::seed_from_u64(seed);
+        if distribution.len() <= 4 {
+            for _ in 0..5 {
+                distribution.push(rng.gen());
+            }
+        }
+
+        let mut rng = Pcg64Mcg::seed_from_u64(seed);
+        let nb_cells: NbIndividuals = distribution.len() as NbIndividuals - 1;
+
+        let ecdna = EcDNADistribution::from(distribution);
+        let first = ecdna.clone().undersample(&nb_cells, &mut rng);
+
+        ecdna.undersample(&nb_cells, &mut rng) != first
     }
 
     impl fake::Dummy<EcDNADistribution> for EcDNADistribution {

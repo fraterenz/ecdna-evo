@@ -97,6 +97,10 @@ pub struct BayesianApp {
 
 impl BayesianApp {
     pub fn new(config: Bayesian) -> anyhow::Result<Self> {
+        if config.verbosity > 1 {
+            println!("{:#?}", config);
+        }
+
         let patient =
             Patient::load_from_file(&config.patient, config.verbosity)
                 .with_context(|| "Cannot load patient")?;
@@ -270,9 +274,6 @@ impl Perform for BayesianApp {
             });
 
         println!("{} End using ABC with {} runs", Utc::now(), self.runs);
-
-        // save the app's seed (each run has a seed = app_seed + run_idx)
-        Seed::new(self.seed).save(&self.absolute_path.join("seed.csv"))?;
 
         Ok(())
     }
