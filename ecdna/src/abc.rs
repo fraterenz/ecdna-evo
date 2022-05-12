@@ -21,7 +21,11 @@ use std::path::Path;
 pub struct ABCRejection;
 
 impl ABCRejection {
-    pub fn run(run: &Run<Ended>, sample: &SequencingData) -> ABCResult {
+    pub fn run(
+        run: &Run<Ended>,
+        sample: &SequencingData,
+        timepoint: usize,
+    ) -> ABCResult {
         //! Run the ABC rejection method by comparing the run against the
         //! patient's data
         let mut builder = ABCResultBuilder::default();
@@ -59,6 +63,7 @@ impl ABCRejection {
 
         result.seed = seed;
         result.idx = idx;
+        result.timepoint = timepoint;
 
         let ntot = run.init_state.get_distribution().nb_cells();
         result.init_mean = run
@@ -80,6 +85,7 @@ impl ABCRejection {
 
 /// Results of the ABC rejection algorithm, i.e. the posterior distributions of
 /// the rates. There is one `ABCResults` for each run.
+#[derive(Debug)]
 pub struct ABCResults(Vec<ABCResult>);
 
 impl ABCResults {
@@ -87,8 +93,13 @@ impl ABCResults {
         ABCResults(Vec::with_capacity(capacity))
     }
 
-    pub fn test(&mut self, run: &Run<Ended>, sample: &SequencingData) {
-        self.0.push(ABCRejection::run(run, sample));
+    pub fn test(
+        &mut self,
+        run: &Run<Ended>,
+        sample: &SequencingData,
+        timepoint: usize,
+    ) {
+        self.0.push(ABCRejection::run(run, sample, timepoint));
     }
 }
 
@@ -98,6 +109,8 @@ pub struct ABCResult {
     parental_idx: Option<usize>,
     #[builder(setter(skip))]
     idx: String,
+    #[builder(setter(skip))]
+    timepoint: usize,
     #[builder(setter(skip))]
     seed: Seed,
     #[builder(setter(strip_option), default)]

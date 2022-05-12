@@ -77,42 +77,55 @@ def query_from_thresholds(thresholds) -> Tuple[str, List[str]]:
     return my_query, stats
 
 
-def infer_timepoints(data: pd.DataFrame, verbosity: bool) -> List[int]:
-    idx2analyze = "parental_idx" if abc_is_subsampled(data) else "idx"
+def infer_timepoints(data: pd.DataFrame, verbosity: bool) -> int:
     # tumour cells of the timepoint found for each run idx2analyze
-    cells = data[[idx2analyze, "tumour_cells"]].drop_duplicates()
+    cells = data[["timepoint", "tumour_cells"]].drop_duplicates()
 
     assert (
-        cells.groupby(idx2analyze).count().tumour_cells.unique().shape[0] == 1
+        cells.groupby("timepoint").count().tumour_cells.unique().shape[0] == 1
     ), "Found runs with different nb of timepoints"
 
-    cells = cells.tumour_cells.drop_duplicates().tolist()
     if verbosity:
-        print("Found {} timepoints with cells {}".format(len(cells), cells))
-
-    return cells
+        print(
+            "Found {} timepoints with cells {}".format(
+                cells.shape[0], cells.tumour_cells
+            )
+        )
+    return cells.timepoint.shape[0]
 
 
 def abc_longitudinal(
-    data: pd.DataFrame, my_query: str, nb_timepoints: int, verbosity: bool
+    df: pd.DataFrame, my_query: str, nb_timepoints: int, verbosity: bool
 ) -> pd.DataFrame:
-    """when multiple timepoints are present, runs can have the idx. In this
-    case, we want to plot runs for which the query is satisfied for **all**
-    their timepoints: groupby idx (same run with different nb timepoints),
-    then apply query on those timepoints, then keep run only if all timepoints
-    match query, i.e. shape[0] == timepoints. Finally, take only once the
-    fitness coefficient to avoid saving it multiple times"""
     if verbosity:
         print("Running longitudinal ABC")
-    return (
-        data.groupby(["parental_idx", "idx"]).filter(
-            lambda x: (x.query(my_query)).shape[0] == nb_timepoints
-        )
-        # .drop_duplicates(["parental_idx", "idx"])
+
+    # Create a new column for each row, indicating whether the condition is met.
+    # Groupby and reduce the timepoint dimensionality: selection is true when the
+    # all the timepoints match the query.
+    grouped = (
+        df.eval("selection = {}".format(my_query))
+        .loc[:, ["selection", "parental_idx", "idx"]]
+        .groupby(["parental_idx", "idx"])
+        .sum()
+        == nb_timepoints
     )
 
+    if verbosity:
+        print("selected runs: ", grouped)
 
-def load(path2abc: Path, verbosity: bool) -> Tuple[pd.DataFrame, List[int]]:
+    merged = pd.merge(
+        left=df,
+        right=grouped,
+        how="left",
+        left_on=["parental_idx", "idx"],
+        right_index=True,
+    )
+
+    return merged.loc[merged.selection, :].drop_duplicates("parental_idx")
+
+
+def load(path2abc: Path, verbosity: bool) -> Tuple[pd.DataFrame, int]:
     if verbosity > 0:
         print("Loading data")
     abc: pd.DataFrame = pd.read_csv(path2abc, header=0, low_memory=False)
@@ -128,6 +141,7 @@ def load(path2abc: Path, verbosity: bool) -> Tuple[pd.DataFrame, List[int]]:
         abc["parental_idx"] = abc["parental_idx"].astype("float")
 
     abc["idx"] = abc["idx"].astype("uint")
+    abc["timepoint"] = abc["timepoint"].astype("uint")
     abc["seed"] = abc["seed"].astype("uint")
     abc["cells"] = abc["cells"].astype("uint")
     abc["tumour_cells"] = abc["tumour_cells"].astype("uint")
@@ -184,11 +198,10 @@ def run(app: App):
                 "ytick.minor.visible": False,
             }
         ):
-            fig, ax = plt.subplots(1, 1, tight_layout=True)
-            sns.pairplot(
+            g = sns.pairplot(
                 abc[app.theta].rename(columns=THETA_MAPPING), diag_kws={"bins": 100}
             )
-        savefig(path2save, fig, app.png, app.verbosity)
+            savefig(path2save, g, app.png, app.verbosity)
 
     if app.verbosity:
         print("distributions\n", abc[app.theta].describe())
@@ -210,18 +223,9 @@ def run(app: App):
         pass
     else:
         my_query, stats = query_from_thresholds(app.thresholds.items())
+        assert my_query
         to_plot = abc.loc[abc[stats].query(my_query).index, :]
         to_plot.rename(columns=THETA_MAPPING, inplace=True)
-        # sns.set(
-        #     "poster",
-        #     rc={
-        #         "text.usetex": True,
-        #         "axes.labelsize": "xx-large",
-        #         "axes.titlesize": "xx-large",
-        #         "xtick.labelsize": "x-large",
-        #         "ytick.labelsize": "x-large",
-        #     },
-        # )
         with mpl.rc_context(
             {
                 "axes.grid": True,
@@ -233,11 +237,18 @@ def run(app: App):
                 "ytick.minor.visible": False,
             }
         ):
+            try:
+                g = sns.pairplot(
+                    to_plot[[THETA_MAPPING[theta] for theta in app.theta]],
+                    kind="kde",
+                )
+            except np.linalg.LinAlgError:
+                pass
             g = sns.pairplot(
                 to_plot[[THETA_MAPPING[theta] for theta in app.theta]],
-                kind="kde",
+                diag_kws={"bins": 100},
             )
-            g.axes[-1, 0].xaxis.set_major_locator(MultipleLocator(2))
+            # g.axes[-1, 0].xaxis.set_major_locator(MultipleLocator(2))
             g.axes[0, 0].yaxis.set_major_locator(MultipleLocator(2))
             # g.fig.suptitle("Inferrences", y=1.08)  # y= some height>1
 
@@ -292,9 +303,7 @@ def run(app: App):
                 )
 
             if app.plot is Plot.TIMEPOINTS:
-                assert (
-                    len(timepoints) > 1
-                ), "Found app timepoints but only one timepoint"
+                assert timepoints > 1, "Found app timepoints but only one timepoint"
                 path2save = commons.create_path2save(
                     app.path2save,
                     Path(
@@ -502,7 +511,11 @@ def plot_death(death, ax, title=None, xlabel=None):
 
 
 def plot_copies(copies, ax, title=None, xlabel=None):
-    plot_rates(copies, (0, copies.max().iloc[0] + 1), 120, ax, title, xlabel)
+    if copies.empty:
+        max_copies = 1
+    else:
+        max_copies = copies.max().iloc[0] + 1
+    plot_rates(copies, (0, max_copies), 120, ax, title, xlabel)
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 
 
@@ -528,45 +541,49 @@ def plot_posterior_per_timepoints(
     thresholds: Thresholds,
     abc,
     path2save,
-    timepoints: List[int],
+    timepoints: int,
     theta,
     png: bool,
     verbosity,
 ):
-    shape = (math.ceil(len(timepoints) / 3), 3)
-    fig_tot, axes = plt.subplots(*shape, sharex=True)
+    # all ok if two or more rows (i.e. timepoints > 3) else squeeze to get shape
+    # compatible with axes
+    shape = np.empty((math.ceil(timepoints / 3), 3)).squeeze().shape
+    fig_tot, axes = plt.subplots(*shape, sharex=False)
     my_query, stats = query_from_thresholds(thresholds.items())
+    axis2empty = False
 
-    for (i, cells) in enumerate(timepoints):
-        ax = axes[np.unravel_index(i, shape)]
-        plot_posterior(
-            abc=abc[abc["tumour_cells"] == cells],
-            ax=ax,
-            timepoints=[cells],
-            theta=theta,
-            my_query=my_query,
-            stats=stats,
-            xlabel=None,
-            title="{:.0E} cells".format(cells),
-            verbosity=verbosity,
-        )
-        ax.set_title(ax.get_title(), {"fontsize": 10})
-        ax.tick_params(axis="both", size=2, which="major", labelsize=4)
-        ax.tick_params(
-            axis="both",
-            size=2,
-            which="major",
-            labelsize=5,
-        )
-
-    # emtpy plots
-    empty_axes = list(range(len(timepoints), shape[0]))
-    if len(empty_axes) > 0:
-        for ax in axes[np.unravel_index(empty_axes, shape)]:
+    for i, ax in enumerate(axes.ravel()):
+        if verbosity > 0:
+            print("Generating the posterior distribution for timepoint", i)
+        if i <= timepoints - 1:
+            ax = axes[np.unravel_index(i, shape)]
+            plot_posterior(
+                abc=abc[abc["timepoint"] == i],
+                ax=ax,
+                timepoints=1,
+                theta=theta,
+                my_query=my_query,
+                stats=stats,
+                xlabel=None,
+                title="Timepoint {}".format(i),
+                verbosity=verbosity,
+            )
+            ax.set_title(ax.get_title(), {"fontsize": 10})
+            ax.tick_params(axis="both", size=2, which="major", labelsize=4)
+            ax.tick_params(
+                axis="both",
+                size=2,
+                which="major",
+                labelsize=5,
+            )
+        else:
+            axis2empty = True
             ax.axis("off")
             fig_tot.axes.append(ax)
 
-    fig_tot.subplots_adjust(hspace=0.5)
+    if not axis2empty:
+        fig_tot.subplots_adjust(hspace=0.5)
     savefig(path2save, fig_tot, png, verbosity)
 
 
@@ -575,7 +592,7 @@ def plot_posterior_per_stats(
     abc,
     path2save,
     png: bool,
-    timepoints: List[int],
+    timepoints: int,
     theta,
     verbosity,
 ):
@@ -633,7 +650,7 @@ def plot_posterior_per_stats(
 def plot_posterior(
     abc,
     ax,
-    timepoints: List[int],
+    timepoints: int,
     theta,
     my_query: str,
     stats: List[str],
@@ -642,12 +659,14 @@ def plot_posterior(
     verbosity,
 ):
     assert theta in set(abc.columns), "Cannot find column '{}' in data".format(theta)
-    to_plot = abc.loc[abc[stats].query(my_query).index, :]
-    if len(timepoints) > 1:
-        abc_longitudinal(to_plot, my_query, len(timepoints), verbosity)
-        # to_plot.drop(index=to_plot[to_plot["cells"] == 10000].index, inplace=True)
-        # assert to_plot.cells.unique() == 1000000, to_plot.cells.unique()
-        # print(to_plot)
+    if timepoints > 1:
+        to_plot = abc_longitudinal(abc, my_query, timepoints, verbosity)
+    else:
+        to_plot = abc.loc[abc[stats].query(my_query).index, :]
+    if to_plot.empty:
+        print(
+            "\t--WARNING: no run is similar to the ground truth; try to change the thresholds values"
+        )
     to_plot.drop(columns=set(to_plot.columns) - set([theta]), inplace=True)
     if verbosity:
         print(to_plot)

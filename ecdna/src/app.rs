@@ -159,32 +159,34 @@ impl BayesianApp {
         abspath: &Path,
         sequecing_sample: &SequencingData,
         sample_size: &Option<NbIndividuals>,
+        timepoint: usize,
     ) -> anyhow::Result<Run<Started>> {
-        let (results, run) =
-            if let Some(true) = sequecing_sample.is_undersampled() {
-                let sample_size = sample_size.expect(
-                    "Sample is undersample but the sample size is not known",
-                );
-                // trade-off between computational time and accuracy
-                let nb_samples = 10usize;
-                let mut results = ABCResults::with_capacity(nb_samples);
+        let (results, run) = if let Some(true) =
+            sequecing_sample.is_undersampled()
+        {
+            let sample_size = sample_size.expect(
+                "Sample is undersample but the sample size is not known",
+            );
+            // trade-off between computational time and accuracy
+            let nb_samples = 1usize; // TODO change
+            let mut results = ABCResults::with_capacity(nb_samples);
 
-                // create multiple subsamples of the same run and save the results
-                // in the same file `path`. It's ok as long as cells is not too
-                // big because deep copies of the ecDNA distribution for each
-                // subsample
-                for i in 0usize..nb_samples {
-                    // returns new ecDNA distribution with cells NPlus cells (clone)
-                    let simulated_sample =
-                        run.clone().undersample_ecdna(&sample_size, i);
-                    results.test(&simulated_sample, sequecing_sample);
-                }
-                (results, self.growth.restart_growth(run, &sample_size)?)
-            } else {
-                let mut results = ABCResults::with_capacity(1usize);
-                results.test(&run, sequecing_sample);
-                (results, run.into())
-            };
+            // create multiple subsamples of the same run and save the results
+            // in the same file `path`. It's ok as long as sample_size is not too
+            // big because deep copies of the ecDNA distribution for each
+            // subsample
+            for i in 0usize..nb_samples {
+                // returns new ecDNA distribution with cells NPlus cells (clone)
+                let simulated_sample =
+                    run.clone().undersample_ecdna(&sample_size, i);
+                results.test(&simulated_sample, sequecing_sample, timepoint);
+            }
+            (results, self.growth.restart_growth(run, &sample_size)?)
+        } else {
+            let mut results = ABCResults::with_capacity(1usize);
+            results.test(&run, sequecing_sample, timepoint);
+            (results, run.into())
+        };
         results.save(abspath)?;
         Ok(run)
     }
@@ -244,7 +246,9 @@ impl Perform for BayesianApp {
                 );
 
                 // for all sequecing experiments
-                for sample in self.patient.samples.iter() {
+                for (timepoint, sample) in
+                    self.patient.samples.iter().enumerate()
+                {
                     let restarted = run.restarted > 0;
                     let run_ended = run.simulate(
                         &mut None,
@@ -258,6 +262,7 @@ impl Perform for BayesianApp {
                             &self.absolute_path,
                             sample,
                             &sample.sample_size(),
+                            timepoint,
                         )
                         .with_context(|| format!("Cannot save run {}", idx))
                         .unwrap();
@@ -386,6 +391,7 @@ impl DynamicalApp {
         mut dynamics: Dynamics,
         tumour_size: &NbIndividuals,
         sample_size: &NbIndividuals,
+        timepoint: usize,
     ) -> anyhow::Result<(Run<Started>, Dynamics)> {
         ensure!(tumour_size >= sample_size);
         ensure!(
@@ -403,7 +409,9 @@ impl DynamicalApp {
             let idx = run.idx;
             run.clone()
                 .undersample_ecdna(sample_size, idx)
-                .save_ecdna(&abspath_with_undersampling);
+                .save_ecdna_statistics(
+                    &abspath_with_undersampling.join(format!("{}", timepoint)),
+                );
             let run = self.growth.restart_growth(run, sample_size)?;
             if let Growth::CellCulture(_) = self.growth {
                 // remove all dynamics except the last entry
@@ -413,7 +421,9 @@ impl DynamicalApp {
             }
             (dynamics, run)
         } else {
-            run.save_ecdna(&abspath_with_undersampling);
+            run.save_ecdna_statistics(
+                &abspath_with_undersampling.join(format!("{}", timepoint)),
+            );
             (dynamics, run.into())
         };
 
@@ -448,9 +458,8 @@ impl Perform for DynamicalApp {
         }
 
         (0..self.runs)
-            .into_iter()
-            // .into_par_iter()
-            // .progress_count(self.runs as u64)
+            .into_par_iter()
+            .progress_count(self.runs as u64)
             .for_each(|idx| {
                 let initial_state = InitialState::new(
                     self.ecdna.clone(),
@@ -471,7 +480,7 @@ impl Perform for DynamicalApp {
                 let mut dynamics = self.dynamics.clone();
 
                 // for all sequecing experiemnts
-                for experiment in self.experiments.iter() {
+                for (i, experiment) in self.experiments.iter().enumerate() {
                     let restarted = run.restarted > 0;
                     // simulate and update both the run and the dynamics
                     let run_ended = run.simulate(
@@ -487,6 +496,7 @@ impl Perform for DynamicalApp {
                             dynamics,
                             &experiment.tumour_cells,
                             &experiment.sample_cells,
+                            i,
                         )
                         .with_context(|| format!("Cannot save run {}", idx))
                         .unwrap();
@@ -581,6 +591,7 @@ pub enum Config {
     Dynamical(Dynamical),
 }
 
+#[derive(Debug)]
 pub struct Bayesian {
     pub patient: PathBuf,
     pub runs: usize,
@@ -590,8 +601,6 @@ pub struct Bayesian {
     pub delta1: Vec<f32>,
     pub delta2: Vec<f32>,
     pub init_copies: Vec<DNACopy>,
-    pub tumour_sizes: Option<Vec<NbIndividuals>>,
-    pub sample_sizes: Option<Vec<NbIndividuals>>,
     pub seed: u64,
     pub growth: String,
     pub verbosity: u8,
@@ -621,16 +630,6 @@ impl Bayesian {
         let init_copies: Vec<DNACopy> =
             matches.values_of_t("init_copies").unwrap_or_else(|e| e.exit());
 
-        // population and sample sizes
-        let tumour_sizes = match matches.values_of_t("tumour_size") {
-            Ok(sizes) => Some(sizes),
-            _ => None,
-        };
-        let sample_sizes = match matches.values_of_t("sample_sizes") {
-            Ok(sizes) => Some(sizes),
-            _ => None,
-        };
-
         let growth = if matches.is_present("culture") {
             String::from("culture")
         } else {
@@ -649,8 +648,6 @@ impl Bayesian {
             delta2,
             init_copies,
             seed,
-            tumour_sizes,
-            sample_sizes,
             growth,
             verbosity,
         }
@@ -671,34 +668,6 @@ impl InitialStateLoader for Bayesian {
         Ok((ecdna, summary))
     }
 }
-
-// pub struct Longitudinal(pub Bayesian);
-//
-// impl Longitudinal {
-//     pub fn new(matches: &ArgMatches) -> Longitudinal {
-//         Longitudinal(Bayesian::new(matches))
-//     }
-// }
-//
-// impl InitialStateLoader for Longitudinal {
-//     fn load(&self) -> anyhow::Result<(EcDNADistribution, EcDNASummary)> {
-//         self.0.load()
-//     }
-// }
-//
-// pub struct Subsampled(pub Bayesian);
-//
-// impl Subsampled {
-//     pub fn new(matches: &ArgMatches) -> Subsampled {
-//         Subsampled(Bayesian::new(matches))
-//     }
-// }
-//
-// impl InitialStateLoader for Subsampled {
-//     fn load(&self) -> anyhow::Result<(EcDNADistribution, EcDNASummary)> {
-//         self.0.load()
-//     }
-// }
 
 pub struct Dynamical {
     pub patient_name: String,

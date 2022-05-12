@@ -422,7 +422,9 @@ impl Run<Ended> {
         self.state.last_iter = iter
     }
 
-    pub fn save_ecdna(&self, path: &Path) {
+    pub fn save_ecdna_statistics(&self, path: &Path) {
+        //! Save the ecDNA distribution, its entropy, its mean and the frequency
+        //! of cells with ecDNA.
         self.state.data.save(path, &PathBuf::from(format!("{}", self.idx)));
     }
 
