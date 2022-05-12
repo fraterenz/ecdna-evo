@@ -22,18 +22,15 @@ jobs:
           toolchain: nightly
           override: true
       - name: Cache dependencies
-        uses: actions/cache@v2
-        env:
-          cache-name: cache-dependencies
+        uses: actions/cache@v3
         with:
           path: |
-            ~/.cargo/.crates.toml
-            ~/.cargo/.crates2.json
             ~/.cargo/bin
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
-            target
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('Cargo.lock') }}
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Generate test result and coverage report
         run: |
           cargo install cargo2junit grcov;
