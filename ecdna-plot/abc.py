@@ -254,7 +254,7 @@ def run(app: App):
 
             savefig(path2save, g, app.png, app.verbosity)
 
-    for theta in app.theta:
+    for i, theta in enumerate(app.theta):
         print("Generating posterior for", theta)
         if app.plot is Plot.STATS:
             path2save = commons.create_path2save(
@@ -304,15 +304,14 @@ def run(app: App):
 
             if app.plot is Plot.TIMEPOINTS:
                 assert timepoints > 1, "Found app timepoints but only one timepoint"
-                path2save = commons.create_path2save(
-                    app.path2save,
-                    Path(
-                        "{}relative_{}ecdna_{}_timepoints.pdf".format(
-                            app.thresholds["mean"],
-                            app.thresholds["ecdna"],
-                            theta,
-                        )
-                    ),
+                path2save = app.path2save / Path(
+                    "{}mean_{}frequency_{}entropy_{}ecdna".format(
+                        app.thresholds["mean"],
+                        app.thresholds["frequency"],
+                        app.thresholds["entropy"],
+                        app.thresholds["ecdna"],
+                        theta,
+                    )
                 )
                 plot_posterior_per_timepoints(
                     app.thresholds,
@@ -321,6 +320,7 @@ def run(app: App):
                     timepoints,
                     theta,
                     app.png,
+                    i > 0,
                     app.verbosity,
                 )
         else:
@@ -544,22 +544,37 @@ def plot_posterior_per_timepoints(
     timepoints: int,
     theta,
     png: bool,
+    skip_distances: bool,
     verbosity,
 ):
     # all ok if two or more rows (i.e. timepoints > 3) else squeeze to get shape
     # compatible with axes
     shape = np.empty((math.ceil(timepoints / 3), 3)).squeeze().shape
-    fig_tot, axes = plt.subplots(*shape, sharex=False)
+    fig_posterior, axes_posterior = plt.subplots(*shape, sharex=False)
+    fig_ks, axes_ks = plt.subplots(*shape, sharex=False, sharey=True)
+    fig_mean, axes_mean = plt.subplots(*shape, sharex=False, sharey=True)
+    fig_frequency, axes_frequency = plt.subplots(*shape, sharey=True)
+    fig_entropy, axes_entropy = plt.subplots(*shape, sharey=True)
     my_query, stats = query_from_thresholds(thresholds.items())
     axis2empty = False
 
-    for i, ax in enumerate(axes.ravel()):
+    for i, (ax, ax1, ax2, ax3, ax4) in enumerate(
+        zip(
+            axes_posterior.ravel(),
+            axes_ks.ravel(),
+            axes_mean.ravel(),
+            axes_frequency.ravel(),
+            axes_entropy.ravel(),
+        )
+    ):
         if verbosity > 0:
             print("Generating the posterior distribution for timepoint", i)
         if i <= timepoints - 1:
-            ax = axes[np.unravel_index(i, shape)]
+            abc2plot = abc[abc["timepoint"] == i]
+
+            ax = axes_posterior[np.unravel_index(i, shape)]
             plot_posterior(
-                abc=abc[abc["timepoint"] == i],
+                abc=abc2plot,
                 ax=ax,
                 timepoints=1,
                 theta=theta,
@@ -570,6 +585,7 @@ def plot_posterior_per_timepoints(
                 verbosity=verbosity,
             )
             ax.set_title(ax.get_title(), {"fontsize": 10})
+            ax.set_xlabel("Inferred {}".format(THETA_MAPPING[theta]), {"fontsize": 10})
             ax.tick_params(axis="both", size=2, which="major", labelsize=4)
             ax.tick_params(
                 axis="both",
@@ -577,14 +593,95 @@ def plot_posterior_per_timepoints(
                 which="major",
                 labelsize=5,
             )
+
+            if not skip_distances:
+                # now distances
+                n_bins = 500
+                ax1.hist(abc2plot.ecdna, bins=n_bins)
+                ax1.set_title("Timepoint {}".format(i), {"fontsize": 10})
+                ax1.set_xlabel("KS distance", {"fontsize": 10})
+                ax1.tick_params(
+                    axis="both",
+                    size=2,
+                    which="major",
+                    labelsize=5,
+                )
+
+                ax2.hist(abc2plot["mean"], bins=n_bins)
+                ax2.set_title("Timepoint {}".format(i), {"fontsize": 10})
+                ax2.set_xlabel("Mean distance", {"fontsize": 10})
+                ax2.tick_params(
+                    axis="both",
+                    size=2,
+                    which="major",
+                    labelsize=5,
+                )
+
+                ax3.hist(abc2plot["frequency"], bins=n_bins)
+                ax3.set_title("Timepoint {}".format(i), {"fontsize": 10})
+                ax3.set_xlabel("Frequency distance", {"fontsize": 10})
+                ax3.tick_params(
+                    axis="both",
+                    size=2,
+                    which="major",
+                    labelsize=5,
+                )
+                ax3.set_xlim([0, 0.3])
+
+                ax4.hist(abc2plot.entropy, bins=n_bins)
+                ax4.set_title("Timepoint {}".format(i), {"fontsize": 10})
+                ax4.set_xlabel("Entropy distance", {"fontsize": 10})
+                ax4.tick_params(
+                    axis="both",
+                    size=2,
+                    which="major",
+                    labelsize=5,
+                )
+
         else:
             axis2empty = True
             ax.axis("off")
-            fig_tot.axes.append(ax)
+            ax1.axis("off")
+            ax2.axis("off")
+            ax3.axis("off")
+            ax4.axis("off")
+            fig_posterior.axes.append(ax)
+            fig_ks.axes.append(ax1)
+            fig_mean.axes.append(ax2)
+            fig_frequency.axes.append(ax3)
+            fig_entropy.axes.append(ax4)
 
-    if not axis2empty:
-        fig_tot.subplots_adjust(hspace=0.5)
-    savefig(path2save, fig_tot, png, verbosity)
+    fig_posterior.set_tight_layout(True)
+    fig_ks.set_tight_layout(True)
+    fig_mean.set_tight_layout(True)
+    fig_frequency.set_tight_layout(True)
+    fig_entropy.set_tight_layout(True)
+
+    savefig(
+        path2save.with_name(path2save.name + "_{}_timepoints.pdf".format(theta)),
+        fig_posterior,
+        png,
+        verbosity,
+    )
+    if not skip_distances:
+        savefig(
+            path2save.with_name(path2save.name + "_ecdna.pdf"), fig_ks, png, verbosity
+        )
+        savefig(
+            path2save.with_name(path2save.name + "_mean.pdf"), fig_mean, png, verbosity
+        )
+        savefig(
+            path2save.with_name(path2save.name + "_frequency.pdf"),
+            fig_frequency,
+            png,
+            verbosity,
+        )
+        savefig(
+            path2save.with_name(path2save.name + "_entropy.pdf"),
+            fig_entropy,
+            png,
+            verbosity,
+        )
 
 
 def plot_posterior_per_stats(
