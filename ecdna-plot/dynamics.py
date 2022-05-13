@@ -35,6 +35,8 @@ class App:
             path2save = commons.create_path2save(self.path2dir, Path("nplus.pdf"))
             for plus in self.nplus:
                 df = commons.load_unformatted_csv(plus)
+                for col in df.columns:
+                    df[col] = df[col].astype("uint")
                 nplus.append(df)
                 if self.verbosity > 0:
                     print(df.head())
@@ -52,6 +54,8 @@ class App:
             nminus = []
             for minus in self.nminus:
                 df = commons.load_unformatted_csv(minus)
+                for col in df.columns:
+                    df[col] = df[col].astype("uint")
                 nminus.append(df)
                 if self.verbosity > 0:
                     print(df.head())

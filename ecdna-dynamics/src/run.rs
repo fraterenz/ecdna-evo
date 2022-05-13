@@ -202,7 +202,6 @@ impl Run<Started> {
         dynamics: &mut Option<&mut Dynamics>,
         max_cells: &NbIndividuals,
         max_iter: usize,
-        initial_fill_dynamics: bool,
     ) -> Run<Ended> {
         //! Simulate one realisation of the birth-death stochastic process.
         //!
@@ -210,6 +209,7 @@ impl Run<Started> {
         //! calculated using the [`Update`] method.
         let mut iter = self.init_state.init_iter;
 
+        /*
         // if we start from an initial state having more than one cell, must prepare
         // the dynamics by filling them with const values, unless we are restarting
         // the run
@@ -223,6 +223,7 @@ impl Run<Started> {
                 }
             }
         }
+        */
 
         let (time, condition, ntot) = {
             loop {

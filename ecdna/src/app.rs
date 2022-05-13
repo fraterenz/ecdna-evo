@@ -172,7 +172,7 @@ impl BayesianApp {
                 "Sample is undersample but the sample size is not known",
             );
             // trade-off between computational time and accuracy
-            let nb_samples = 1usize; // TODO change
+            let nb_samples = 10usize;
             let mut results = ABCResults::with_capacity(nb_samples);
 
             // create multiple subsamples of the same run and save the results
@@ -253,12 +253,10 @@ impl Perform for BayesianApp {
                 for (timepoint, sample) in
                     self.patient.samples.iter().enumerate()
                 {
-                    let restarted = run.restarted > 0;
                     let run_ended = run.simulate(
                         &mut None,
                         &sample.tumour_size,
                         rates.estimate_max_iter(&sample.tumour_size),
-                        !restarted,
                     );
                     run = self
                         .save(
@@ -482,13 +480,11 @@ impl Perform for DynamicalApp {
 
                 // for all sequecing experiemnts
                 for (i, experiment) in self.experiments.iter().enumerate() {
-                    let restarted = run.restarted > 0;
                     // simulate and update both the run and the dynamics
                     let run_ended = run.simulate(
                         &mut Some(&mut dynamics),
                         &experiment.tumour_cells,
                         self.rates.estimate_max_iter(&experiment.tumour_cells),
-                        !restarted,
                     );
                     (run, dynamics) = self
                         .save(
