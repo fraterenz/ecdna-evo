@@ -859,34 +859,35 @@ fn compress_dir(
     src_path_dir: &Path,
     verbosity: u8,
 ) -> anyhow::Result<()> {
-    //! Compress the directory into tarball. `dest_path` is a relative path and `src_path_dir`
-    //! is absolute path.
-    let mut dest_path_archive = dest_path.to_owned();
-    dest_path_archive.set_extension("tar.gz");
+    //! Compress the directory into tarball. `dest_path` is a relative path of
+    //! the dir name within the archive, wherease `src_path_dir` is absolute path.
+    let mut tarball = src_path_dir.to_owned();
+    tarball.set_extension("tar.gz");
 
-    ensure!(dest_path_archive.is_relative());
-    ensure!(src_path_dir.is_absolute());
+    ensure!(dest_path.is_relative());
+    ensure!(tarball.is_absolute());
 
     // open stream, create encoder to compress and create tar builder to
     // create tarball
     let tar_gz = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(&dest_path_archive)
+        .open(&tarball)
         .with_context(|| {
-            format!("Error while opening the stream {:#?}", &dest_path_archive)
+            format!(
+                "Error while opening the stream {:#?} to save the tarball",
+                &tarball
+            )
         })?;
 
     let enc = GzEncoder::new(tar_gz, Compression::default());
     let mut tar = tar::Builder::new(enc);
 
-    // append recursively all the runs into the archive that is first created in the
-    // working and then moved to the location of the runs `src_path_dir`
-    tar.append_dir_all(&dest_path_archive, src_path_dir)
+    tar.append_dir_all(&dest_path, src_path_dir)
         .with_context(|| {
             format!(
                 "Cannot append files to tar archive {:#?} from source {:#?} ",
-                &dest_path_archive, &src_path_dir
+                &dest_path, &src_path_dir
             )
         })
         .and_then(|()| {
@@ -895,7 +896,7 @@ fn compress_dir(
                     "{} Gzip {:#?} into {:#?}",
                     Utc::now(),
                     src_path_dir,
-                    &dest_path_archive,
+                    &dest_path,
                 );
             }
 
