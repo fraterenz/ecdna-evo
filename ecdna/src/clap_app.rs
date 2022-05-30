@@ -135,4 +135,13 @@ pub fn clap_app() -> Command<'static> {
         .arg(arg!(--culture "Whether to run cell culture experiment, i.e. after one subsample is taken, tumour growth restart from that sample")
             .global(true)
             .help_heading("CONFIG"))
+        .arg(
+            Arg::new("savedir")
+            .long("savedir")
+            .required(false)
+            .takes_value(true)
+            .global(true)
+            .help_heading("CONFIG")
+            .help("Full path to the directory used to store the results. If not specified, use the current dir")
+        )
 }

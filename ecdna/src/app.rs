@@ -123,8 +123,7 @@ impl BayesianApp {
         let relative_path = PathBuf::from("results")
             .join(PathBuf::from(patient.name.clone()))
             .join("abc");
-        let absolute_path =
-            std::env::current_dir()?.join(relative_path.clone());
+        let absolute_path = config.savedir.join(relative_path.clone());
 
         let growth: Growth = match config.growth.as_str() {
             "patient" => PatientStudy::new().into(),
@@ -348,8 +347,7 @@ impl DynamicalApp {
 
         let relative_path = PathBuf::from("results")
             .join(PathBuf::from(config.patient_name.clone()));
-        let absolute_path =
-            std::env::current_dir()?.join(relative_path.clone());
+        let absolute_path = config.savedir.join(relative_path.clone());
 
         let experiments = Experiments::new(
             config.tumour_sizes.unwrap_or_else(|| vec![config.cells]),
@@ -600,6 +598,7 @@ pub struct Bayesian {
     pub init_copies: Vec<DNACopy>,
     pub seed: u64,
     pub growth: String,
+    pub savedir: PathBuf,
     pub verbosity: u8,
 }
 
@@ -635,6 +634,10 @@ impl Bayesian {
 
         let seed: u64 = matches.value_of_t("seed").unwrap_or(26u64);
 
+        let savedir: PathBuf = matches
+            .value_of_t("savedir")
+            .unwrap_or_else(|_| std::env::current_dir().unwrap());
+
         Bayesian {
             patient,
             runs,
@@ -646,6 +649,7 @@ impl Bayesian {
             init_copies,
             seed,
             growth,
+            savedir,
             verbosity,
         }
     }
@@ -680,6 +684,7 @@ pub struct Dynamical {
     pub sample_sizes: Option<Vec<NbIndividuals>>,
     pub seed: u64,
     pub growth: String,
+    pub savedir: PathBuf,
     pub verbosity: u8,
 }
 
@@ -753,6 +758,10 @@ impl Dynamical {
 
         let seed: u64 = matches.value_of_t("seed").unwrap_or(26u64);
 
+        let savedir: PathBuf = matches
+            .value_of_t("savedir")
+            .unwrap_or_else(|_| std::env::current_dir().unwrap());
+
         if verbosity > 1 {
             println!("dynamics: {:#?}", dynamics);
         }
@@ -771,6 +780,7 @@ impl Dynamical {
             seed,
             tumour_sizes,
             sample_sizes,
+            savedir,
             verbosity,
         }
     }
