@@ -41,6 +41,7 @@ impl TryFrom<&Path> for EcDNADistribution {
             Some("json") => {
                 serde_json::from_str(&fs::read_to_string(path2file).unwrap())
                     .map_err(|e| anyhow::anyhow!(e))
+                    .with_context(|| "Cannot load ecDNA distribution")
             }
             _ => panic!("Extension not recognized!"),
         }

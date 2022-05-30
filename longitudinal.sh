@@ -5,7 +5,6 @@ function remove_dot {
 }
 
 
-
 for f in 1 1.9; do
   for g in 1 5 20; do
     name=f$(remove_dot $f)g$g
@@ -24,7 +23,7 @@ for f in 1 1.9; do
       --patient culture5timepoints/$name
 
     # preprocess
-    for id in 0 1 2 3 4 5 6 7 8; do
+    for id in {0..8}; do
       cargo run -q --release --bin preprocess -- \
         culture5timepoints/${name} sample${id} 1000000 \
         --distribution results/culture5timepoints/${name}/1000samples1000000cells/${id}/ecdna/0.json
