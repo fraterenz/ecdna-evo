@@ -190,13 +190,6 @@ jobs:
         command: run
         args: --target=${{ matrix.job.target }} --bin ecdna -- help
 
-    - name: Run preprocess
-      uses: actions-rs/cargo@v1
-      with:
-        use-cross: ${{ matrix.job.use-cross }}
-        command: run
-        args: --target=${{ matrix.job.target }} --bin preprocess -- --help
-
     - name: Create tarball
       id: package
       shell: bash
