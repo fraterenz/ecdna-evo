@@ -1,1 +1,1 @@
-Evolutionary models of extrachromosomal DNA (ecDNA).
+Gillespie simulator of a two-population birth-death process.

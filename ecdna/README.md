@@ -1,1 +1,2 @@
-A small binary allowing to configure and run the simulations with specific parameters.
+A small binary allowing to configure and run the simulations with specific
+parameters.
