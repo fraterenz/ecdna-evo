@@ -2,7 +2,7 @@
 //!
 //! `PureBirth` etc TODO
 use crate::event::{AdvanceRun, ComputeTimesEvents, Event, GillespieTime};
-use crate::rate::{GillespieRate, Rate, Rates};
+use crate::rate::{GetRates, GillespieRate, Rate, Rates};
 use crate::NbIndividuals;
 use enum_dispatch::enum_dispatch;
 use rand_pcg::Pcg64Mcg;
@@ -136,7 +136,10 @@ impl BirthDeathProcess {
         rng: &mut Pcg64Mcg,
     ) -> Event {
         //! Determine the next `Event` using the Gillespie algorithm.
-        assert!((pop1 + pop2) > 0u64);
+        assert!(any_individual_left(pop1, pop2));
+        match self.get_rates() {
+            [r1, r2, ..] => assert!(r1.is_finite() | r2.is_finite()),
+        }
         let (kind, time) = self.next_event(pop1, pop2, rng);
         Event { kind, time }
     }
@@ -163,6 +166,14 @@ impl BirthDeathProcess {
     }
 }
 
+fn any_individual_left(pop1: NbIndividuals, pop2: NbIndividuals) -> bool {
+    match pop1.checked_add(pop2) {
+        Some(0u64) => false,
+        None => true,
+        _ => true,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -170,48 +181,90 @@ mod tests {
     use rand::SeedableRng;
 
     #[quickcheck]
-    fn next_event_same_seed_same_event(
+    fn gillespie_same_seed_same_event(
         pop1: NbIndividuals,
         pop2: NbIndividuals,
         bd: BirthDeathProcess,
         seed: u64,
     ) -> bool {
-        let mut rng = Pcg64Mcg::seed_from_u64(seed);
-        let (event1, _) = bd.next_event(pop1, pop2, &mut rng);
+        // separate test for that, will panic
+        if !any_individual_left(pop1, pop2) {
+            return true;
+        }
+
+        // separate test for that, will panic
+        match bd.get_rates() {
+            [r1, r2, ..] => {
+                if r1.is_finite() | r2.is_finite() {
+                } else {
+                    return true;
+                }
+            }
+        }
 
         let mut rng = Pcg64Mcg::seed_from_u64(seed);
-        let (event2, _) = bd.next_event(pop1, pop2, &mut rng);
+        let event1 = bd.gillespie(pop1, pop2, &mut rng);
 
-        event1 == event2
+        let mut rng = Pcg64Mcg::seed_from_u64(seed);
+        let event2 = bd.gillespie(pop1, pop2, &mut rng);
+
+        dbg!(&event1, &event2);
+        (event1 == event2) | (event1.time.is_nan() & event2.time.is_nan())
     }
 
     #[quickcheck]
-    fn next_event_same_seed_same_time(
+    fn gillespie_same_seed_same_time(
         pop1: NbIndividuals,
         pop2: NbIndividuals,
         bd: BirthDeathProcess,
         seed: u64,
     ) -> bool {
+        // separate test for that, will panic
+        if !any_individual_left(pop1, pop2) {
+            return true;
+        }
+
+        // separate test for that, will panic
+        match bd.get_rates() {
+            [r1, r2, ..] => {
+                if r1.is_finite() | r2.is_finite() {
+                } else {
+                    return true;
+                }
+            }
+        }
+
         let mut rng = Pcg64Mcg::seed_from_u64(seed);
         let (_, time1) = bd.next_event(pop1, pop2, &mut rng);
 
         let mut rng = Pcg64Mcg::seed_from_u64(seed);
         let (_, time2) = bd.next_event(pop1, pop2, &mut rng);
 
-        (time1 - time2).abs() < f32::EPSILON
+        ((time1 - time2).abs() < f32::EPSILON)
+            | (time1.is_nan() & time2.is_nan())
     }
 
     #[test]
-    #[ignore = "TODO"]
-    fn next_event_inf() {
+    #[should_panic]
+    fn gillespie_event_zero() {
+        let mut rng = Pcg64Mcg::seed_from_u64(26u64);
+        let bd: BirthDeathProcess =
+            BirthDeath { r1: 1.1777155e20, r2: 1.2, d1: 6.1562, d2: 0. }
+                .into();
+        bd.gillespie(0u64, 0u64, &mut rng);
+    }
+
+    #[test]
+    #[should_panic]
+    fn gillespie_event_inf() {
         let mut rng = Pcg64Mcg::seed_from_u64(26u64);
         let bd: BirthDeathProcess = BirthDeath {
-            r1: 1.1777155e20,
+            r1: f32::INFINITY,
             r2: f32::INFINITY,
             d1: 6.1562,
-            d2: f32::INFINITY,
+            d2: 0.,
         }
         .into();
-        println!("{:#?}", bd.next_event(0u64, 0u64, &mut rng));
+        bd.gillespie(1u64, 0u64, &mut rng);
     }
 }

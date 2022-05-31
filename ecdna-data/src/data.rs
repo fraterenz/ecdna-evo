@@ -729,13 +729,13 @@ mod tests {
         mut distribution: Vec<u16>,
     ) -> bool {
         let mut rng = Pcg64Mcg::seed_from_u64(seed);
-        if distribution.len() <= 4 {
-            for _ in 0..5 {
+        if distribution.len() <= 50 {
+            for _ in 0..50 {
                 distribution.push(rng.gen());
             }
         }
 
-        let nb_cells: NbIndividuals = distribution.len() as NbIndividuals - 1;
+        let nb_cells: NbIndividuals = 10;
 
         let ecdna = EcDNADistribution::from(distribution);
         let ecdna = ecdna
