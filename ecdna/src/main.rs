@@ -8,14 +8,14 @@ extern crate derive_builder;
 extern crate quickcheck_macros;
 
 use anyhow::Context;
-use app::{
-    build_config, App, BayesianApp, Config, DynamicalApp, Perform, Tarball,
-};
+use app::{build_config, App, BayesianApp, Config, DynamicalApp, Perform};
 use chrono::Utc;
+
+use crate::app::PreprocessApp;
 
 fn main() {
     let config = build_config();
-    let mut app: App = match config {
+    let app: App = match config {
         Config::Bayesian(bayesian) => BayesianApp::new(bayesian)
             .with_context(|| "Cannot create new bayesian app")
             .unwrap()
@@ -24,12 +24,15 @@ fn main() {
             .with_context(|| "Cannot create new dynamical app")
             .unwrap()
             .into(),
+        Config::Preprocess(preprocess) => PreprocessApp::new(preprocess)
+            .with_context(|| "Cannot create new preprocessing app")
+            .unwrap()
+            .into(),
     };
 
     println!("{} Starting the simulation", Utc::now());
-    app.run().with_context(|| "Cannot run the app").unwrap(); // TODO
 
-    std::process::exit(match app.compress() {
+    std::process::exit(match app.run() {
         Ok(_) => {
             println!("{} End simulation", Utc::now(),);
             0

@@ -1,10 +1,10 @@
 use crate::{abc::ABCResults, clap_app::clap_app};
-use anyhow::{ensure, Context};
+use anyhow::{bail, ensure, Context};
 use chrono::Utc;
 use clap::ArgMatches;
 use ecdna_data::{
     data::{EcDNADistribution, EcDNASummary, Entropy, Frequency, Mean},
-    patient::{Patient, SequencingData},
+    patient::{Patient, SequencingData, SequencingDataBuilder},
 };
 use ecdna_dynamics::dynamics::{Clear, Dynamic, Dynamics, Name, Save};
 use ecdna_dynamics::run::{
@@ -36,6 +36,9 @@ pub fn build_config() -> Config {
         Some(("simulate", dynamical_matches)) => {
             Config::Dynamical(Dynamical::new(dynamical_matches))
         }
+        Some(("preprocess", preprocess_matches)) => {
+            Config::Preprocess(Preprocess::new(preprocess_matches))
+        }
         _ => unreachable!("Expect subcomands `simulate` or `abc`"),
     };
 }
@@ -59,20 +62,154 @@ fn match_shared_args(matches: &ArgMatches) -> (u8, Option<PathBuf>, usize) {
 
 #[enum_dispatch]
 pub trait Perform {
-    fn run(&mut self) -> anyhow::Result<()>;
+    fn run(self) -> anyhow::Result<()>;
 }
 
-#[enum_dispatch]
-pub trait Tarball {
-    fn compress(self) -> anyhow::Result<()>;
-}
-
-#[enum_dispatch(Perform, Tarball)]
+#[enum_dispatch(Perform)]
 pub enum App {
     /// Bayesian inference
     Bayesian(BayesianApp),
     /// Simulate the dynamics of the ecDNA distribution over time
     Dynamical(DynamicalApp),
+    /// Preprocess the data for the abc inference
+    Preprocess(PreprocessApp),
+}
+
+/// Prepare the data for the abc inference
+pub struct PreprocessApp {
+    pub patient_name: String,
+    pub sample_name: String,
+    pub size: NbIndividuals,
+    pub ecdna: Option<EcDNADistribution>,
+    pub mean: Option<Mean>,
+    pub frequency: Option<Frequency>,
+    pub entropy: Option<Entropy>,
+    pub verbosity: u8,
+}
+
+impl PreprocessApp {
+    pub fn new(config: Preprocess) -> anyhow::Result<PreprocessApp> {
+        //! Parse the CL arguments with `clap` to preprocess the data and create the
+        //! input required for the bayesian inferences.
+        // load the ecdna distribution
+        let ecdna = if config.distribution.is_some() {
+            Some(
+                config
+                    .load()
+                    .with_context(|| "Cannot load the ecDNA distribution")?
+                    .0,
+            )
+        } else {
+            None
+        };
+
+        let patient_name = config.patient_name;
+        let sample_name = config.sample_name;
+        let size = config.size;
+        let verbosity = config.verbosity;
+
+        let mean = config.mean.map(Mean);
+        let frequency = config.frequency.map(Frequency);
+        let entropy = config.entropy.map(Entropy);
+
+        Ok(PreprocessApp {
+            patient_name,
+            sample_name,
+            size,
+            ecdna,
+            mean,
+            frequency,
+            entropy,
+            verbosity,
+        })
+    }
+
+    fn new_sample(self) -> SequencingData {
+        let mut builder = SequencingDataBuilder::default();
+        builder.tumour_size(self.size).name(self.sample_name);
+        if let Some(distribution) = self.ecdna {
+            let summary = distribution.summarize();
+            builder
+                .ecdna(distribution)
+                .mean(summary.mean)
+                .frequency(summary.frequency)
+                .entropy(summary.entropy);
+        } else {
+            if let Some(mean) = self.mean {
+                builder.mean(mean);
+            }
+            if let Some(freq) = self.frequency {
+                builder.frequency(freq);
+            }
+
+            if let Some(entropy) = self.entropy {
+                builder.entropy(entropy);
+            }
+        }
+
+        builder.build().unwrap()
+    }
+}
+
+impl Perform for PreprocessApp {
+    fn run(self) -> anyhow::Result<()> {
+        println!(
+            "Adding sample {} to patient {}",
+            self.sample_name, self.patient_name
+        );
+
+        let mut patient = Patient::new(&self.patient_name, self.verbosity);
+
+        // if patient exists load it, else create new file
+        if patient.path2json().exists() {
+            if self.verbosity > 0 {
+                println!(
+                    "Adding sample {} to an existing patient {}",
+                    self.sample_name, self.patient_name
+                )
+            }
+            if self.verbosity > 1 {
+                println!(
+                    "Loading patient {} from {:#?}",
+                    self.patient_name,
+                    patient.path2json()
+                );
+            }
+            patient
+                .load()
+                .with_context(|| {
+                    format!(
+                        "Cannot load patient from {:#?}",
+                        patient.path2json()
+                    )
+                })
+                .unwrap();
+        } else {
+            if self.verbosity > 0 {
+                println!("Saving new patient");
+            }
+            fs::create_dir_all(patient.path2json().parent().unwrap()).unwrap();
+        }
+
+        let new_sample = self.new_sample();
+        let (name, path) = (patient.name.clone(), patient.path2json());
+
+        if let Err(e) = patient.add_sample(new_sample) {
+            bail!("Error, cannot add sample to patient due to:\n{}", e)
+        }
+
+        if let Err(e) = patient.save() {
+            bail!("Cannot save patient {} in {:#?} due to:\n{}", name, path, e)
+        } else {
+            println!(
+                "The new/updated data for patient {} is in {:#?}\n\
+                Use this file as input for the bayesian inferences.",
+                name, path
+            );
+        }
+
+        Ok(())
+    }
 }
 
 /// Infer the most probable coefficients from the data from one sequencing experiment.
@@ -193,10 +330,30 @@ impl BayesianApp {
         results.save(abspath)?;
         Ok(run)
     }
+
+    pub fn compress(self) -> anyhow::Result<()> {
+        if self.verbosity > 0 {
+            println!(
+                "{} Saving inferences results in {:#?}",
+                Utc::now(),
+                self.absolute_path
+            );
+        }
+
+        compress_dir(&self.relative_path, &self.absolute_path, self.verbosity)
+            .with_context(|| {
+                format!(
+                    "Cannot compress {:#?} into {:#?}",
+                    &self.absolute_path, &self.relative_path
+                )
+            })?;
+
+        Ok(())
+    }
 }
 
 impl Perform for BayesianApp {
-    fn run(&mut self) -> anyhow::Result<()> {
+    fn run(self) -> anyhow::Result<()> {
         println!(
             "{} Start ABC with {} runs for patient {}",
             Utc::now(),
@@ -272,27 +429,7 @@ impl Perform for BayesianApp {
 
         println!("{} End using ABC with {} runs", Utc::now(), self.runs);
 
-        Ok(())
-    }
-}
-
-impl Tarball for BayesianApp {
-    fn compress(self) -> anyhow::Result<()> {
-        if self.verbosity > 0 {
-            println!(
-                "{} Saving inferences results in {:#?}",
-                Utc::now(),
-                self.absolute_path
-            );
-        }
-
-        compress_dir(&self.relative_path, &self.absolute_path, self.verbosity)
-            .with_context(|| {
-                format!(
-                    "Cannot compress {:#?} into {:#?}",
-                    &self.absolute_path, &self.relative_path
-                )
-            })?;
+        self.compress()?;
 
         Ok(())
     }
@@ -446,73 +583,8 @@ impl DynamicalApp {
 
         Ok((run, dynamics))
     }
-}
 
-impl Perform for DynamicalApp {
-    fn run(&mut self) -> anyhow::Result<()> {
-        if self.verbosity > 0 {
-            println!("{} Starting simulating dynamics", Utc::now());
-        }
-
-        (0..self.runs)
-            .into_par_iter()
-            .progress_count(self.runs as u64)
-            .for_each(|idx| {
-                let initial_state = InitialState::new(
-                    self.ecdna.clone(),
-                    self.ecdna.nb_cells() as usize,
-                );
-                let seed_run = idx as u64 + self.seed;
-                let mut rng = Pcg64Mcg::seed_from_u64(seed_run);
-
-                let mut run = Run::new(
-                    idx,
-                    0f32,
-                    initial_state,
-                    self.rates.clone(),
-                    Seed::new(seed_run),
-                    &mut rng,
-                );
-
-                let mut dynamics = self.dynamics.clone();
-
-                // for all sequecing experiemnts
-                for (i, experiment) in self.experiments.iter().enumerate() {
-                    // simulate and update both the run and the dynamics
-                    let run_ended = run.simulate(
-                        &mut Some(&mut dynamics),
-                        &experiment.tumour_cells,
-                        self.rates.estimate_max_iter(&experiment.tumour_cells),
-                    );
-                    (run, dynamics) = self
-                        .save(
-                            run_ended,
-                            &self.absolute_path,
-                            dynamics,
-                            &experiment.tumour_cells,
-                            &experiment.sample_cells,
-                            i,
-                        )
-                        .with_context(|| format!("Cannot save run {}", idx))
-                        .unwrap();
-                }
-            });
-
-        println!(
-            "{} End simulating dynamics with {} runs",
-            Utc::now(),
-            &self.runs
-        );
-
-        // save the app's seed (each run has a seed = app_seed + run_idx)
-        Seed::new(self.seed).save(&self.absolute_path.join("seed.csv"))?;
-
-        Ok(())
-    }
-}
-
-impl Tarball for DynamicalApp {
-    fn compress(self) -> anyhow::Result<()> {
+    pub fn compress(self) -> anyhow::Result<()> {
         let mut visited: HashSet<Experiment> =
             HashSet::with_capacity(self.experiments.len());
 
@@ -571,6 +643,71 @@ impl Tarball for DynamicalApp {
     }
 }
 
+impl Perform for DynamicalApp {
+    fn run(self) -> anyhow::Result<()> {
+        if self.verbosity > 0 {
+            println!("{} Starting simulating dynamics", Utc::now());
+        }
+
+        (0..self.runs)
+            .into_par_iter()
+            .progress_count(self.runs as u64)
+            .for_each(|idx| {
+                let initial_state = InitialState::new(
+                    self.ecdna.clone(),
+                    self.ecdna.nb_cells() as usize,
+                );
+                let seed_run = idx as u64 + self.seed;
+                let mut rng = Pcg64Mcg::seed_from_u64(seed_run);
+
+                let mut run = Run::new(
+                    idx,
+                    0f32,
+                    initial_state,
+                    self.rates.clone(),
+                    Seed::new(seed_run),
+                    &mut rng,
+                );
+
+                let mut dynamics = self.dynamics.clone();
+
+                // for all sequecing experiemnts
+                for (i, experiment) in self.experiments.iter().enumerate() {
+                    // simulate and update both the run and the dynamics
+                    let run_ended = run.simulate(
+                        &mut Some(&mut dynamics),
+                        &experiment.tumour_cells,
+                        self.rates.estimate_max_iter(&experiment.tumour_cells),
+                    );
+                    (run, dynamics) = self
+                        .save(
+                            run_ended,
+                            &self.absolute_path,
+                            dynamics,
+                            &experiment.tumour_cells,
+                            &experiment.sample_cells,
+                            i,
+                        )
+                        .with_context(|| format!("Cannot save run {}", idx))
+                        .unwrap();
+                }
+            });
+
+        println!(
+            "{} End simulating dynamics with {} runs",
+            Utc::now(),
+            &self.runs
+        );
+
+        // save the app's seed (each run has a seed = app_seed + run_idx)
+        Seed::new(self.seed).save(&self.absolute_path.join("seed.csv"))?;
+
+        self.compress()?;
+
+        Ok(())
+    }
+}
+
 /// Load the initial state, i.e. the ecDNA distribution from a file. If the file
 /// is not specified, create an initial state with one single-cell with one ecDNA copy.
 #[enum_dispatch]
@@ -581,9 +718,70 @@ trait InitialStateLoader {
 #[enum_dispatch(InitialStateLoader)]
 pub enum Config {
     Bayesian(Bayesian),
-    // Longitudinal(Longitudinal),
-    // Subsampled(Subsampled),
     Dynamical(Dynamical),
+    Preprocess(Preprocess),
+}
+
+#[derive(Debug)]
+pub struct Preprocess {
+    patient_name: String,
+    sample_name: String,
+    size: NbIndividuals,
+    distribution: Option<PathBuf>,
+    mean: Option<f32>,
+    frequency: Option<f32>,
+    entropy: Option<f32>,
+    verbosity: u8,
+}
+
+impl Preprocess {
+    pub fn new(matches: &ArgMatches) -> Self {
+        let patient_name: String =
+            matches.value_of_t("patient").unwrap_or_else(|e| e.exit());
+        let sample_name: String =
+            matches.value_of_t("sample").unwrap_or_else(|e| e.exit());
+        let size: NbIndividuals =
+            matches.value_of_t("size").unwrap_or_else(|e| e.exit());
+
+        let distribution = matches
+            .value_of_t::<String>("distribution")
+            .ok()
+            .map(PathBuf::from);
+        let mean = matches.value_of_t("mean").ok();
+        let frequency = matches.value_of_t("frequency").ok();
+        let entropy = matches.value_of_t("entropy").ok();
+
+        let verbosity = matches.occurrences_of("verbosity") as u8;
+
+        Preprocess {
+            patient_name,
+            sample_name,
+            size,
+            distribution,
+            mean,
+            frequency,
+            entropy,
+            verbosity,
+        }
+    }
+}
+
+impl InitialStateLoader for Preprocess {
+    fn load(&self) -> anyhow::Result<(EcDNADistribution, EcDNASummary)> {
+        if let Some(distribution) = &self.distribution {
+            let ecdna = EcDNADistribution::try_from(distribution.as_ref())
+                .with_context(|| {
+                    format!(
+                        "Cannot load the ecDNA distribution from file {:#?}",
+                        &distribution
+                    )
+                })?;
+
+            let summary = ecdna.summarize();
+            return Ok((ecdna, summary));
+        }
+        anyhow::bail!("Cannot load the ecDNA distribution from empty pathbuf")
+    }
 }
 
 #[derive(Debug)]

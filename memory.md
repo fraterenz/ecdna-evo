@@ -6,12 +6,12 @@ biggest struct `Run`, i.e. the states `Started` and `Ended`.
 The main thing is `EcDNADistributionNPlus` which is a vec of `DNACopy` (`u16`).
 Given a number of iterations n, we have: 16 bit * cells * 0.125 byte/bit, where
 cells is the number of nplus cells. The number of nplus cells depends on the
-proliferation rate of the cells w/ ecDNA $$\rho_1$$ strenght.
+proliferation rate of the cells w/ ecDNA $\rho_1$ strenght.
 
-If $$\rho_1$$ is low (around 1), then cells will be approximately 0.1 * n, so the
+If $\rho_1$ is low (around 1), then cells will be approximately 0.1 * n, so the
 memory required for one run will be approximately: 16 * 0.1 * n * 0.125 = 0.2n.
 
-If $$\rho_1$$ is higher than 1.4, then cells will be approximately 0.1 * n, so
+If $\rho_1$ is higher than 1.4, then cells will be approximately 0.1 * n, so
 the memory required in the worst-case scenario for one run will be
 approximately: 16 * n * 0.125 = 2n.
 

@@ -11,16 +11,16 @@
 
 ## Introduction
 Extrachromosomal DNA (ecDNA) seems to play an important role in fostering
-cancer progression. Recently, [Lange et al.
-2021](https://www.biorxiv.org/content/10.1101/2021.06.11.447968v1) showed
-indirect arguments in favor of strong selection on ecDNA in both cell lines and
-cancer patients: cells with ecDNA seem to be selected and thus to have a
-proliferative advantage compared to cells without any ecDNA copy.
+cancer progression. Recently, [Lange et al. 2021](https://www.biorxiv.org/content/10.1101/2021.06.11.447968v1)
+showed indirect arguments in favor of strong selection on ecDNA in both cell
+lines and cancer patients: cells with ecDNA seem to be selected and thus to
+have a proliferative advantage compared to cells without any ecDNA copy.
 
 The goal of this project is to two-fold:
 
 1. to study the evolution of ecDNA dynamics in cancer
-2. to infer the selection strength present in tumours with ecDNA.
+2. to infer the proliferative advantage (i.e. selection strength) present in
+   tumours with ecDNA.
 
 To study the impact of the ecDNAs in tumour progression we use agent-based
 stochastic simulations. We use a Gillespie algorithm to simulate the
@@ -32,8 +32,7 @@ The most important packages are:
 
 1. the binary `ecnda` implementing a command line interface used to configure
    the simulations
-2. the binary `ecdna-preprocess` to preprocess the data for the abc inference
-3. the python plotting API `ecdna-plot`
+2. the python plotting API `ecdna-plot`
 
 ## Installation
 The simulations can be ran in Linux, Windows and macOS, however the plots are
@@ -77,17 +76,18 @@ There are two main usages:
 1. study the dynamics of ecDNA by simulating an exponentially growing tumor
    population carrying ecDNA copies: `/path/to/ecdna simulate --help`, see also
    [here](./dynamics.md).
-2. infer the selection coefficient from data using approximate Bayesian
-   computation (ABC): `/path/to/ecdna abc --help`, see also [here](./abc.md).
+2. infer the proliferation advantage of cells with ecDNA copies ($\rho_1$) from
+   data using approximate Bayesian computation (ABC): `/path/to/ecdna abc --help`,
+   see also [here](./abc.md).
 
 #### Example
 When prebuilt binaries are used, replace in the example
 `./target/release/ecdna` by `/path/to/ecdna`, where `/path/to/ecdna` is the
 path to the ecdna binaries.
 
-Simulate 10 tumour growths (10000 cells each) with rho1 equals to 1 (neutral
-case) using the code compiled from source (see `./target/release/ecdna simulate --help`):
-
+1. Simulate 10 tumour growths (10000 cells each) with $\rho_1$ equals to 1
+   (neutral case) using the code compiled from source (see
+   `./target/release/ecdna simulate --help`):
 ```shell
 # simulate tumour growth
 ./target/release/ecdna simulate \
@@ -96,30 +96,38 @@ case) using the code compiled from source (see `./target/release/ecdna simulate 
   --patient example
 ```
 
-Prepare the data for the abc inference, add to the patient `example` one sample
+2. Optional step is to plot the dynamics
+```shell
+# activate your python env
+source /path/to/my/env/bin/activate
+python3 -m ecdna-plot.dynamics \
+  --nplus results/example/10000samples10000cells/nplus.tar.gz \
+  --nminus results/example/10000samples10000cells/nminus.tar.gz \
+  --save results/example/10000samples10000cells/
+```
+
+3. Prepare the data for the abc inference, add to the patient `example` one sample
 `sample1` defined by the ecdna distribution
 `results/example/10000samples10000cells/0/ecdna/0.json`, this sample having an
 estimated population of 10000 tumour cells (see
 `./target/release/preproces --help`):
-
 ```shell
-./target/release/preprocess example sample1 10000 \
+./target/release/ecdna preprocess example sample1 10000 \
   --distribution results/example/10000samples10000cells/0/ecdna/0.json
 ```
 
-Now perform the bayesian inference.
+4. Now perform the bayesian inference.
 Performing the bayesian inference with more the runs will generate more
 accurate results, but will also take more time.
 Infer the proliferation advantage and the initial copy number using 1000 runs
 for the patient `example` (see `./target/release/ecdna abc --help`):
-
 ```shell
 ./target/release/ecdna abc --runs 1000 --rho1-range 1 3 --rho2-range 1 \
   --delta1-range 0 --delta2-range 0 --copies-range 1 20 \
   --patient results/preprocessed/example.json
  ```
 
-Finally, plot the posterior distributions by keeping runs with distance metrics
+5. Finally, plot the posterior distributions by keeping runs with distance metrics
 smaller than 0.1 (see `ecdna-plot.abc --help`)
 ```shell
 # activate your python env

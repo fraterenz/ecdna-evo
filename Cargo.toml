@@ -3,7 +3,6 @@ members = [
     "ecdna",
     "ecdna-data",
     "ecdna-dynamics",
-    "ecdna-preprocess",
     "ecdna-sim",
 ]
 
@@ -13,5 +12,5 @@ codegen-units = 1
 
 [workspace.metadata]
 name = "ecdna"
-version = "0.1.0"
+version = "0.3.0"
 

@@ -1,4 +1,4 @@
-use clap::{arg, command, AppSettings, Arg, Command};
+use clap::{arg, command, AppSettings, Arg, ArgGroup, Command};
 
 /// CLI to build a configuration used to run the simulations.
 
@@ -64,6 +64,38 @@ pub fn clap_app() -> Command<'static> {
 						If two values are given, they represent the minimal and maximal value of ecDNA copies to test")
                 .takes_value(true),
             )
+        )
+        .subcommand(command!("preprocess")
+            .about("Create the patient json file required for ABC inference. Add to `patient` a `sample`.")
+			.arg_required_else_help(true)
+        	.arg(
+        	    arg!(<patient> "Name of the patient for whom we add a new sample"))
+        	.arg(
+        	    arg!(<sample> "Name of the sample to add")
+        	        .help_heading("SAMPLE"))
+        	.arg(
+        	    arg!(<size> "Estimation of the number of tumour cells size at sample collection")
+        	        .help_heading("SAMPLE"))
+        	.arg(
+        	    arg!(--distribution [FILE] "ecDNA distribution of the sample")
+        	        .required_unless_present("summary")
+        	        .help_heading("SAMPLE"))
+        	.arg(
+        	    arg!(--mean [VALUE] "Mean of the ecDNA distribution of the sample")
+        	        .help_heading("SAMPLE"))
+        	.arg(
+        	    arg!(--frequency [VALUE] "Frequency of cells any w/ ecDNA copies within the sample")
+        	        .help_heading("SAMPLE"))
+        	.arg(
+        	    arg!(--entropy [VALUE] "Entropy of the ecDNA distribution of the sample")
+        	        .help_heading("SAMPLE"))
+        	.group(
+        	    ArgGroup::new("summary")
+        	        .required(false)
+					.multiple(true)
+        	        .args(&["mean", "frequency", "entropy"])
+					.conflicts_with("distribution")
+        	)
         )
         .subcommand(command!("simulate")
             .about("Simulate the dynamics of the ecDNA distribution assuming exponential growth and random ecDNA segregation.")
