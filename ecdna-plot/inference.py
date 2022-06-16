@@ -155,7 +155,6 @@ def build_app() -> HistogramsApp:
         }
     )
     thresholds["ecdna"] = float(args["ecdna"])
-    print(thresholds)
     abc = Path(args["path2abc"])
     assert abc.parent.is_dir()
 
@@ -370,7 +369,6 @@ def plot_copies(copies, ax, title=None, xlabel=None):
         max_copies = 1
     else:
         max_copies = copies.max().iloc[0] + 1
-    print(max_copies)
     plot_rates(copies, (0, max_copies), 120, ax, title, xlabel)
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 
@@ -378,7 +376,6 @@ def plot_copies(copies, ax, title=None, xlabel=None):
 def plot_rates(rates, range_hist: Tuple[float, float], bins: int, ax, title, xlabel):
     """Modify inplace the ax by plotting the hist of the posterior distribution
     `rates`. Here `title` is the title of the axis `ax`."""
-    print(range_hist)
     rates.plot(
         kind="hist",
         ax=ax,
@@ -568,7 +565,7 @@ def plot_posterior_per_stats(
             # iter over the (stats, threshold) for each combination
             ax = axes[np.unravel_index(i, MYSHAPE)]
             to_plot, stats = filter_abc_runs(
-                abc, timepoints, thresholds, theta, verbosity
+                abc, timepoints, dict(the_thresholds), theta, verbosity
             )
             to_plot = to_plot.drop(columns=set(to_plot.columns) - set([theta]))
             plot_posterior(

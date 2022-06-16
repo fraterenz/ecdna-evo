@@ -27,12 +27,9 @@ def filter_abc_runs(
     my_query, stats = query_from_thresholds(thresholds.items())
     # assert theta in set(abc.columns), "Cannot find column '{}' in data".format(theta)
     if timepoints > 1:
-        print("timepoints")
         to_plot = abc_longitudinal(abc, my_query, timepoints, verbosity)
     else:
-        print(abc.shape)
         to_plot = abc.loc[abc[stats].query(my_query).index, :]
-        print(to_plot.shape)
     if to_plot.empty:
         print(
             "\t--WARNING: no run is similar to the ground truth; try to change the thresholds values"
