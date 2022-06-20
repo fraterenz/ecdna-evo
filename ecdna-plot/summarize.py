@@ -29,6 +29,7 @@ class SummarizeApp:
     gr_gammas: List[int]
     path2save: Path
     png: bool
+    export: bool
     verbosity: bool
 
 
@@ -68,8 +69,6 @@ def run(app: SummarizeApp):
                 r"""Proliferative advantage $\rho_1^*$""",
             )
 
-        print(hue_order)
-
         sns.boxenplot(
             ax=ax,
             x=x2plot,
@@ -100,6 +99,10 @@ def run(app: SummarizeApp):
             app.verbosity,
         )
 
+        if app.export:
+            path2save = app.path2save / Path("filtered_runs.csv")
+            toplot.to_csv(path2save, index=False, index_label=False)
+
 
 def build_app() -> SummarizeApp:
     """Parse and returns the app"""
@@ -114,6 +117,15 @@ def build_app() -> SummarizeApp:
         default=False,
         action="store_true",
         help="Use flag to generate png copies of the pdf plots",
+    )
+
+    parser.add_argument(
+        "--export",
+        dest="export",
+        required=False,
+        default=False,
+        action="store_true",
+        help="Use flag to export the data needed to be plotted (e.g. for mathematica plots)",
     )
 
     parser.add_argument(
@@ -235,6 +247,7 @@ def build_app() -> SummarizeApp:
         gamma,
         Path(args["path2save"]),
         args["png"],
+        args["export"],
         args["verbosity"],
     )
 
