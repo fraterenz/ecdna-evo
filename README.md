@@ -90,20 +90,14 @@ path to the ecdna binaries.
    `./target/release/ecdna simulate --help`):
 ```shell
 # simulate tumour growth
-./target/release/ecdna simulate \
-  --cells 10000 --runs 10 --rho1 1 \
-  --dynamics nplus nminus \
-  --patient example
+./target/release/ecdna simulate --cells 10000 --runs 10 --rho1 1 --dynamics nplus nminus --patient example
 ```
 
 2. Optional step is to plot the dynamics
 ```shell
 # activate your python env
 source /path/to/my/env/bin/activate
-python3 -m ecdna-plot.dynamics \
-  --nplus results/example/10000samples10000cells/nplus.tar.gz \
-  --nminus results/example/10000samples10000cells/nminus.tar.gz \
-  --save results/example/10000samples10000cells/
+python3 -m ecdna-plot.dynamics --nplus results/example/10000samples10000cells/nplus.tar.gz --nminus results/example/10000samples10000cells/nminus.tar.gz --save results/example/10000samples10000cells
 ```
 
 3. Prepare the data for the abc inference, add to the patient `example` one sample
@@ -112,8 +106,7 @@ python3 -m ecdna-plot.dynamics \
 estimated population of 10000 tumour cells (see
 `./target/release/preproces --help`):
 ```shell
-./target/release/ecdna preprocess example sample1 10000 \
-  --distribution results/example/10000samples10000cells/0/ecdna/0.json
+./target/release/ecdna preprocess example sample1 10000 --distribution results/example/10000samples10000cells/0/ecdna/0.json
 ```
 
 4. Now perform the bayesian inference.
@@ -122,9 +115,7 @@ accurate results, but will also take more time.
 Infer the proliferation advantage and the initial copy number using 1000 runs
 for the patient `example` (see `./target/release/ecdna abc --help`):
 ```shell
-./target/release/ecdna abc --runs 1000 --rho1-range 1 3 --rho2-range 1 \
-  --delta1-range 0 --delta2-range 0 --copies-range 1 20 \
-  --patient results/preprocessed/example.json
+./target/release/ecdna abc --runs 1000 --rho1-range 1 3 --rho2-range 1 --delta1-range 0 --delta2-range 0 --copies-range 1 20 --patient results/preprocessed/example.json
  ```
 
 5. Finally, plot the posterior distributions by keeping runs with distance metrics
@@ -133,9 +124,7 @@ smaller than 0.1 (see `ecdna-plot.abc --help`)
 # activate your python env
 source /path/to/my/env/bin/activate
 # plot with thresholds 0.1 0.1 0.1 0.1
-python3 -m ecdna-plot.abc --theta f1 copies \
-  --abc results/example/abc.tar.gz \
-  10 10 10 0.1
+python3 -m ecdna-plot.abc --theta f1 copies --abc results/example/abc.tar.gz 10 10 10 0.1
 ```
 
 ## Input and output

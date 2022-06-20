@@ -39,3 +39,13 @@ strategy implies that the tumour growth restart from the subsample.
 
 ### Fixed
 - Tarballs with relative paths
+
+## 0.3.0
+- Merged `preprocess` into `ecdna` whihc has now three commands: `simulate`, `abc` and `preprocess`.
+
+## 0.3.3
+### Added
+- When plotting abc results, the flag `--export` can save the runs that been filtered based on the thresholds (to for instance make the plots in Mathematica)
+
+### Fixed
+- Remove the `CONFIG` options from `preprocess` subcommand.
