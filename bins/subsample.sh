@@ -1,5 +1,5 @@
 #!/bin/bash
-# Synthetic data abc inference with the whole population (no subsampling).
+# Synthetic data abc inference with one subsample of the whole population.
 #
 # Infer the ground truth parameters (f=1,1.9,2.8 and g=1,5,10) generating one
 # simulation and then running 10000 ABC runs.
@@ -12,7 +12,7 @@ RUNS=10000
 CELLS=1000000
 PATH2ECDNA=$HOME/ecdna-evo
 RESULTS=${PATH2ECDNA}/results
-SAMPLE=1000000
+SAMPLE=1000
 id=0
 
 source ~/venvs/ecdna-evo/bin/activate
@@ -27,7 +27,7 @@ D2=0
 for f in 1 1.9 2.8; do
   for g in 1 5 10; do
     name=f$(remove_dot $f)g$g
-    EXPERIMENT=whole_population/${name}
+    EXPERIMENT=subsample/${name}
     PATH2EXPERIMENT=${RESULTS}/${EXPERIMENT}/${SAMPLE}samples${CELLS}cells
 
     echo $name
@@ -38,6 +38,8 @@ for f in 1 1.9 2.8; do
       --runs 1 \
       --rho1 $f \
       --distribution ${RESULTS}/distributions/${g}copies.json \
+      --sizes ${CELLS} \
+      --samples ${SAMPLE} \
       --dynamics nplus nminus mean \
     	--patient ${EXPERIMENT} \
     	--savedir ${PATH2ECDNA}

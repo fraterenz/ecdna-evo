@@ -1,8 +1,5 @@
 #!/bin/bash
 # Synthetic data abc inference with the whole population (no subsampling).
-#
-# Infer the ground truth parameters (f=1,1.9,2.8 and g=1,5,10) generating one
-# simulation and then running 10000 ABC runs.
 
 function remove_dot {
   echo "$1" | tr -d "."
@@ -25,7 +22,7 @@ D2=0
 
 # ground truth
 for f in 1 1.9 2.8; do
-  for g in 1 5 10; do
+  for g in 10; do
     name=f$(remove_dot $f)g$g
     EXPERIMENT=whole_population/${name}
     PATH2EXPERIMENT=${RESULTS}/${EXPERIMENT}/${SAMPLE}samples${CELLS}cells
