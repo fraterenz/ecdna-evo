@@ -124,7 +124,7 @@ smaller than 0.1 (see `ecdna-plot.abc --help`)
 # activate your python env
 source /path/to/my/env/bin/activate
 # plot with thresholds 0.1 0.1 0.1 0.1
-python3 -m ecdna-plot.abc --theta f1 copies --abc results/example/abc.tar.gz 10 10 10 0.1
+python3 -m ecdna-plot.inference --theta f1 copies --abc results/example/abc.tar.gz 10 10 10 0.1
 ```
 
 ## Input and output
