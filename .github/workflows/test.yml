@@ -1,7 +1,4 @@
-on:
-  push:
-    paths-ignore:
-      - 'ecdna-plot/**'
+on: push
 
 name: Test with Code Coverage
 

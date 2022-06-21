@@ -28,15 +28,11 @@ proliferation and death of cancer cells at each time step proportional to
 pre-defined proliferation and death rates.
 
 ## Code organization
-The most important packages are:
-
-1. the binary `ecnda` implementing a command line interface used to configure
-   the simulations
-2. the python plotting API `ecdna-plot`
+The most important package is the binary `ecnda` implementing a command line
+interface used to configure the simulations.
 
 ## Installation
-The simulations can be ran in Linux, Windows and macOS, however the plots are
-only available in Linux and macOS(?).
+The simulations can be ran in Linux, Windows and macOS.
 
 ### Simulations
 Install the rust package either from the pre-built binaries or from source, see
@@ -57,18 +53,6 @@ the source code and compile with cargo with the **`--release` flag**;
 
 When building from source, the `/path/to/ecdna` (see [usage](#Usage)) will be
 `/path/to/ecdna-evo/target/release/ecdna`.
-
-### Plots
-Additional optional step is to install the python package to be plot the
-results (works in Linux, might work in macOS not sure?):
-
-1. create an environment with
-   [venv](https://docs.python.org/3/library/venv.html#creating-virtual-environments):
-   `python3 -m venv /path/to/my/env/ecdna-evo`.
-2. activate the environment: `source /path/to/my/env/bin/activate`.
-3. update pip: `python3 -m pip install --upgrade pip`
-4. install the python package in the environment: `pip install -r
-   requirements.txt`.
 
 ## Usage
 There are two main usages:
@@ -93,14 +77,7 @@ path to the ecdna binaries.
 ./target/release/ecdna simulate --cells 10000 --runs 10 --rho1 1 --dynamics nplus nminus --patient example
 ```
 
-2. Optional step is to plot the dynamics
-```shell
-# activate your python env
-source /path/to/my/env/bin/activate
-python3 -m ecdna-plot.dynamics --nplus results/example/10000samples10000cells/nplus.tar.gz --nminus results/example/10000samples10000cells/nminus.tar.gz --save results/example/10000samples10000cells
-```
-
-3. Prepare the data for the abc inference, add to the patient `example` one sample
+2. Prepare the data for the abc inference, add to the patient `example` one sample
 `sample1` defined by the ecdna distribution
 `results/example/10000samples10000cells/0/ecdna/0.json`, this sample having an
 estimated population of 10000 tumour cells (see
@@ -109,7 +86,7 @@ estimated population of 10000 tumour cells (see
 ./target/release/ecdna preprocess example sample1 10000 --distribution results/example/10000samples10000cells/0/ecdna/0.json
 ```
 
-4. Now perform the bayesian inference.
+3. Now perform the bayesian inference.
 Performing the bayesian inference with more the runs will generate more
 accurate results, but will also take more time.
 Infer the proliferation advantage and the initial copy number using 1000 runs
@@ -117,15 +94,6 @@ for the patient `example` (see `./target/release/ecdna abc --help`):
 ```shell
 ./target/release/ecdna abc --runs 1000 --rho1-range 1 3 --rho2-range 1 --delta1-range 0 --delta2-range 0 --copies-range 1 20 --patient results/preprocessed/example.json
  ```
-
-5. Finally, plot the posterior distributions by keeping runs with distance metrics
-smaller than 0.1 (see `ecdna-plot.abc --help`)
-```shell
-# activate your python env
-source /path/to/my/env/bin/activate
-# plot with thresholds 0.1 0.1 0.1 0.1
-python3 -m ecdna-plot.inference --theta f1 copies --abc results/example/abc.tar.gz 10 10 10 0.1
-```
 
 ## Input and output
 See [here](./dynamics.md) for the first usage and [here](./abc.md) for the
