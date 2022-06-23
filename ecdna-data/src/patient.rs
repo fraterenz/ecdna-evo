@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Debug, Clone, Builder, Deserialize, Serialize)]
 #[builder(build_fn(validate = "Self::validate"))]
@@ -131,34 +131,31 @@ impl Patient {
         Ok(())
     }
 
-    pub fn save(self) -> anyhow::Result<()> {
+    pub fn save(self, path: &Path) -> anyhow::Result<()> {
         //! Save patient into ./results/preprocessed/self.name.json
         if self.verbosity > 0 {
-            println!("Saving patient to {:#?}", self.path2json());
+            println!("Saving patient to {:#?}", path);
         }
         let patient = serde_json::to_string(&self).with_context(|| {
             format!("Cannot serialize the patient {}", self.name)
         })?;
 
-        fs::write(self.path2json(), &patient)
-            .with_context(|| {
-                format!("Cannot write to file {:#?}", self.path2json())
-            })
+        fs::write(path, &patient)
+            .with_context(|| format!("Cannot write to file {:#?}", path))
             .map_err(|e| anyhow!(e))
     }
 
-    pub fn load(&mut self) -> anyhow::Result<()> {
+    pub fn load(&mut self, path: &Path) -> anyhow::Result<()> {
         if self.verbosity > 0 {
-            println!("Loading patient from {:#?}", self.path2json());
+            println!("Loading patient from {:#?}", path);
         }
-        let patient: Patient = serde_json::from_str(
-            &fs::read_to_string(&self.path2json()).with_context(|| {
-                format!("Cannot load patient from {:#?}", self.path2json())
-            })?,
-        )
-        .with_context(|| {
-            format!("Cannot deserialize patient from {:#?}", self.path2json())
-        })?;
+        let patient: Patient =
+            serde_json::from_str(&fs::read_to_string(path).with_context(
+                || format!("Cannot load patient from {:#?}", path),
+            )?)
+            .with_context(|| {
+                format!("Cannot deserialize patient from {:#?}", path)
+            })?;
 
         if self.verbosity > 1 {
             println!("Samples for patient before loading {:#?}", self.samples);
@@ -173,7 +170,7 @@ impl Patient {
         }
 
         if self.verbosity > 0 {
-            println!("Patient loaded from {:#?}", self.path2json());
+            println!("Patient loaded from {:#?}", path);
         }
         Ok(())
     }
@@ -192,10 +189,6 @@ impl Patient {
 
         patient.samples.sort();
         Ok(patient)
-    }
-
-    pub fn path2json(&self) -> PathBuf {
-        PathBuf::from(format!("results/preprocessed/{}.json", self.name))
     }
 
     fn hash_set(&self) -> HashSet<String> {

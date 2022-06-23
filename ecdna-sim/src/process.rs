@@ -178,7 +178,35 @@ fn any_individual_left(pop1: NbIndividuals, pop2: NbIndividuals) -> bool {
 mod tests {
     use super::*;
     use crate::process::BirthDeathProcess;
+    use quickcheck::{Arbitrary, Gen};
     use rand::SeedableRng;
+
+    impl Arbitrary for BirthDeathProcess {
+        fn arbitrary(g: &mut Gen) -> BirthDeathProcess {
+            BirthDeathProcess::new(
+                Rates::new(
+                    &[PositiveRate::arbitrary(g).0],
+                    &[PositiveRate::arbitrary(g).0],
+                    &[PositiveRate::arbitrary(g).0],
+                    &[PositiveRate::arbitrary(g).0],
+                ),
+                &mut Pcg64Mcg::from_entropy(),
+            )
+        }
+    }
+
+    #[derive(Clone)]
+    struct PositiveRate(pub f32);
+
+    impl Arbitrary for PositiveRate {
+        fn arbitrary(g: &mut Gen) -> Self {
+            let rate = f32::arbitrary(g).abs();
+            if rate.is_nan() {
+                return PositiveRate::arbitrary(g);
+            }
+            PositiveRate(rate)
+        }
+    }
 
     #[quickcheck]
     fn gillespie_same_seed_same_event(

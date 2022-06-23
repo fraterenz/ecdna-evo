@@ -1,13 +1,11 @@
 use crate::dynamics::{
     Dynamic, Dynamics, GillespieT, MeanDyn, Moments, NMinus, NPlus,
 };
-use anyhow::{ensure, Context};
+use anyhow::ensure;
 use ecdna_data::data::{
     Data, EcDNADistribution, EcDNASummary, Entropy, Frequency, Mean,
 };
-use ecdna_sim::event::{
-    fast_mean_computation, AdvanceRun, Event, GillespieTime,
-};
+use ecdna_sim::event::{AdvanceRun, Event, GillespieTime};
 use ecdna_sim::process::BirthDeathProcess;
 use ecdna_sim::rate::{GetRates, Range, Rates};
 use ecdna_sim::{NbIndividuals, Seed};
@@ -859,42 +857,14 @@ impl Update for NMinus {
 
 impl Update for MeanDyn {
     fn update(&mut self, run: &Run<Started>) {
-        let mean = if self.get_previous_mean().is_err() {
-            run.mean_ecdna()
-        } else {
-            match fast_mean_computation(
-                self.get_previous_mean()
-                    .with_context(|| "Cannot update the dynamical mean")
-                    .unwrap(),
-                &run.get_gillespie_event().kind,
-                run.get_nminus() + run.get_nplus(),
-            ) {
-                Some(mean) => mean,
-                // slow version: traverse the whole vector of the ecDNA distribution
-                None => run.mean_ecdna(),
-            }
-        };
+        let mean = run.mean_ecdna();
         self.store_mean(mean);
     }
 }
 
 impl Update for Moments {
     fn update(&mut self, run: &Run<Started>) {
-        let mean = if self.get_previous_mean().is_err() {
-            run.mean_ecdna()
-        } else {
-            match fast_mean_computation(
-                self.get_previous_mean()
-                    .with_context(|| "Cannot update the dynamical mean")
-                    .unwrap(),
-                &run.get_gillespie_event().kind,
-                run.get_nminus() + run.get_nplus(),
-            ) {
-                Some(mean) => mean,
-                // slow version: traverse the whole vector of the ecDNA distribution
-                None => run.mean_ecdna(),
-            }
-        };
+        let mean = run.mean_ecdna();
         self.store_moments(mean, run.variance_ecdna(&mean));
     }
 }
@@ -906,5 +876,17 @@ impl Update for GillespieT {
             self.get_previous_time()
                 .map_or_else(|_| gillespie_time, |time| time + gillespie_time),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compute_mean_low_frequency() {
+        let ntot = 2u64;
+        let ecdna = EcDNADistributionNPlus(vec![60u16]);
+        assert_eq!(30f32, ecdna.compute_mean(&ntot));
     }
 }

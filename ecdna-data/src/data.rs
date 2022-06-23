@@ -39,7 +39,11 @@ impl TryFrom<&Path> for EcDNADistribution {
                 read_csv::<DNACopy>(path2file).map(EcDNADistribution::from)
             }
             Some("json") => {
-                serde_json::from_str(&fs::read_to_string(path2file).unwrap())
+                let path2read =
+                    fs::read_to_string(path2file).with_context(|| {
+                        format!("Cannot read {:#?}", path2file)
+                    })?;
+                serde_json::from_str(&path2read)
                     .map_err(|e| anyhow::anyhow!(e))
                     .with_context(|| "Cannot load ecDNA distribution")
             }

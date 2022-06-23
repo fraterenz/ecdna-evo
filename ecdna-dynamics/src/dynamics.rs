@@ -221,15 +221,6 @@ impl MeanDyn {
     pub fn store_mean(&mut self, mean: f32) {
         self.mean.push(mean)
     }
-
-    pub fn get_previous_mean(&self) -> anyhow::Result<f32> {
-        match self.mean.last() {
-            None => {
-                bail!("Cannot retrieve the mean from the previous iteration")
-            }
-            Some(&mean) => Ok(mean),
-        }
-    }
 }
 
 impl Save for MeanDyn {
@@ -292,10 +283,6 @@ impl Moments {
     pub fn store_moments(&mut self, mean: f32, variance: f32) {
         self.mean.store_mean(mean);
         self.variance.push(variance);
-    }
-
-    pub fn get_previous_mean(&self) -> anyhow::Result<f32> {
-        self.mean.get_previous_mean()
     }
 }
 
