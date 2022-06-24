@@ -467,7 +467,9 @@ impl EcDNADistribution {
         nb_cells: &NbIndividuals,
         rng: &mut Pcg64Mcg,
     ) -> EcDNADistribution {
-        //! Undersample the ecDNA distribution taking roughly sample the proportion of ecDNA copies in cells found in the tumour
+        //! Undersample the ecDNA distribution taking roughly sample the
+        //! proportion of ecDNA copies in cells found in the tumour, i.e.
+        //! sample per ecDNA copies (not `NMinus` vs `NPlus`).
         assert!(
             !self.is_empty(),
             "Cannot undersample from empty ecDNA distribution"

@@ -774,13 +774,11 @@ impl CellCulture {
 impl ContinueGrowth for CellCulture {
     fn restart_growth(
         &self,
-        run: Run<Ended>,
+        mut run: Run<Ended>,
         sample_size: &NbIndividuals,
     ) -> anyhow::Result<Run<Started>> {
         //! In cell culture experiments, growth restart from subsample of the
         //! whole population.
-        let idx = run.idx;
-        let mut run = run.undersample_ecdna(sample_size, idx);
         run.set_iter(0);
         ensure!(&run.nb_cells() == sample_size);
         Ok(run.into())

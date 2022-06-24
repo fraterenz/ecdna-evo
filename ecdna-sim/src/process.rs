@@ -236,7 +236,6 @@ mod tests {
         let mut rng = Pcg64Mcg::seed_from_u64(seed);
         let event2 = bd.gillespie(pop1, pop2, &mut rng);
 
-        dbg!(&event1, &event2);
         (event1 == event2) | (event1.time.is_nan() & event2.time.is_nan())
     }
 

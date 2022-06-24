@@ -319,16 +319,26 @@ impl BayesianApp {
             let mut results = ABCResults::with_capacity(nb_samples);
 
             // create multiple subsamples of the same run and save the results
-            // in the same file `path`. It's ok as long as sample_size is not too
-            // big because deep copies of the ecDNA distribution for each
-            // subsample
-            for i in 0usize..nb_samples {
+            // in the same file `path`. It's ok as long as sample_size is not
+            // too big because deep copies of the ecDNA distribution for each
+            // subsample.
+            //
+            // Run a first test outside the loop such that that subsample can
+            // be reused later on to restart the tumour growth (see below)
+            let simulated_sample =
+                run.clone().undersample_ecdna(&sample_size, 0usize);
+            results.test(&simulated_sample, sequecing_sample, timepoint);
+            for i in 1usize..nb_samples - 1 {
                 // returns new ecDNA distribution with cells NPlus cells (clone)
                 let simulated_sample =
                     run.clone().undersample_ecdna(&sample_size, i);
                 results.test(&simulated_sample, sequecing_sample, timepoint);
             }
-            (results, self.growth.restart_growth(run, &sample_size)?)
+            // restart tumour growth from the first sample
+            (
+                results,
+                self.growth.restart_growth(simulated_sample, &sample_size)?,
+            )
         } else {
             let mut results = ABCResults::with_capacity(1usize);
             results.test(&run, sequecing_sample, timepoint);
@@ -548,11 +558,10 @@ impl DynamicalApp {
 
         let (mut dynamics, run) = if tumour_size > sample_size {
             let idx = run.idx;
-            run.clone()
-                .undersample_ecdna(sample_size, idx)
-                .save_ecdna_statistics(
-                    &abspath_with_undersampling.join(format!("{}", timepoint)),
-                );
+            let run = run.undersample_ecdna(sample_size, idx);
+            run.save_ecdna_statistics(
+                &abspath_with_undersampling.join(format!("{}", timepoint)),
+            );
             let run = self.growth.restart_growth(run, sample_size)?;
             if let Growth::CellCulture(_) = self.growth {
                 // remove all dynamics except the last entry
@@ -576,16 +585,16 @@ impl DynamicalApp {
             d.save(&file2path).unwrap();
         }
 
-        let (dynamics, run) = if tumour_size > sample_size {
+        let dynamics = if tumour_size > sample_size {
             for d in dynamics.iter_mut() {
                 if let Growth::CellCulture(_) = self.growth {
                     // remove all dynamics except the last entry
                     d.clear();
                 }
             }
-            (dynamics, run)
+            dynamics
         } else {
-            (dynamics, run)
+            dynamics
         };
 
         Ok((run, dynamics))
