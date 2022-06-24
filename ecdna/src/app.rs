@@ -84,6 +84,7 @@ pub struct PreprocessApp {
     pub mean: Option<Mean>,
     pub frequency: Option<Frequency>,
     pub entropy: Option<Entropy>,
+    pub savedir: PathBuf,
     pub verbosity: u8,
 }
 
@@ -107,6 +108,7 @@ impl PreprocessApp {
         let sample_name = config.sample_name;
         let size = config.size;
         let verbosity = config.verbosity;
+        let savedir = config.savedir;
 
         let mean = config.mean.map(Mean);
         let frequency = config.frequency.map(Frequency);
@@ -120,6 +122,7 @@ impl PreprocessApp {
             mean,
             frequency,
             entropy,
+            savedir,
             verbosity,
         })
     }
@@ -159,9 +162,12 @@ impl Perform for PreprocessApp {
         );
 
         let mut patient = Patient::new(&self.patient_name, self.verbosity);
+        let path2patient = self
+            .savedir
+            .join(format!("results/preprocessed/{}.json", patient.name));
 
         // if patient exists load it, else create new file
-        if patient.path2json().exists() {
+        if path2patient.exists() {
             if self.verbosity > 0 {
                 println!(
                     "Adding sample {} to an existing patient {}",
@@ -171,40 +177,41 @@ impl Perform for PreprocessApp {
             if self.verbosity > 1 {
                 println!(
                     "Loading patient {} from {:#?}",
-                    self.patient_name,
-                    patient.path2json()
+                    self.patient_name, path2patient
                 );
             }
             patient
-                .load()
+                .load(&path2patient)
                 .with_context(|| {
-                    format!(
-                        "Cannot load patient from {:#?}",
-                        patient.path2json()
-                    )
+                    format!("Cannot load patient from {:#?}", path2patient)
                 })
                 .unwrap();
         } else {
             if self.verbosity > 0 {
                 println!("Saving new patient");
             }
-            fs::create_dir_all(patient.path2json().parent().unwrap()).unwrap();
+            fs::create_dir_all(path2patient.parent().unwrap()).unwrap();
         }
 
         let new_sample = self.new_sample();
-        let (name, path) = (patient.name.clone(), patient.path2json());
+        let name = patient.name.clone();
 
         if let Err(e) = patient.add_sample(new_sample) {
             bail!("Error, cannot add sample to patient due to:\n{}", e)
         }
 
-        if let Err(e) = patient.save() {
-            bail!("Cannot save patient {} in {:#?} due to:\n{}", name, path, e)
+        if let Err(e) = patient.save(&path2patient) {
+            bail!(
+                "Cannot save patient {} in {:#?} due to:\n{}",
+                name,
+                path2patient,
+                e
+            )
         } else {
             println!(
                 "The new/updated data for patient {} is in {:#?}\n\
                 Use this file as input for the bayesian inferences.",
-                name, path
+                name, path2patient
             );
         }
 
@@ -731,6 +738,7 @@ pub struct Preprocess {
     mean: Option<f32>,
     frequency: Option<f32>,
     entropy: Option<f32>,
+    pub savedir: PathBuf,
     verbosity: u8,
 }
 
@@ -753,6 +761,10 @@ impl Preprocess {
 
         let verbosity = matches.occurrences_of("verbosity") as u8;
 
+        let savedir: PathBuf = matches
+            .value_of_t("savedir")
+            .unwrap_or_else(|_| std::env::current_dir().unwrap());
+
         Preprocess {
             patient_name,
             sample_name,
@@ -761,6 +773,7 @@ impl Preprocess {
             mean,
             frequency,
             entropy,
+            savedir,
             verbosity,
         }
     }
