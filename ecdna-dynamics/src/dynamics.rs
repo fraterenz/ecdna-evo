@@ -11,6 +11,7 @@ use ecdna_data::data::EcDNADistribution;
 use ecdna_sim::event::GillespieTime;
 use ecdna_sim::{write2file, NbIndividuals};
 use enum_dispatch::enum_dispatch;
+use std::fmt::Write as _;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 
@@ -26,7 +27,7 @@ impl Dynamics {
         //! Create the string "{}_{}" where {} is a timepoint name
         let mut path = String::new();
         for t in self.iter() {
-            path.push_str(&format!("{}_", t.get_name()));
+            write!(path, "{}_", t.get_name())?;
         }
         // remove last trailing _
         path.pop().unwrap();
