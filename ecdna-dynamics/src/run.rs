@@ -207,22 +207,6 @@ impl Run<Started> {
         //! calculated using the [`Update`] method.
         let mut iter = self.init_state.init_iter;
 
-        /*
-        // if we start from an initial state having more than one cell, must prepare
-        // the dynamics by filling them with const values, unless we are restarting
-        // the run
-        if initial_fill_dynamics {
-            if let Some(dynamics) = dynamics {
-                // -1 because the init has already been carried out previously
-                for _ in 0..self.state.system.ntot() - 1 {
-                    for d in dynamics.iter_mut() {
-                        d.update(&self);
-                    }
-                }
-            }
-        }
-        */
-
         let (time, condition, ntot) = {
             loop {
                 let ntot = self.get_nplus() + *self.get_nminus();

@@ -328,7 +328,7 @@ impl BayesianApp {
             let simulated_sample =
                 run.clone().undersample_ecdna(&sample_size, 0usize);
             results.test(&simulated_sample, sequecing_sample, timepoint);
-            for i in 1usize..nb_samples - 1 {
+            for i in 1usize..nb_samples {
                 // returns new ecDNA distribution with cells NPlus cells (clone)
                 let simulated_sample =
                     run.clone().undersample_ecdna(&sample_size, i);
