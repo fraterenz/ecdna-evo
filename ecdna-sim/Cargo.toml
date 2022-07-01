@@ -1,6 +1,6 @@
 [package]
 name = "ecdna-sim"
-version = "0.2.0"
+version = "0.4.1"
 edition = "2021"
 authors = ["Francesco Terenzi"]
 description = "Evolutionary models of extrachromosomal DNA (ecDNA)."

@@ -42,6 +42,8 @@ strategy implies that the tumour growth restart from the subsample.
 
 ## 0.3.0
 - Merged `preprocess` into `ecdna` whihc has now three commands: `simulate`, `abc` and `preprocess`.
+### Added
+- New file `timepoint` in output of abc inference `abc.tar.gz`.
 
 ## 0.3.3
 ### Added
@@ -49,3 +51,20 @@ strategy implies that the tumour growth restart from the subsample.
 
 ### Fixed
 - Remove the `CONFIG` options from `preprocess` subcommand.
+
+
+## 0.4.0
+Removed plotting library into another git folder
+
+## 0.4.1
+Remove data from the project: folder `results` is now in `~/ecdna-results`.
+### Added
+- Option `--savedir` for `preprocess`
+
+### Fixed
+- Avoid sample twice when multiple timepoints before saving the statistics (
+both `abc` and `simulate`).
+- Bug in the cell culture experiment with subsampling: restarting from one
+subsample from the whole distribution with correct `idx`, issue #65
+
+

@@ -308,9 +308,7 @@ impl BayesianApp {
         sample_size: &Option<NbIndividuals>,
         timepoint: usize,
     ) -> anyhow::Result<Run<Started>> {
-        let (results, run) = if let Some(true) =
-            sequecing_sample.is_undersampled()
-        {
+        let run = if let Some(true) = sequecing_sample.is_undersampled() {
             let sample_size = sample_size.expect(
                 "Sample is undersample but the sample size is not known",
             );
@@ -334,17 +332,15 @@ impl BayesianApp {
                     run.clone().undersample_ecdna(&sample_size, i);
                 results.test(&simulated_sample, sequecing_sample, timepoint);
             }
+            results.save(abspath)?;
             // restart tumour growth from the first sample
-            (
-                results,
-                self.growth.restart_growth(simulated_sample, &sample_size)?,
-            )
+            self.growth.restart_growth(simulated_sample, &sample_size)?
         } else {
             let mut results = ABCResults::with_capacity(1usize);
             results.test(&run, sequecing_sample, timepoint);
-            (results, run.into())
+            results.save(abspath)?;
+            run.into()
         };
-        results.save(abspath)?;
         Ok(run)
     }
 
