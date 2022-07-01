@@ -763,6 +763,7 @@ impl ContinueGrowth for CellCulture {
     ) -> anyhow::Result<Run<Started>> {
         //! In cell culture experiments, growth restart from subsample of the
         //! whole population.
+        run.idx = run.get_parental_run().unwrap();
         run.set_iter(0);
         ensure!(&run.nb_cells() == sample_size);
         Ok(run.into())
