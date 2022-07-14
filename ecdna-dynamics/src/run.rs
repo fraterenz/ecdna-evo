@@ -171,10 +171,14 @@ impl Run<Started> {
     pub fn variance_ecdna(&self, mean: &f32) -> f32 {
         //! Variance of ecDNA copy number distribution within the population for
         //! the current iteration.
-        if self.state.system.ecdna_distr.is_empty() {
-            panic!(
+        if self.state.system.ecdna_distr.no_nplus() {
+            if self.state.system.ecdna_distr.is_empty() {
+                panic!(
                 "Cannot compute the variance of an empty ecDNA distribution"
             )
+            } else {
+                0f32
+            }
         } else {
             let nb_nplus = self.get_nplus();
             let nb_nminus = self.get_nminus();
@@ -572,6 +576,10 @@ impl From<EcDNADistribution> for EcDNADistributionNPlus {
 }
 
 impl EcDNADistributionNPlus {
+    fn no_nplus(&self) -> bool {
+        self.get_nplus_cells() == 0
+    }
+
     fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
