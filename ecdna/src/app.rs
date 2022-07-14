@@ -264,9 +264,7 @@ impl BayesianApp {
             );
         }
 
-        let relative_path = PathBuf::from("results")
-            .join(PathBuf::from(patient.name.clone()))
-            .join("abc");
+        let relative_path = PathBuf::from(patient.name.clone()).join("abc");
         let absolute_path = config.savedir.join(relative_path.clone());
 
         let growth: Growth = match config.growth.as_str() {
@@ -345,13 +343,11 @@ impl BayesianApp {
     }
 
     pub fn compress(self) -> anyhow::Result<()> {
-        if self.verbosity > 0 {
-            println!(
-                "{} Saving inferences results in {:#?}",
-                Utc::now(),
-                self.absolute_path
-            );
-        }
+        println!(
+            "{} Saving inferences results in {:#?}",
+            Utc::now(),
+            self.absolute_path
+        );
 
         compress_dir(&self.relative_path, &self.absolute_path, self.verbosity)
             .with_context(|| {
@@ -495,8 +491,7 @@ impl DynamicalApp {
             );
         }
 
-        let relative_path = PathBuf::from("results")
-            .join(PathBuf::from(config.patient_name.clone()));
+        let relative_path = PathBuf::from(config.patient_name.clone());
         let absolute_path = config.savedir.join(relative_path.clone());
 
         let experiments = Experiments::new(
