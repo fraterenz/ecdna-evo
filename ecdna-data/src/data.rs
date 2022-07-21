@@ -698,59 +698,15 @@ mod tests {
     }
 
     #[quickcheck]
-    fn ecdna_undersample_sample_reproducible(
-        seed: u64,
-        mut distribution: Vec<u16>,
-    ) -> bool {
-        let mut rng = Pcg64Mcg::seed_from_u64(seed);
-        if distribution.len() < 30 {
-            for _ in 0..50 {
-                distribution.push(rng.gen());
-            }
-        }
-
-        let nb_cells: NbIndividuals = distribution.len() as NbIndividuals - 1;
-
-        let mut rng = Pcg64Mcg::seed_from_u64(seed);
-        let ecdna = EcDNADistribution::from(distribution);
-        let ecdna = ecdna
-            .distribution
-            .into_iter()
-            .collect::<Vec<(DNACopy, NbIndividuals)>>();
-        let sampler =
-            WeightedIndex::new(ecdna.iter().map(|item| item.1)).unwrap();
-
-        let first = EcDNADistribution::sample_distribution(
-            ecdna.clone(),
-            nb_cells,
-            sampler.clone(),
-            &mut rng,
-        );
-
-        let mut rng = Pcg64Mcg::seed_from_u64(seed);
-        let second = EcDNADistribution::sample_distribution(
-            ecdna, nb_cells, sampler, &mut rng,
-        );
-
-        first == second
-    }
-
-    #[quickcheck]
     fn ecdna_undersample_sample_reproducible_different_trials(
         seed: u64,
-        mut distribution: Vec<u16>,
+        distribution: ValidEcDNADistributionFixture,
     ) -> bool {
         let mut rng = Pcg64Mcg::seed_from_u64(seed);
-        if distribution.len() <= 50 {
-            for _ in 0..50 {
-                distribution.push(rng.gen());
-            }
-        }
+        let nb_cells: NbIndividuals = distribution.0.nb_cells() - 1;
 
-        let nb_cells: NbIndividuals = 10;
-
-        let ecdna = EcDNADistribution::from(distribution);
-        let ecdna = ecdna
+        let ecdna = distribution
+            .0
             .distribution
             .into_iter()
             .collect::<Vec<(DNACopy, NbIndividuals)>>();
@@ -777,7 +733,7 @@ mod tests {
         distribution: ValidEcDNADistributionFixture,
     ) -> bool {
         let mut rng = Pcg64Mcg::seed_from_u64(seed);
-        let nb_cells: NbIndividuals = distribution.0.nb_cells() - 1;
+        let nb_cells: NbIndividuals = 1;
 
         let ecdna = EcDNADistribution::from(distribution.0);
         let first = ecdna.clone().undersample(&nb_cells, &mut rng);

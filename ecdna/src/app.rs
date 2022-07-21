@@ -848,6 +848,11 @@ impl Bayesian {
         let savedir: PathBuf = matches
             .value_of_t("savedir")
             .unwrap_or_else(|_| std::env::current_dir().unwrap());
+        assert!(
+            savedir.is_absolute(),
+            "Argument --savedir must be used with an absolute path, found {:#?} instead",
+            savedir
+        );
 
         Bayesian {
             patient,
@@ -972,6 +977,11 @@ impl Dynamical {
         let savedir: PathBuf = matches
             .value_of_t("savedir")
             .unwrap_or_else(|_| std::env::current_dir().unwrap());
+        assert!(
+            savedir.is_absolute(),
+            "Argument --savedir must be used with an absolute path, found {:#?} instead",
+            savedir
+        );
 
         if verbosity > 1 {
             println!("dynamics: {:#?}", dynamics);
