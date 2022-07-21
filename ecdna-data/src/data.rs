@@ -16,6 +16,8 @@ use std::path::Path;
 
 use crate::DNACopy;
 
+const EPSILON_KS_STAT: f32 = 0.00001;
+
 /// Trait to write the data to file
 #[enum_dispatch]
 pub trait ToFile {
@@ -331,16 +333,15 @@ impl EcDNADistribution {
         //! and thus the distance can only decrease monotonically.
         //!
         //! Does **not** panic if empty distributions.
-        // Start from one which is the max value of the distance
-        let mut distance = 0f32;
-        // Compare the two empirical cumulative distributions (self) and ecdna
-        let mut ecdf = 0f32;
-        let mut ecdf_other = 0f32;
-
         // do not test small samples because ks is not reliable (ecdf)
         if self.ntot < 10u64 || ecdna.ntot < 10u64 {
             return (1f32, false);
         }
+
+        let mut distance = 0f32;
+        // Compare the two empirical cumulative distributions (self) and ecdna
+        let mut ecdf = 0f32;
+        let mut ecdf_other = 0f32;
 
         // iter over all ecDNA copies present in both data (self) and ecdna
         for copy in 0u16..u16::MAX {
@@ -354,15 +355,15 @@ impl EcDNADistribution {
 
             // store the maximal distance between the two ecdfs
             let diff = (ecdf - ecdf_other).abs();
-            if diff - distance > f32::EPSILON {
+            if diff - distance >= EPSILON_KS_STAT {
                 distance = diff;
             }
 
             // check if any of the ecdf have reached 1. If it's the case
             // the difference will decrease monotonically and we can stop
-            let max_dist = (ecdf - 1.0).abs() <= f32::EPSILON
-                || (ecdf_other - 1.0).abs() <= f32::EPSILON
-                || (distance - 1.0).abs() <= f32::EPSILON;
+            let max_dist = (ecdf - 1.0).abs() <= EPSILON_KS_STAT
+                || (ecdf_other - 1.0).abs() <= EPSILON_KS_STAT
+                || (distance - 1.0).abs() <= EPSILON_KS_STAT;
             if max_dist {
                 return (distance, true);
             }
@@ -458,6 +459,11 @@ impl EcDNADistribution {
         nb_cells: &NbIndividuals,
         rng: &mut Pcg64Mcg,
     ) -> anyhow::Result<Data> {
+        //! Undersample the ecDNA distribution taking `nb_cells` cells and
+        //! roughly respecting the frequencies of the ecDNA copies in the ecDNA
+        //! distribution using [`rand::distributions::WeightedIndex`]. So we
+        //! sample in a multitype fashion (k classes) and not in a 2 type
+        //! fashion `NMinus` vs `NPlus`.
         let ecdna = self.undersample(nb_cells, rng);
         Data::try_from(&ecdna)
     }
@@ -768,19 +774,12 @@ mod tests {
     #[quickcheck]
     fn ecdna_undersample_reproducible(
         seed: u64,
-        mut distribution: Vec<u16>,
+        distribution: ValidEcDNADistributionFixture,
     ) -> bool {
         let mut rng = Pcg64Mcg::seed_from_u64(seed);
-        if distribution.len() < 30 {
-            for _ in 0..50 {
-                distribution.push(rng.gen());
-            }
-        }
+        let nb_cells: NbIndividuals = distribution.0.nb_cells() - 1;
 
-        let mut rng = Pcg64Mcg::seed_from_u64(seed);
-        let nb_cells: NbIndividuals = distribution.len() as NbIndividuals - 1;
-
-        let ecdna = EcDNADistribution::from(distribution);
+        let ecdna = EcDNADistribution::from(distribution.0);
         let first = ecdna.clone().undersample(&nb_cells, &mut rng);
 
         let mut rng = Pcg64Mcg::seed_from_u64(seed);
@@ -791,19 +790,12 @@ mod tests {
     #[quickcheck]
     fn ecdna_undersample_reproducible_different_trials(
         seed: u64,
-        mut distribution: Vec<u16>,
+        distribution: ValidEcDNADistributionFixture,
     ) -> bool {
         let mut rng = Pcg64Mcg::seed_from_u64(seed);
-        if distribution.len() <= 4 {
-            for _ in 0..5 {
-                distribution.push(rng.gen());
-            }
-        }
+        let nb_cells: NbIndividuals = distribution.0.nb_cells() - 1;
 
-        let mut rng = Pcg64Mcg::seed_from_u64(seed);
-        let nb_cells: NbIndividuals = distribution.len() as NbIndividuals - 1;
-
-        let ecdna = EcDNADistribution::from(distribution);
+        let ecdna = EcDNADistribution::from(distribution.0);
         let first = ecdna.clone().undersample(&nb_cells, &mut rng);
 
         ecdna.undersample(&nb_cells, &mut rng) != first
@@ -814,9 +806,11 @@ mod tests {
             _: &EcDNADistribution,
             rng: &mut R,
         ) -> Self {
-            let range = rand::distributions::Uniform::new(0, 20);
-            let mut distribution =
-                (0..19).map(|_| rng.sample(&range)).collect::<Vec<DNACopy>>();
+            let nb_cells = 1000u16;
+            let range = rand::distributions::Uniform::new(0, nb_cells);
+            let mut distribution = (0..nb_cells)
+                .map(|_| rng.sample(&range))
+                .collect::<Vec<DNACopy>>();
             distribution.push(0);
             distribution.into()
         }
@@ -942,7 +936,7 @@ mod tests {
     }
 
     #[quickcheck]
-    fn ecdna_ks_distance_same_data_shifted_by_1(
+    fn ecdna_ks_distance_is_one_when_no_overlap_in_support(
         x: ValidEcDNADistributionFixture,
     ) -> bool {
         // https://github.com/daithiocrualaoich/kolmogorov_smirnov/blob/master/src/test.rs#L474
@@ -954,13 +948,12 @@ mod tests {
                 .collect::<HashMap<DNACopy, NbIndividuals>>()
                 .into();
 
-        assert_eq!(y.ntot, 20);
         let (distance, convergence) = x.0.ks_distance(&y);
-        (distance - 1f32).abs() <= f32::EPSILON && convergence
+        (distance - 1f32).abs() <= EPSILON_KS_STAT && convergence
     }
 
     #[quickcheck]
-    fn ecdna_ks_distance_same_data_shifted_by_1_added_support(
+    fn ecdna_ks_distance_is_point_five_when_semi_overlap_in_support(
         x: ValidEcDNADistributionFixture,
     ) -> bool {
         // https://github.com/daithiocrualaoich/kolmogorov_smirnov/blob/master/src/test.rs#L474
@@ -978,30 +971,16 @@ mod tests {
 
         assert_eq!(y.ntot, x.0.ntot * 2);
         let (distance, convergence) = x.0.ks_distance(&y);
-        (distance - 0.5f32).abs() <= f32::EPSILON && convergence
+        (distance - 0.5f32).abs() <= EPSILON_KS_STAT && convergence
     }
 
     #[quickcheck]
-    fn ecdna_ks_distance_is_one_div_length_for_sample_with_additional_low_value(
+    fn ecdna_ks_distance_fast_convergence(
         x: ValidEcDNADistributionFixture,
     ) -> bool {
-        // Add a extra sample of early weight to ys.
-        let mut ys = x.clone();
-        let nminus = ys.0.distribution.entry(0u16).or_insert(0u64);
-        *nminus += 1;
-        ys.0.ntot += 1;
-        assert_eq!(ys.0.ntot, x.0.ntot + 1);
-
-        let (distance, convergence) = x.0.ks_distance(&ys.0);
-
-        let expected = match x.0.distribution.get(&0u16) {
-            Some(&copy) => {
-                (copy as f32 + 1.0) / ys.0.ntot as f32
-                    - (copy as f32) / (x.0.ntot as f32)
-            }
-            None => 1.0 / ys.0.ntot as f32,
-        };
-
-        (distance - expected).abs() <= f32::EPSILON && convergence
+        let y = EcDNADistribution::from(vec![1u16; 100]);
+        let (_, convergence) = x.0.ks_distance(&y);
+        let (_, convergence1) = y.ks_distance(&x.0);
+        convergence && convergence1
     }
 }
