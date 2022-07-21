@@ -735,7 +735,7 @@ mod tests {
         let mut rng = Pcg64Mcg::seed_from_u64(seed);
         let nb_cells: NbIndividuals = 1;
 
-        let ecdna = EcDNADistribution::from(distribution.0);
+        let ecdna = distribution.0;
         let first = ecdna.clone().undersample(&nb_cells, &mut rng);
 
         let mut rng = Pcg64Mcg::seed_from_u64(seed);
@@ -751,7 +751,7 @@ mod tests {
         let mut rng = Pcg64Mcg::seed_from_u64(seed);
         let nb_cells: NbIndividuals = distribution.0.nb_cells() - 1;
 
-        let ecdna = EcDNADistribution::from(distribution.0);
+        let ecdna = distribution.0;
         let first = ecdna.clone().undersample(&nb_cells, &mut rng);
 
         ecdna.undersample(&nb_cells, &mut rng) != first
