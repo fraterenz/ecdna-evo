@@ -162,9 +162,8 @@ impl Perform for PreprocessApp {
         );
 
         let mut patient = Patient::new(&self.patient_name, self.verbosity);
-        let path2patient = self
-            .savedir
-            .join(format!("results/preprocessed/{}.json", patient.name));
+        let path2patient =
+            self.savedir.join(format!("preprocessed/{}.json", patient.name));
 
         // if patient exists load it, else create new file
         if path2patient.exists() {
