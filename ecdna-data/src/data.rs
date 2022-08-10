@@ -488,7 +488,7 @@ impl EcDNADistribution {
         assert!(nb_cells <= &self.nb_cells(), "Cannot undersample with `nb_cells` greater than the cells found in the ecDNA distribution");
 
         if !self.is_empty() {
-            self.sample_distribution(*nb_cells, rng).into()
+            self.sample_distribution(*nb_cells, rng)
         } else {
             self.distribution.into()
         }
@@ -505,8 +505,7 @@ impl EcDNADistribution {
         // convert the histogram into a vec of cells
         let mut distribution: Vec<DNACopy> =
             Vec::with_capacity(self.nb_cells() as usize);
-        distribution
-            .extend(repeat(0 as DNACopy).take(*self.get_nminus() as usize));
+        distribution.extend(repeat(0u16).take(*self.get_nminus() as usize));
         distribution.extend(self.into_vec_no_minus());
 
         // shuffle and take the first `nb_cells`
