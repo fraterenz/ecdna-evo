@@ -3,14 +3,14 @@
 use anyhow::{bail, ensure, Context};
 use ecdna_sim::{write2file, NbIndividuals};
 use enum_dispatch::enum_dispatch;
-use rand::distributions::WeightedIndex;
-use rand::prelude::Distribution;
+use rand::prelude::SliceRandom;
 use rand_pcg::Pcg64Mcg;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::fs;
 use std::fs::read_to_string;
+use std::iter::repeat;
 use std::ops::Deref;
 use std::path::Path;
 
@@ -477,8 +477,9 @@ impl EcDNADistribution {
         //! proportion of ecDNA copies in cells found in the tumour, i.e.
         //! sample per ecDNA copies (not `NMinus` vs `NPlus`).
         //!
-        //! Sampling is performed with replacement, once a cell is choosen is
-        //! re-inserted into the population.
+        //! Sampling is performed without replacement, e.g. the distribution is
+        //! updated each time a cell is sampled since the sampled cell is
+        //! removed from the population.
         assert!(
             !self.is_empty(),
             "Cannot undersample from empty ecDNA distribution"
@@ -502,30 +503,15 @@ impl EcDNADistribution {
         //! `EcDNADistribution` by storing all cells into a `vec`, shuffling it
         //! and taking `nb_cells`.
         // convert the histogram into a vec of cells
-        // let mut distribution: Vec<DNACopy> =
-        //     Vec::with_capacity(self.nb_cells() as usize);
-        // distribution
-        //     .extend(repeat(0 as DNACopy).take(*self.get_nminus() as usize));
-        // distribution.extend(self.into_vec_no_minus());
+        let mut distribution: Vec<DNACopy> =
+            Vec::with_capacity(self.nb_cells() as usize);
+        distribution
+            .extend(repeat(0 as DNACopy).take(*self.get_nminus() as usize));
+        distribution.extend(self.into_vec_no_minus());
 
-        // // shuffle and take the first `nb_cells`
-        // distribution.shuffle(rng);
-        // distribution.truncate(nb_cells as usize);
-        // distribution.into()
-        //
-        let ecdna = self
-            .distribution
-            .into_iter()
-            .collect::<Vec<(DNACopy, NbIndividuals)>>();
-        // with weights computed as the number of cells for each k copy
-        let sampler =
-            WeightedIndex::new(ecdna.iter().map(|item| item.1)).unwrap();
-        let mut distribution: HashMap<DNACopy, NbIndividuals> =
-            HashMap::with_capacity((nb_cells) as usize);
-        for _ in 0..nb_cells {
-            *distribution.entry(ecdna[sampler.sample(rng)].0).or_default() +=
-                1;
-        }
+        // shuffle and take the first `nb_cells`
+        distribution.shuffle(rng);
+        distribution.truncate(nb_cells as usize);
         distribution.into()
     }
 
