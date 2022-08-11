@@ -67,4 +67,12 @@ both `abc` and `simulate`).
 - Bug in the cell culture experiment with subsampling: restarting from one
 subsample from the whole distribution with correct `idx`, issue #65
 
+## 0.4.2
+### Fixed
+- Sampling was performed with replacement, now without replacement (might
+need more memory)
+- Remove `results` folder from preprocess app
+- The computation of the `ks_distance` has changed by taking into account the
+loss of precision in converting `u16` to `f16`
+- Dont panic when computing the variance when there are no N+ cells, but return 0
 
