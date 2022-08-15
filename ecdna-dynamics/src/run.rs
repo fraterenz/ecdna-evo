@@ -658,14 +658,9 @@ impl EcDNADistributionNPlus {
         let d_1: DNACopy = bin.sample(rng).try_into().unwrap();
         let d_2: DNACopy = available_dna - d_1;
         assert_ne!(d_1 + d_2, 0);
-        assert!(
-            d_1.checked_add(d_2).is_some(),
-            "Overflow error while segregating DNA copies during proliferation"
-        );
 
-        // uneven_segregation happens if there is at least one zero and
-        // `daughter_1` and `daughter2` cannot be both equal to 0
-        let uneven = d_1.saturating_mul(d_2) == 0;
+        // uneven_segregation happens if there is at least one zero
+        let uneven = d_1 == 0 || d_2 == 0;
 
         (d_1, d_2, uneven)
     }
