@@ -167,11 +167,8 @@ impl BirthDeathProcess {
 }
 
 fn any_individual_left(pop1: NbIndividuals, pop2: NbIndividuals) -> bool {
-    match pop1.checked_add(pop2) {
-        Some(0u64) => false,
-        None => true,
-        _ => true,
-    }
+    //! Returns `true` if there is at least one individual left.
+    pop1 != 0 || pop2 != 0
 }
 
 #[cfg(test)]
