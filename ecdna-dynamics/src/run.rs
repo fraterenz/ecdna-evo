@@ -706,7 +706,7 @@ impl EcDNADistributionNPlus {
 
 /// An event defines the outcome that the simulation must simulate for an
 /// iteration
-#[derive(PartialEq, Debug, Copy, Clone)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
 pub enum StartRun {
     // The initialization event, should be only used in the constructor
     Init,
@@ -715,7 +715,7 @@ pub enum StartRun {
     Restart,
 }
 
-#[derive(PartialEq, Debug, Copy, Clone)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
 pub enum EndRun {
     /// The event sampled stop the simulation because there are no individual
     /// left

@@ -13,7 +13,7 @@ use rand_pcg::Pcg64Mcg;
 /// represent actual time but it is relative to the previous simulated `Event`.
 pub type GillespieTime = f32;
 
-#[derive(PartialEq, Debug, Copy, Clone)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
 pub enum AdvanceRun {
     /// Init the run
     Init,

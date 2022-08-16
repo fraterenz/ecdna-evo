@@ -273,7 +273,7 @@ impl ToFile for Entropy {
 
 /// The distribution of ecDNA copies considering the cells w/o any ecDNA copy
 /// represented as an histogram.
-#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+#[derive(Clone, PartialEq, Eq, Debug, Deserialize, Serialize)]
 pub struct EcDNADistribution {
     distribution: HashMap<DNACopy, NbIndividuals>,
     /// Number of total (`NPlus` and `NMinus`) cells
