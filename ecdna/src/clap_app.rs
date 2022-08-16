@@ -115,7 +115,7 @@ pub fn clap_app() -> Command<'static> {
             .arg(arg!(--dynamics ...)
                 .takes_value(true)
                 .possible_values(
-                    &["nplus", "nminus", "mean", "moments", "time"]
+                    &["nplus", "nminus", "mean", "moments", "time", "uneven"]
                 )
                 .multiple_values(true)
                 .help(
@@ -125,7 +125,8 @@ pub fn clap_app() -> Command<'static> {
 						\t- mean: track the mean of the ecDNA distribution for each iteration (computationally intensive).\n\
 						\t- moments: track the variance and the mean of the ecDNA distribution for each iteration (computationally intensive).\n\
                         \t- time: track the Gillespie time for each iteration.\n\
-                        If none is specified, simulate all.\n"
+                        \t- uneven: track the number of complete uneven segregations.\n\
+                        If none is specified, simulate nplus and nminus.\n"
 					)
             )
             .arg(Arg::new("sizes")

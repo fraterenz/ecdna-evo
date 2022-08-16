@@ -82,6 +82,8 @@ pub enum Dynamic {
     Moments,
     /// The Gillespie time for each iteration, that is how
     GillespieT,
+    /// The complete uneven segregations
+    Uneven,
 }
 
 /// Tracks the cells w/ ecDNA per iteration per default.
@@ -109,6 +111,7 @@ impl Dynamic {
                 Moments::new(max_iter, initial_ecdna).map(Dynamic::Moments)
             }
             "time" => Ok(Dynamic::GillespieT(GillespieT::new(max_iter))),
+            "uneven" => Ok(Dynamic::Uneven(Uneven::new(max_iter))),
             _ => panic!("Cannot create dynamic from {}", kind),
         }
     }
@@ -345,6 +348,49 @@ impl GillespieT {
 impl Save for GillespieT {
     fn save(&self, path2file: &Path) -> anyhow::Result<()> {
         write2file(&self.time, path2file, None, false)?;
+        Ok(())
+    }
+}
+
+/// Store the number of complete uneven segregations over time.
+///
+/// A complete uneven segregation occurs whenever a `NMinus` cell originates
+/// from a `NPlus` cell division, i.e. the `NPlus` cell segregates all its
+/// ecDNA copies to one daughter cell.
+#[derive(Clone, Default, Debug)]
+pub struct Uneven {
+    /// Uneven segregation is 1, else 0
+    uneven_segregations: Vec<u8>,
+    name: String,
+}
+
+impl Name for Uneven {
+    fn get_name(&self) -> &String {
+        &self.name
+    }
+}
+
+impl Clear for Uneven {
+    fn clear(&mut self) {
+        self.uneven_segregations.clear()
+    }
+}
+
+impl Uneven {
+    pub fn new(max_iter: usize) -> Self {
+        let mut uneven_segregations = Vec::with_capacity(max_iter);
+        uneven_segregations.push(0u8);
+        Uneven { uneven_segregations, name: "uneven".to_string() }
+    }
+
+    pub fn store_uneven(&mut self, uneven: u8) {
+        self.uneven_segregations.push(uneven)
+    }
+}
+
+impl Save for Uneven {
+    fn save(&self, path2file: &Path) -> anyhow::Result<()> {
+        write2file(&self.uneven_segregations, path2file, None, false)?;
         Ok(())
     }
 }

@@ -920,8 +920,6 @@ impl Dynamical {
                     let mut dynamics = HashSet::with_capacity(4);
                     dynamics.insert("nplus".to_owned());
                     dynamics.insert("nminus".to_owned());
-                    dynamics.insert("moments".to_owned());
-                    dynamics.insert("time".to_owned());
                     dynamics
                 }
             };
