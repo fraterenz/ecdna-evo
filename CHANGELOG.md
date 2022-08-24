@@ -76,3 +76,9 @@ need more memory)
 loss of precision in converting `u16` to `f16`
 - Dont panic when computing the variance when there are no N+ cells, but return 0
 
+## 0.4.3
+### Changes
+Ignore the test `data::tests::ecdna_undersample_reproducible_different_trials`.
+Add new dynamics `Uneven` which tracks the number of complete uneven segregation
+events.
+Simplify `any_individual_left` by removing overflow checks.

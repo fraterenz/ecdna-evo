@@ -730,6 +730,7 @@ mod tests {
     }
 
     #[quickcheck]
+    #[ignore]
     fn ecdna_undersample_reproducible_different_trials(
         seed: u64,
         distribution: ValidEcDNADistributionFixture,
