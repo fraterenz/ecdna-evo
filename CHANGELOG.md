@@ -78,7 +78,7 @@ loss of precision in converting `u16` to `f16`
 
 ## 0.4.3
 ### Changes
-Ignore the test `data::tests::ecdna_undersample_reproducible_different_trials`.
-Add new dynamics `Uneven` which tracks the number of complete uneven segregation
+- Ignore the test `data::tests::ecdna_undersample_reproducible_different_trials`.
+- Add new dynamics `Uneven` which tracks the number of complete uneven segregation
 events.
-Simplify `any_individual_left` by removing overflow checks.
+- Simplify `any_individual_left` by removing overflow checks.
