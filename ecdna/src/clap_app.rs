@@ -179,6 +179,7 @@ pub fn clap_app() -> Command<'static> {
         .arg(
             Arg::new("savedir")
             .long("savedir")
+            .value_name("DIR")
             .required(false)
             .takes_value(true)
             .help_heading("CONFIG")
