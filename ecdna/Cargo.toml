@@ -3,7 +3,7 @@ name = "ecdna"
 version = "0.4.3"
 edition = "2021"
 authors = ["Francesco Terenzi"]
-description = "Evolutionary Models of extrachromosomal DNAs"
+description = "Evolutionary models of extra-chromosomal DNAs (ecDNAs)"
 readme = "README.md"
 
 [dependencies]

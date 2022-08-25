@@ -249,7 +249,7 @@ dependencies = [
 
 [[package]]
 name = "ecdna"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "chrono",
@@ -277,7 +277,7 @@ dependencies = [
 
 [[package]]
 name = "ecdna-data"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "derive_builder",
@@ -296,7 +296,7 @@ dependencies = [
 
 [[package]]
 name = "ecdna-dynamics"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "ecdna-data",
@@ -309,7 +309,7 @@ dependencies = [
 
 [[package]]
 name = "ecdna-sim"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "enum_dispatch",
