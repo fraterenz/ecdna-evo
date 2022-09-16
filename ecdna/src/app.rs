@@ -545,8 +545,9 @@ impl DynamicalApp {
             "{}",
             Experiment::new(run.nb_cells(), *sample_size)
         ));
+        let is_undersampled = tumour_size > sample_size;
 
-        let (mut dynamics, run) = if tumour_size > sample_size {
+        let (mut dynamics, run) = if is_undersampled {
             let idx = run.idx;
             let run = run.undersample_ecdna(sample_size, idx);
             run.save_ecdna_statistics(
