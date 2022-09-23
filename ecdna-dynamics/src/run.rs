@@ -181,28 +181,7 @@ impl Run<Started> {
     pub fn variance_ecdna(&self, mean: &f32) -> f32 {
         //! Variance of ecDNA copy number distribution within the population for
         //! the current iteration.
-        if self.state.system.ecdna_distr.no_nplus() {
-            if self.state.system.ecdna_distr.is_empty() {
-                panic!(
-                "Cannot compute the variance of an empty ecDNA distribution"
-            )
-            } else {
-                0f32
-            }
-        } else {
-            let nb_nplus = self.get_nplus();
-            let nb_nminus = self.get_nminus();
-
-            self.state.system.ecdna_distr[..]
-                .iter()
-                .chain(std::iter::repeat(&0u16).take(*nb_nminus as usize))
-                .map(|value| {
-                    let diff = mean - (*value as f32);
-                    diff * diff
-                })
-                .sum::<f32>()
-                / ((nb_nminus + nb_nplus) as f32)
-        }
+        self.state.system.ecdna_distr.compute_variance(mean, self.get_nminus())
     }
 
     pub fn get_gillespie_event(&self) -> &Event {
@@ -702,6 +681,31 @@ impl EcDNADistributionNPlus {
             mean
         }
     }
+
+    fn compute_variance(&self, mean: &f32, nb_nminus: &NbIndividuals) -> f32 {
+        let is_mean_not_zero = (*mean - 0f32).abs() > f32::EPSILON;
+        if is_mean_not_zero {
+            if self.no_nplus() {
+                panic!(
+                "Cannot compute variance: found mean>0 and no nplus in the ecDNA distribution"
+            )
+            } else {
+                self.0
+                    .iter()
+                    .chain(std::iter::repeat(&0u16).take(*nb_nminus as usize))
+                    .map(|value| {
+                        let diff = mean - (*value as f32);
+                        diff * diff
+                    })
+                    .sum::<f32>()
+                    / ((nb_nminus + self.get_nplus_cells()) as f32)
+            }
+        } else if !self.no_nplus() {
+            panic!("Cannot compute variance: found mean of zero and non-emtpy distribution")
+        } else {
+            0f32
+        }
+    }
 }
 
 /// An event defines the outcome that the simulation must simulate for an
@@ -884,5 +888,59 @@ mod tests {
         let ntot = 2u64;
         let ecdna = EcDNADistributionNPlus(vec![60u16]);
         assert_eq!(30f32, ecdna.compute_mean(&ntot));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_compute_variance_no_zero_mean_empty_distr_no_nminus() {
+        let mean = 10f32;
+        let nb_nminus = 0u64;
+        EcDNADistributionNPlus(vec![]).compute_variance(&mean, &nb_nminus);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_compute_variance_no_zero_mean_empty_distr_with_nminus() {
+        let mean = 10f32;
+        let nb_nminus = 10u64;
+        EcDNADistributionNPlus(vec![]).compute_variance(&mean, &nb_nminus);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_compute_variance_zero_mean_with_distr_no_nminus() {
+        let mean = 0f32;
+        let nb_nminus = 0u64;
+        EcDNADistributionNPlus(vec![1u16]).compute_variance(&mean, &nb_nminus);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_compute_variance_zero_mean_with_distr_with_nminus() {
+        let mean = 0f32;
+        let nb_nminus = 10u64;
+        EcDNADistributionNPlus(vec![1u16]).compute_variance(&mean, &nb_nminus);
+    }
+
+    #[test]
+    fn test_compute_variance_no_nminus() {
+        let mean = 1f32;
+        let nb_nminus = 0u64;
+        assert_eq!(
+            0f32,
+            EcDNADistributionNPlus(vec![1u16, 1u16])
+                .compute_variance(&mean, &nb_nminus)
+        )
+    }
+
+    #[test]
+    fn test_compute_variance_with_nminus() {
+        let mean = 1f32;
+        let nb_nminus = 1u64;
+        assert_eq!(
+            0.6666667f32,
+            EcDNADistributionNPlus(vec![1u16, 2u16])
+                .compute_variance(&mean, &nb_nminus)
+        )
     }
 }
