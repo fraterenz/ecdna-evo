@@ -213,13 +213,6 @@ impl ToFile for EcDNADistribution {
 #[derive(Clone, PartialEq, Debug, Default, Deserialize, Serialize)]
 pub struct Mean(pub f32);
 
-impl ToFile for Mean {
-    fn save(&self, path2file: &Path) -> anyhow::Result<()> {
-        write2file(&[self.0], path2file, None, false)?;
-        Ok(())
-    }
-}
-
 macro_rules! impl_deref {
     ($t:ty) => {
         impl Deref for $t {
@@ -236,6 +229,21 @@ impl_deref!(Mean);
 impl_deref!(Frequency);
 impl_deref!(Entropy);
 
+macro_rules! impl_to_file {
+    ($t:ty) => {
+        impl ToFile for $t {
+            fn save(&self, path2file: &Path) -> anyhow::Result<()> {
+                write2file(&[self.0], path2file, None, false)?;
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_to_file!(Mean);
+impl_to_file!(Frequency);
+impl_to_file!(Entropy);
+
 /// The frequency of cells with ecDNA at last iteration
 #[derive(Clone, PartialEq, Debug, Default, Deserialize, Serialize)]
 pub struct Frequency(pub f32);
@@ -248,26 +256,12 @@ impl Frequency {
     }
 }
 
-impl ToFile for Frequency {
-    fn save(&self, path2file: &Path) -> anyhow::Result<()> {
-        write2file(&[self.0], path2file, None, false)?;
-        Ok(())
-    }
-}
-
 #[derive(Clone, PartialEq, Debug, Default, Deserialize, Serialize)]
 pub struct Entropy(pub f32);
 
 impl Entropy {
     pub fn new(initial_ecdna: &EcDNADistribution) -> anyhow::Result<Self> {
         initial_ecdna.entropy().map(|entropy| Entropy(entropy.0))
-    }
-}
-
-impl ToFile for Entropy {
-    fn save(&self, path2file: &Path) -> anyhow::Result<()> {
-        write2file(&[self.0], path2file, None, false)?;
-        Ok(())
     }
 }
 
