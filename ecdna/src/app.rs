@@ -547,26 +547,30 @@ impl DynamicalApp {
         ));
         let is_undersampled = tumour_size > sample_size;
 
-        let (mut dynamics, run) = if is_undersampled {
-            let idx = run.idx;
-            let run = run.undersample_ecdna(sample_size, idx);
-            run.save_ecdna_statistics(
-                &abspath_with_undersampling.join(format!("{}", timepoint)),
-            );
-            let run = self.growth.restart_growth(run, sample_size)?;
-            if let Growth::CellCulture(_) = self.growth {
-                // remove all dynamics except the last entry
-                for d in dynamics.iter_mut() {
-                    d.update(&run);
+        let (mut dynamics, run) =
+            if is_undersampled {
+                let idx = run.idx;
+                run.save_ecdna_statistics(&abspath_with_undersampling.join(
+                    format!("timepoint_{}_before_subsampling", timepoint),
+                ));
+                let run = run.undersample_ecdna(sample_size, idx);
+                run.save_ecdna_statistics(
+                    &abspath_with_undersampling.join(format!("{}", timepoint)),
+                );
+                let run = self.growth.restart_growth(run, sample_size)?;
+                if let Growth::CellCulture(_) = self.growth {
+                    // remove all dynamics except the last entry
+                    for d in dynamics.iter_mut() {
+                        d.update(&run);
+                    }
                 }
-            }
-            (dynamics, run)
-        } else {
-            run.save_ecdna_statistics(
-                &abspath_with_undersampling.join(format!("{}", timepoint)),
-            );
-            (dynamics, run.into())
-        };
+                (dynamics, run)
+            } else {
+                run.save_ecdna_statistics(
+                    &abspath_with_undersampling.join(format!("{}", timepoint)),
+                );
+                (dynamics, run.into())
+            };
 
         for d in dynamics.iter() {
             let mut file2path = abspath_with_undersampling
