@@ -410,6 +410,7 @@ impl Perform for BayesianApp {
                     initial_state,
                     rates.clone(),
                     Seed::new(seed_run),
+                    self.patient.samples[0].tumour_size, //assume same size
                     &mut rng,
                 );
 
@@ -535,15 +536,11 @@ impl DynamicalApp {
         timepoint: usize,
     ) -> anyhow::Result<(Run<Started>, Dynamics)> {
         ensure!(tumour_size >= sample_size);
-        ensure!(
-            !run.get_ecdna().is_empty(),
-            "Found an empty ecDNA distribution for the run"
-        );
 
         let filename = run.filename();
         let abspath_with_undersampling = abspath.to_owned().join(format!(
             "{}",
-            Experiment::new(run.nb_cells(), *sample_size)
+            Experiment::new(run.population_size, *sample_size)
         ));
         let is_undersampled = tumour_size > sample_size;
 
@@ -677,6 +674,7 @@ impl Perform for DynamicalApp {
                     initial_state,
                     self.rates.clone(),
                     Seed::new(seed_run),
+                    self.experiments[0].tumour_cells, //assume same size
                     &mut rng,
                 );
 

@@ -37,8 +37,10 @@ pub struct Run<S: RunState> {
     bd_process: BirthDeathProcess,
     /// Initial state of the system
     pub init_state: InitialState,
-    /// How many times the run has been restarted (longitudinal analyses)
+    /// Number of times the run has been restarted (longitudinal analyses)
     pub restarted: u8,
+    /// Number of cells to be simulated
+    pub population_size: u64,
     seed: Seed,
     rng: Pcg64Mcg,
 }
@@ -95,6 +97,7 @@ impl From<Run<Ended>> for Run<Started> {
             restarted,
             seed: run.seed,
             rng: run.rng,
+            population_size: run.population_size,
         }
     }
 }
@@ -119,6 +122,7 @@ impl Run<Started> {
         init_state: InitialState,
         rates: Rates,
         seed: Seed,
+        population_size: u64,
         rng: &mut Pcg64Mcg,
     ) -> Self {
         //! Initialize a stoachastic realization of a birth-death process.
@@ -139,6 +143,7 @@ impl Run<Started> {
             },
             restarted: 0,
             seed,
+            population_size,
             rng: Pcg64Mcg::seed_from_u64(*seed.get_seed()),
         }
     }
@@ -271,6 +276,7 @@ impl Run<Started> {
             restarted,
             seed,
             rng,
+            population_size: *max_cells,
         }
     }
 
@@ -390,6 +396,7 @@ impl Run<Ended> {
             },
             restarted: self.restarted,
             seed: self.seed,
+            population_size: self.population_size,
             rng: self.rng,
         }
     }
