@@ -66,18 +66,18 @@ impl BirthDeathProcess {
         //!
         //! Depending on the rates, the stochastic process can either be:
         //!
-        //! 1. `PureBirth`, that is `d1` and `d2` are equal to zero: individuals
+        //! 1. [`PureBirth`], that is `d1` and `d2` are equal to zero: individuals
         //! of both populations can only proliferate (there is no death)
         //!
-        //! 2. `BirthDeath1`, that is `d1` is not zero and `d2` is zero:
+        //! 2. [`BirthDeath1`], that is `d1` is not zero and `d2` is zero:
         //! individuals of the first population can die but individuals of the
         //! second population cannot
         //!
-        //! 3. `BirthDeath1`, that is `d1` is zero and `d2` is not zero:
+        //! 3. [`BirthDeath2`], that is `d1` is zero and `d2` is not zero:
         //! individuals of the first population cannot die but
         //! individuals of the second population can
         //!
-        //! 4. `BirthDeath1`, that is `d1` is not zero and `d2` is not zero:
+        //! 4. [`BirthDeath`], that is `d1` is not zero and `d2` is not zero:
         //! individuals of both populations can proliferate and die
 
         let f1 = match rates.fitness1.0 {
@@ -135,7 +135,8 @@ impl BirthDeathProcess {
         pop2: NbIndividuals,
         rng: &mut Pcg64Mcg,
     ) -> Event {
-        //! Determine the next `Event` using the Gillespie algorithm.
+        //! Determine the next [`Event`] using the ["First-reaction" Gillespie
+        //! algorithm](https://doi.org/10.1016/0021-9991(76)90041-3).
         assert!(any_individual_left(pop1, pop2));
         match self.get_rates() {
             [r1, r2, ..] => assert!(r1.is_finite() | r2.is_finite()),
