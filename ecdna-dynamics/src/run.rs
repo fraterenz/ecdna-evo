@@ -1,6 +1,7 @@
 use crate::dynamics::{
     Dynamic, Dynamics, GillespieT, MeanDyn, Moments, NMinus, NPlus, Uneven,
 };
+use crate::segregation::Segregation;
 use anyhow::ensure;
 use ecdna_data::data::{
     Data, EcDNADistribution, EcDNASummary, Entropy, Frequency, Mean,
@@ -11,7 +12,6 @@ use ecdna_sim::rate::{GetRates, Range, Rates};
 use ecdna_sim::{NbIndividuals, Seed};
 use enum_dispatch::enum_dispatch;
 use rand::{Rng, SeedableRng};
-use rand_distr::{Binomial, Distribution};
 use rand_pcg::Pcg64Mcg;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -195,6 +195,7 @@ impl Run<Started> {
 
     pub fn simulate(
         mut self,
+        segregation: &Segregation,
         dynamics: &mut Option<&mut Dynamics>,
         max_cells: &NbIndividuals,
         max_iter: usize,
@@ -242,7 +243,7 @@ impl Run<Started> {
                     *self.get_nminus(),
                     &mut self.rng,
                 );
-                self.update(event, dynamics);
+                self.update(event, segregation, dynamics);
                 iter += 1;
             }
         };
@@ -346,6 +347,7 @@ impl Run<Started> {
     fn update(
         &mut self,
         next_event: Event,
+        segregation: &Segregation,
         dynamics: &mut Option<&mut Dynamics>,
     ) {
         //! Update the run for the next iteration, according to the `next_event`
@@ -354,7 +356,7 @@ impl Run<Started> {
         if let AdvanceRun::Init = next_event.kind {
             panic!("Init state can only be used to initialize simulation!")
         }
-        self.state.system.update(next_event, &mut self.rng);
+        self.state.system.update(next_event, segregation, &mut self.rng);
         if let Some(dynamics) = dynamics {
             for d in dynamics.iter_mut() {
                 // updates all dynamics according to the new state
@@ -506,17 +508,22 @@ struct System {
 }
 
 impl System {
-    fn update(&mut self, event: Event, rng: &mut Pcg64Mcg) {
+    fn update(
+        &mut self,
+        event: Event,
+        segregation: &Segregation,
+        rng: &mut Pcg64Mcg,
+    ) {
         //! Update the state of the system based on event sampled from Gillespie
         match event.kind {
             AdvanceRun::Proliferate1 => {
                 // Generate randomly a `NPlus` cell that will proliferate next
                 // and update the ecdna distribution as well.
-                let uneven = self.ecdna_distr.proliferate_nplus(rng);
-                if uneven {
+                self.is_uneven =
+                    self.ecdna_distr.proliferate_nplus(segregation, rng);
+                if self.is_uneven {
                     self.nminus += 1;
                 }
-                self.is_uneven = uneven;
             }
             AdvanceRun::Proliferate2 => {
                 self.nminus += 1;
@@ -606,7 +613,11 @@ impl EcDNADistributionNPlus {
         self.0.swap_remove(idx);
     }
 
-    fn proliferate_nplus(&mut self, rng: &mut Pcg64Mcg) -> bool {
+    fn proliferate_nplus(
+        &mut self,
+        segregation: &Segregation,
+        rng: &mut Pcg64Mcg,
+    ) -> bool {
         //! Updates the distribution of ecdna per cell and returns `true` if a
         //! new `NMinus` cell appeared after division, i.e. if a complete
         //! uneven random segregation occurred.
@@ -616,7 +627,7 @@ impl EcDNADistributionNPlus {
         //! whereas the other cell doesn't get any, thus it's a `NMinus` cell.
         let idx = self.pick_nplus_cell(rng);
         let (daughter1, daughter2, uneven_segregation) =
-            self.dna_segregation(idx, rng);
+            self.dna_segregation(idx, segregation, rng);
 
         if uneven_segregation {
             self.0[idx] = daughter1 + daughter2; // n + 0 = n = 0 + n
@@ -630,37 +641,27 @@ impl EcDNADistributionNPlus {
     fn dna_segregation(
         &self,
         idx: usize,
+        segregation: &Segregation,
         rng: &mut Pcg64Mcg,
     ) -> (DNACopy, DNACopy, bool) {
         //! Simulate the proliferation of one `NPlus` cell and returns whether a
         //! uneven segregation occured (i.e. one daughter cell inherited all
-        //! ecDNA material from mother cells). When a `idx` `NPlus` cell
-        //! proliferates, we multiply the ec_dna present in that cell by the
-        //! `FITNESS` of the `NPlus` cells compared to the `NMinus` cells (e.g.
-        //! 1 for the neutral case). Then, we distribute the multiplied ec_dna
-        //! material among two daughter cells according to a Binomial
-        //! distribution with number of samples equal to the multiplied ec_dna
-        //! material and the probability of 1/2.
+        //! ecDNA material from mother cells).
+        //! Double the ecDNA content and then distribute the multiplied ec_dna
+        //! material among two daughter cells according to [`Segregate`].
 
         // Double the number of `NPlus` from the idx cell before proliferation
-        // because a parental cell gives rise to 2 daughter cells. We also
-        // multiply by `FITNESS` for models where `NPlus` cells have an
-        // advantage over `NMinus` cells
+        // because a parental cell gives rise to 2 daughter cells.
         let available_dna: DNACopy = self.0[idx]
             .checked_add(self.0[idx])
             .expect("Overflow while segregating DNA into two daughter cells");
-        assert_ne!(available_dna, 0);
 
-        // draw the ec_dna that will be given to the daughter cells
-        let bin = Binomial::new(available_dna as u64, 0.5).unwrap();
-        let d_1: DNACopy = bin.sample(rng).try_into().unwrap();
-        let d_2: DNACopy = available_dna - d_1;
-        assert_ne!(d_1 + d_2, 0);
+        let (k1, k2) = segregation.segregate(available_dna, rng);
 
         // uneven_segregation happens if there is at least one zero
-        let uneven = d_1 == 0 || d_2 == 0;
+        let uneven = k1 == 0 || k2 == 0;
 
-        (d_1, d_2, uneven)
+        (k1, k2, uneven)
     }
 
     fn compute_mean(&self, ntot: &NbIndividuals) -> f32 {

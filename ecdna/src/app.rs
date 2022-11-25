@@ -6,10 +6,16 @@ use ecdna_data::{
     data::{EcDNADistribution, EcDNASummary, Entropy, Frequency, Mean},
     patient::{Patient, SequencingData, SequencingDataBuilder},
 };
-use ecdna_dynamics::dynamics::{Clear, Dynamic, Dynamics, Name, Save};
-use ecdna_dynamics::run::{
-    CellCulture, ContinueGrowth, DNACopy, Ended, Growth, InitialState,
-    PatientStudy, Run, Started, Update,
+use ecdna_dynamics::{
+    dynamics::{Clear, Dynamic, Dynamics, Name, Save},
+    segregation::Segregation,
+};
+use ecdna_dynamics::{
+    run::{
+        CellCulture, ContinueGrowth, DNACopy, Ended, Growth, InitialState,
+        PatientStudy, Run, Started, Update,
+    },
+    segregation::{BinomialNoNMinusSegregation, BinomialSegregation},
 };
 use ecdna_sim::{rate::Rates, NbIndividuals, Seed};
 use enum_dispatch::enum_dispatch;
@@ -231,6 +237,7 @@ pub struct BayesianApp {
     pub mean: Mean,
     pub frequency: Frequency,
     pub entropy: Entropy,
+    pub segregation: Segregation,
     pub growth: Growth,
     pub seed: u64,
     relative_path: PathBuf,
@@ -272,6 +279,13 @@ impl BayesianApp {
             _ => unreachable!("Possible vaules are patient or culture"),
         };
 
+        let segregation = match config.segregation.as_ref() {
+            "deterministic" => Segregation::Deterministic,
+            "binomial" => Segregation::Random(BinomialSegregation.into()),
+            "nonminus" => Segregation::Random(BinomialNoNMinusSegregation(BinomialSegregation).into()),
+            _ => unreachable!("Possible values are `deterministic`, `binomial` or `nonminus`")
+            };
+
         let app = BayesianApp {
             patient,
             runs: config.runs,
@@ -284,6 +298,7 @@ impl BayesianApp {
             frequency: summary.frequency,
             entropy: summary.entropy,
             growth,
+            segregation,
             seed: config.seed,
             relative_path,
             absolute_path,
@@ -419,6 +434,7 @@ impl Perform for BayesianApp {
                     self.patient.samples.iter().enumerate()
                 {
                     let run_ended = run.simulate(
+                        &self.segregation,
                         &mut None,
                         &sample.tumour_size,
                         rates.estimate_max_iter(&sample.tumour_size),
@@ -457,6 +473,7 @@ pub struct DynamicalApp {
     pub ecdna: EcDNADistribution,
     pub experiments: Experiments,
     pub growth: Growth,
+    pub segregation: Segregation,
     pub seed: u64,
     relative_path: PathBuf,
     absolute_path: PathBuf,
@@ -505,6 +522,13 @@ impl DynamicalApp {
             _ => unreachable!("Possible vaules are patient or culture"),
         };
 
+        let segregation = match config.segregation.as_ref() {
+            "deterministic" => Segregation::Deterministic,
+            "binomial" => Segregation::Random(BinomialSegregation.into()),
+            "nonminus" => Segregation::Random(BinomialNoNMinusSegregation(BinomialSegregation).into()),
+            _ => unreachable!("Possible values are `deterministic`, `binomial` or `nonminus`")
+            };
+
         let app = DynamicalApp {
             patient_name: config.patient_name,
             runs: config.runs,
@@ -513,6 +537,7 @@ impl DynamicalApp {
             size: config.cells,
             ecdna,
             growth,
+            segregation,
             seed: config.seed,
             relative_path,
             absolute_path,
@@ -684,6 +709,7 @@ impl Perform for DynamicalApp {
                 for (i, experiment) in self.experiments.iter().enumerate() {
                     // simulate and update both the run and the dynamics
                     let run_ended = run.simulate(
+                        &self.segregation,
                         &mut Some(&mut dynamics),
                         &experiment.tumour_cells,
                         self.rates.estimate_max_iter(&experiment.tumour_cells),
@@ -809,6 +835,7 @@ pub struct Bayesian {
     pub delta1: Vec<f32>,
     pub delta2: Vec<f32>,
     pub init_copies: Vec<DNACopy>,
+    pub segregation: String,
     pub seed: u64,
     pub growth: String,
     pub savedir: PathBuf,
@@ -856,6 +883,10 @@ impl Bayesian {
             savedir
         );
 
+        let segregation: String = matches
+            .value_of_t("segregation_mode")
+            .unwrap_or_else(|e| e.exit());
+
         Bayesian {
             patient,
             runs,
@@ -866,6 +897,7 @@ impl Bayesian {
             delta2,
             init_copies,
             seed,
+            segregation,
             growth,
             savedir,
             verbosity,
@@ -902,6 +934,7 @@ pub struct Dynamical {
     pub sample_sizes: Option<Vec<NbIndividuals>>,
     pub seed: u64,
     pub growth: String,
+    pub segregation: String,
     pub savedir: PathBuf,
     pub verbosity: u8,
 }
@@ -987,6 +1020,10 @@ impl Dynamical {
             println!("dynamics: {:#?}", dynamics);
         }
 
+        let segregation: String = matches
+            .value_of_t("segregation_mode")
+            .unwrap_or_else(|e| e.exit());
+
         Dynamical {
             kind: dynamics.into_iter().collect(),
             patient_name,
@@ -998,6 +1035,7 @@ impl Dynamical {
             delta1,
             delta2,
             growth,
+            segregation,
             seed,
             tumour_sizes,
             sample_sizes,

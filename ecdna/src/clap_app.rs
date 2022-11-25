@@ -160,6 +160,19 @@ pub fn clap_app() -> Command<'static> {
             .arg(arg!(--cells [value] "Maximal number of cells to simulate")
                     .default_value("10000")
                     .help_heading("CONFIG"))
+            .arg(arg!(--segregation-mode [value] "The type of ecDNA segregation used for the stochastic simulations")
+                    .possible_values(
+                        &["binomial", "nonminus", "deterministic"]
+                    )
+                    .default_value("binomial")
+                    .help(
+				    		"Possible values:\n\
+				    		\t- binomial: assumes cells can inherit a random number of ecDNA copies according to the Binomial distribution.\n\
+				    		\t- nonminus: same as Binomial, but cannot generate a complete uneven segregation event (k1=2k, k2=0 or viceversa).\n\
+				    		\t- deterministic: the two daughter cells get the same number of copies k1=k and k2=k.\n
+                            If none is specified, uses binomial as default.\n"
+				    	)
+            )
             .arg(
                 arg!(-d --distribution [FILE] "ecDNA distribution specifying the initial state of system from which the simulations will be started. \
                                                 If not specified, start simulations with one single cell with one ecDNA copy.")

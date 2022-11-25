@@ -302,6 +302,8 @@ dependencies = [
  "ecdna-data",
  "ecdna-sim",
  "enum_dispatch",
+ "quickcheck",
+ "quickcheck_macros",
  "rand",
  "rand_distr",
  "rand_pcg",
