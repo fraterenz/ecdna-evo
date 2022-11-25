@@ -160,7 +160,7 @@ pub fn clap_app() -> Command<'static> {
             .arg(arg!(--cells [value] "Maximal number of cells to simulate")
                     .default_value("10000")
                     .help_heading("CONFIG"))
-            .arg(arg!(--segregation-mode [value] "The type of ecDNA segregation used for the stochastic simulations")
+            .arg(arg!(--segregation [value] "The type of ecDNA segregation used for the stochastic simulations")
                     .possible_values(
                         &["binomial", "nonminus", "deterministic"]
                     )

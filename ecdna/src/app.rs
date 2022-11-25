@@ -883,9 +883,8 @@ impl Bayesian {
             savedir
         );
 
-        let segregation: String = matches
-            .value_of_t("segregation_mode")
-            .unwrap_or_else(|e| e.exit());
+        let segregation: String =
+            matches.value_of_t("segregation").unwrap_or_else(|e| e.exit());
 
         Bayesian {
             patient,
@@ -1020,9 +1019,8 @@ impl Dynamical {
             println!("dynamics: {:#?}", dynamics);
         }
 
-        let segregation: String = matches
-            .value_of_t("segregation_mode")
-            .unwrap_or_else(|e| e.exit());
+        let segregation: String =
+            matches.value_of_t("segregation").unwrap_or_else(|e| e.exit());
 
         Dynamical {
             kind: dynamics.into_iter().collect(),
