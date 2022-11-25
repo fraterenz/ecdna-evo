@@ -82,3 +82,12 @@ loss of precision in converting `u16` to `f16`
 - Add new dynamics `Uneven` which tracks the number of complete uneven segregation
 events.
 - Simplify `any_individual_left` by removing overflow checks.
+
+## 0.4.4
+### Fixed
+- Fix path to save data with cell death
+- Fix computation of the variance
+
+### Changes
+- Save ecDNA statistics also before subsampling `dynamics`
+- Add segregation mode to perform the nonminus experiment

@@ -51,9 +51,12 @@ impl Segregate for BinomialSegregation {
     ) -> DNACopy {
         // unwrap because p=0.5 will never raise a ProbabilityTooSmall or
         // ProbabilityTooLarge error
-        let bin = Binomial::new(copies as u64, 0.5).unwrap();
         // downcast u64 to u16 will never fail because `copies` is u16
-        bin.sample(rng).try_into().unwrap()
+        Binomial::new(copies as u64, 0.5)
+            .unwrap()
+            .sample(rng)
+            .try_into()
+            .unwrap()
     }
 }
 

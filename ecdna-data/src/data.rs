@@ -691,6 +691,7 @@ mod tests {
         );
     }
 
+    #[ignore]
     #[quickcheck]
     fn ecdna_undersample_sample_reproducible_different_trials(
         seed: u64,
