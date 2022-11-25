@@ -169,9 +169,9 @@ pub fn clap_app() -> Command<'static> {
 				    		"Possible values:\n\
 				    		\t- binomial: assumes cells can inherit a random number of ecDNA copies according to the Binomial distribution.\n\
 				    		\t- nonminus: same as Binomial, but cannot generate a complete uneven segregation event (k1=2k, k2=0 or viceversa).\n\
-				    		\t- deterministic: the two daughter cells get the same number of copies k1=k and k2=k.\n
-                            If none is specified, uses binomial as default.\n"
-				    	)
+				    		\t- deterministic: the two daughter cells get the same number of copies k1=k and k2=k.\n"
+                    )
+                    .help_heading("CONFIG")
             )
             .arg(
                 arg!(-d --distribution [FILE] "ecDNA distribution specifying the initial state of system from which the simulations will be started. \
