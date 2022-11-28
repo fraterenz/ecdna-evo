@@ -1,6 +1,6 @@
 //! The ecDNA segregation rules applied upon proliferation of a cell with
 //! ecDNAs.
-use ecdna_data::DNACopy;
+use ecdna_data::{DNACopy, DNACopySegregating};
 use enum_dispatch::enum_dispatch;
 use rand_distr::{Binomial, Distribution};
 use rand_pcg::Pcg64Mcg;
@@ -17,7 +17,7 @@ use rand_pcg::Pcg64Mcg;
 /// the cell with `k` copies that has just divided.
 ///
 /// Note that `Segregate` only takes care of the second point, that is the
-/// splitting of the `2k` ecDNA copies, which is defined by [`Segregation`].
+/// splitting of the `2k` ecDNA copies.
 ///
 #[enum_dispatch]
 pub trait Segregate {
@@ -25,7 +25,7 @@ pub trait Segregate {
     /// `k2=2k-k1`.
     fn ecdna_segregation(
         &self,
-        copies: DNACopy,
+        copies: DNACopySegregating,
         rng: &mut Pcg64Mcg,
     ) -> DNACopy;
 }
@@ -46,12 +46,13 @@ pub struct BinomialNoNMinusSegregation(pub BinomialSegregation);
 impl Segregate for BinomialSegregation {
     fn ecdna_segregation(
         &self,
-        copies: DNACopy,
+        copies: DNACopySegregating,
         rng: &mut Pcg64Mcg,
     ) -> DNACopy {
         // unwrap because p=0.5 will never raise a ProbabilityTooSmall or
         // ProbabilityTooLarge error
         // downcast u64 to u16 will never fail because `copies` is u16
+        let copies: DNACopy = DNACopy::from(copies);
         Binomial::new(copies as u64, 0.5)
             .unwrap()
             .sample(rng)
@@ -63,14 +64,11 @@ impl Segregate for BinomialSegregation {
 impl Segregate for BinomialNoNMinusSegregation {
     fn ecdna_segregation(
         &self,
-        copies: DNACopy,
+        copies: DNACopySegregating,
         rng: &mut Pcg64Mcg,
     ) -> DNACopy {
-        //! # Panics
-        //! Panics if `copies` is 1 or 0.
-        assert!(copies > 1);
         let mut k1: DNACopy = 0;
-        while k1 == 0 || k1 == copies {
+        while k1 == 0 || k1 == DNACopy::from(copies) {
             k1 = self.0.ecdna_segregation(copies, rng);
         }
         k1
@@ -89,140 +87,135 @@ pub enum Segregation {
 }
 
 impl Segregation {
-    //! Segregate the ecDNA `copies` into two partitions.
     pub fn segregate(
         &self,
         copies: DNACopy,
         rng: &mut Pcg64Mcg,
     ) -> (DNACopy, DNACopy) {
-        //! Take `copies` ecDNAs and split them into `k1` and `k2` ecDNA
-        //! copies.
+        //! Double `copies` ecDNAs and split them into `k1` and `k2`.
         //! # Panics
-        //! Panics when `copies` is zero.
-        assert_ne!(copies, 0);
-        let k1 = match self {
-            Segregation::Random(seg) => seg.ecdna_segregation(copies, rng),
-            Segregation::Deterministic => copies / 2,
-        };
-        let k2 = copies - k1;
-        (k1, k2)
+        //! Panics when `copies` whether is zero or one.
+        //!
+        //! Panics also when overflow error, that is when `DNACopy >= u16::MAX / 2`.
+        // Double the number of `NPlus` from the idx cell before proliferation
+        // because a parental cell gives rise to 2 daughter cells.
+        let doubled_copies: DNACopy = copies
+            .checked_add(copies)
+            .expect("Overflow while segregating DNA into two daughter cells");
+
+        // check if doubled_copies is greater than 1 (also for the
+        // deterministic case)
+        let segregating_copies =
+            DNACopySegregating::try_from(doubled_copies).expect("Cannot cast");
+        match self {
+            Segregation::Random(seg) => {
+                let k1 = seg.ecdna_segregation(segregating_copies, rng);
+                (k1, doubled_copies - k1)
+            }
+            Segregation::Deterministic => (copies, copies),
+        }
     }
 }
 
-/// The random segregation rule will be applied upon ecDNA segregation.
+/// The ecDNA random segregation rule applied upon cell division.
 #[enum_dispatch[Segregate]]
 #[derive(Clone, Debug, Copy)]
 pub enum RandomSegregation {
-    /// Perform the random segregation using the [`BinomialSegregation`].
+    /// Perform the random segregation using a [`BinomialSegregation`] model.
     BinomialSegregation,
+    /// Perform the random segregation using a Binomial segregation model but
+    /// without the possibility of generating a complete uneven segregation,
+    /// see [`BinomialNoNMinusSegregation`].
     BinomialNoNMinusSegregation,
 }
 
 #[cfg(test)]
 mod tests {
-    use rand::SeedableRng;
-
     use super::*;
     use quickcheck::{Arbitrary, Gen};
+    use rand::SeedableRng;
 
     #[derive(Clone, Debug)]
-    struct NonZeroDNACopy(DNACopy);
+    struct AvoidOverflowDNACopy(DNACopy);
 
-    impl Arbitrary for NonZeroDNACopy {
-        fn arbitrary(g: &mut Gen) -> NonZeroDNACopy {
+    #[derive(Clone, Debug)]
+    struct DNACopySegregatingGreatherThanOne(DNACopySegregating);
+
+    impl Arbitrary for DNACopySegregatingGreatherThanOne {
+        fn arbitrary(g: &mut Gen) -> DNACopySegregatingGreatherThanOne {
             let mut copy = DNACopy::arbitrary(g);
-            while copy == 0 {
+            while copy <= 1 {
                 copy = DNACopy::arbitrary(g);
             }
-            NonZeroDNACopy(copy)
+            DNACopySegregatingGreatherThanOne(
+                DNACopySegregating::try_from(copy).unwrap(),
+            )
         }
     }
 
-    #[derive(Clone, Debug)]
-    struct NonZeroGreaterThanOneDNACopy(NonZeroDNACopy);
-
-    impl Arbitrary for NonZeroGreaterThanOneDNACopy {
-        fn arbitrary(g: &mut Gen) -> NonZeroGreaterThanOneDNACopy {
-            let mut copy = NonZeroDNACopy::arbitrary(g);
-            while copy.0 == 1 {
-                copy = NonZeroDNACopy::arbitrary(g);
+    impl Arbitrary for AvoidOverflowDNACopy {
+        fn arbitrary(g: &mut Gen) -> AvoidOverflowDNACopy {
+            let mut copy = DNACopy::arbitrary(g);
+            while copy >= (u16::MAX / 2) || copy == 0 {
+                copy = DNACopy::arbitrary(g);
             }
-            NonZeroGreaterThanOneDNACopy(copy)
+            AvoidOverflowDNACopy(copy)
         }
     }
 
     #[quickcheck]
-    fn segregate_deterministic_test(copies: NonZeroDNACopy, seed: u64) {
+    fn segregate_deterministic_test(copies: AvoidOverflowDNACopy, seed: u64) {
         let mut rng = Pcg64Mcg::seed_from_u64(seed);
-        let ecdna_copies = copies.0;
+        let ecdna_copies: DNACopy = copies.0;
         let (k1, k2) =
             Segregation::Deterministic.segregate(ecdna_copies, &mut rng);
         // uneven numbers
-        assert!(k1 == k2 || k1 + 1 == k2 || k1 == k2 + 1);
-        assert!(k1 == ecdna_copies / 2 || k2 == ecdna_copies / 2);
+        assert!(k1 == k2);
+        assert!(ecdna_copies == k1);
     }
 
     #[test]
     #[should_panic]
     fn segregate_deterministic_0_copies_test() {
         let mut rng = Pcg64Mcg::seed_from_u64(26);
-        let ecdna_copies = 0;
-        Segregation::Deterministic.segregate(ecdna_copies, &mut rng);
+        Segregation::Deterministic.segregate(0, &mut rng);
     }
 
     #[quickcheck]
-    fn segregate_random_binomial_test(copies: NonZeroDNACopy, seed: u64) {
+    fn segregate_random_binomial_test(
+        copies: DNACopySegregatingGreatherThanOne,
+        seed: u64,
+    ) {
         let mut rng = Pcg64Mcg::seed_from_u64(seed);
         let ecdna_copies = copies.0;
-        let (k1, k2) = Segregation::Random(BinomialSegregation.into())
-            .segregate(ecdna_copies, &mut rng);
-        assert_eq!(k1 + k2, ecdna_copies)
+        BinomialSegregation.ecdna_segregation(ecdna_copies, &mut rng);
     }
 
     #[test]
     #[should_panic]
     fn segregate_binomial_0_copies_test() {
         let mut rng = Pcg64Mcg::seed_from_u64(26);
-        let ecdna_copies = 0;
-        Segregation::Random(BinomialSegregation.into())
-            .segregate(ecdna_copies, &mut rng);
+        Segregation::Random(BinomialSegregation.into()).segregate(0, &mut rng);
     }
 
     #[quickcheck]
     fn segregate_random_binomial_no_nminus_test(
-        copies: NonZeroGreaterThanOneDNACopy,
+        copies: DNACopySegregatingGreatherThanOne,
         seed: u64,
     ) {
         let mut rng = Pcg64Mcg::seed_from_u64(seed);
-        let ecdna_copies = copies.0 .0;
-        let (k1, k2) = Segregation::Random(
-            BinomialNoNMinusSegregation(BinomialSegregation).into(),
-        )
-        .segregate(ecdna_copies, &mut rng);
-        assert_eq!(k1 + k2, ecdna_copies);
-        assert_ne!(k1, 0);
-        assert_ne!(k2, 0);
+        let ecdna_copies = copies.0;
+        BinomialNoNMinusSegregation(BinomialSegregation)
+            .ecdna_segregation(ecdna_copies, &mut rng);
     }
 
     #[test]
     #[should_panic]
     fn segregate_binomial_no_nminus_0_copies_test() {
         let mut rng = Pcg64Mcg::seed_from_u64(26);
-        let ecdna_copies = 0;
         Segregation::Random(
             BinomialNoNMinusSegregation(BinomialSegregation).into(),
         )
-        .segregate(ecdna_copies, &mut rng);
-    }
-
-    #[test]
-    #[should_panic]
-    fn segregate_binomial_no_nminus_1_copies_test() {
-        let mut rng = Pcg64Mcg::seed_from_u64(26);
-        let ecdna_copies = 1;
-        Segregation::Random(
-            BinomialNoNMinusSegregation(BinomialSegregation).into(),
-        )
-        .segregate(ecdna_copies, &mut rng);
+        .segregate(0, &mut rng);
     }
 }

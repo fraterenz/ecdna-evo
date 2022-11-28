@@ -649,14 +649,7 @@ impl EcDNADistributionNPlus {
         //! ecDNA material from mother cells).
         //! Double the ecDNA content and then distribute the multiplied ec_dna
         //! material among two daughter cells according to [`Segregate`].
-
-        // Double the number of `NPlus` from the idx cell before proliferation
-        // because a parental cell gives rise to 2 daughter cells.
-        let available_dna: DNACopy = self.0[idx]
-            .checked_add(self.0[idx])
-            .expect("Overflow while segregating DNA into two daughter cells");
-
-        let (k1, k2) = segregation.segregate(available_dna, rng);
+        let (k1, k2) = segregation.segregate(self.0[idx], rng);
 
         // uneven_segregation happens if there is at least one zero
         let uneven = k1 == 0 || k2 == 0;
