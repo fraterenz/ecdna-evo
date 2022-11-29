@@ -1150,7 +1150,7 @@ fn compress_dir(
     let enc = GzEncoder::new(tar_gz, Compression::default());
     let mut tar = tar::Builder::new(enc);
 
-    tar.append_dir_all(&dest_path, src_path_dir)
+    tar.append_dir_all(dest_path, src_path_dir)
         .with_context(|| {
             format!(
                 "Cannot append files to tar archive {:#?} from source {:#?} ",

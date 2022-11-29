@@ -115,7 +115,7 @@ pub fn clap_app() -> Command<'static> {
             .arg(arg!(--dynamics ...)
                 .takes_value(true)
                 .possible_values(
-                    &["nplus", "nminus", "mean", "moments", "time", "uneven"]
+                    ["nplus", "nminus", "mean", "moments", "time", "uneven"]
                 )
                 .multiple_values(true)
                 .help(
@@ -162,7 +162,7 @@ pub fn clap_app() -> Command<'static> {
                     .help_heading("CONFIG"))
             .arg(arg!(--segregation [value] "The type of ecDNA segregation used for the stochastic simulations")
                     .possible_values(
-                        &["binomial", "nouneven", "deterministic"]
+                        ["binomial", "nouneven", "deterministic"]
                     )
                     .default_value("binomial")
                     .help(
