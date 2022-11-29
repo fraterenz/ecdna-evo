@@ -202,7 +202,7 @@ impl DeathRate {
 
     pub fn is_zero(&self) -> bool {
         match self.0 {
-            Rate::Scalar(rate) => rate != 0f32,
+            Rate::Scalar(rate) => (rate - 0f32).abs() < f32::EPSILON,
             Rate::Range(_) => panic!("Cannot say if rate is 0 with range"),
         }
     }

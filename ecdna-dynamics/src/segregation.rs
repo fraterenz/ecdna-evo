@@ -12,7 +12,7 @@ use rand_pcg::Pcg64Mcg;
 /// the ecDNA material from the mother cell.
 /// In this case, upon proliferation of a cell with ecDNAs, a cell without
 /// ecDNA is generated.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum IsUneven {
     True,
     False,
