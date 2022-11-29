@@ -3,7 +3,7 @@ use criterion::criterion_main;
 use criterion::BenchmarkId;
 use criterion::Criterion;
 use criterion::Throughput;
-use ecdna_dynamics::segregation::BinomialNoNMinusSegregation;
+use ecdna_dynamics::segregation::BinomialNoUneven;
 use ecdna_dynamics::segregation::BinomialSegregation;
 use ecdna_dynamics::segregation::Segregation;
 use rand::SeedableRng;
@@ -13,9 +13,8 @@ fn random_segregation_no_nminus(c: &mut Criterion) {
     let mut group = c.benchmark_group("random_segregation_no_nminus");
     let data = (1..10).map(|ele| 2_usize.pow(ele)).collect::<Vec<usize>>();
     let mut rng = Pcg64Mcg::seed_from_u64(26);
-    let segregation = Segregation::Random(
-        BinomialNoNMinusSegregation(BinomialSegregation).into(),
-    );
+    let segregation =
+        Segregation::Random(BinomialNoUneven(BinomialSegregation).into());
 
     for ecdna_copies in data.iter() {
         group.throughput(Throughput::Bytes(*ecdna_copies as u64));

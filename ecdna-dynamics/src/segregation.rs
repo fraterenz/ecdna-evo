@@ -41,7 +41,7 @@ pub struct BinomialSegregation;
 /// [`BinomialSegregation`] but without the option `k1=0` and `k2=2k` or
 /// viceversa.
 #[derive(Clone, Debug, Copy)]
-pub struct BinomialNoNMinusSegregation(pub BinomialSegregation);
+pub struct BinomialNoUneven(pub BinomialSegregation);
 
 impl Segregate for BinomialSegregation {
     fn ecdna_segregation(
@@ -61,7 +61,7 @@ impl Segregate for BinomialSegregation {
     }
 }
 
-impl Segregate for BinomialNoNMinusSegregation {
+impl Segregate for BinomialNoUneven {
     fn ecdna_segregation(
         &self,
         copies: DNACopySegregating,
@@ -125,8 +125,8 @@ pub enum RandomSegregation {
     BinomialSegregation,
     /// Perform the random segregation using a Binomial segregation model but
     /// without the possibility of generating a complete uneven segregation,
-    /// see [`BinomialNoNMinusSegregation`].
-    BinomialNoNMinusSegregation,
+    /// see [`BinomialNoUneven`].
+    BinomialNoUneven,
 }
 
 #[cfg(test)]
@@ -205,7 +205,7 @@ mod tests {
     ) {
         let mut rng = Pcg64Mcg::seed_from_u64(seed);
         let ecdna_copies = copies.0;
-        BinomialNoNMinusSegregation(BinomialSegregation)
+        BinomialNoUneven(BinomialSegregation)
             .ecdna_segregation(ecdna_copies, &mut rng);
     }
 
@@ -213,9 +213,7 @@ mod tests {
     #[should_panic]
     fn segregate_binomial_no_nminus_0_copies_test() {
         let mut rng = Pcg64Mcg::seed_from_u64(26);
-        Segregation::Random(
-            BinomialNoNMinusSegregation(BinomialSegregation).into(),
-        )
-        .segregate(0, &mut rng);
+        Segregation::Random(BinomialNoUneven(BinomialSegregation).into())
+            .segregate(0, &mut rng);
     }
 }

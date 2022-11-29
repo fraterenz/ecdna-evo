@@ -15,7 +15,7 @@ use ecdna_dynamics::{
         CellCulture, ContinueGrowth, DNACopy, Ended, Growth, InitialState,
         PatientStudy, Run, Started, Update,
     },
-    segregation::{BinomialNoNMinusSegregation, BinomialSegregation},
+    segregation::{BinomialNoUneven, BinomialSegregation},
 };
 use ecdna_sim::{rate::Rates, NbIndividuals, Seed};
 use enum_dispatch::enum_dispatch;
@@ -282,8 +282,8 @@ impl BayesianApp {
         let segregation = match config.segregation.as_ref() {
             "deterministic" => Segregation::Deterministic,
             "binomial" => Segregation::Random(BinomialSegregation.into()),
-            "nonminus" => Segregation::Random(BinomialNoNMinusSegregation(BinomialSegregation).into()),
-            _ => unreachable!("Possible values are `deterministic`, `binomial` or `nonminus`")
+            "nouneven" => Segregation::Random(BinomialNoUneven(BinomialSegregation).into()),
+            _ => unreachable!("Possible values are `deterministic`, `binomial` or `nouneven`")
             };
 
         let app = BayesianApp {
@@ -525,8 +525,8 @@ impl DynamicalApp {
         let segregation = match config.segregation.as_ref() {
             "deterministic" => Segregation::Deterministic,
             "binomial" => Segregation::Random(BinomialSegregation.into()),
-            "nonminus" => Segregation::Random(BinomialNoNMinusSegregation(BinomialSegregation).into()),
-            _ => unreachable!("Possible values are `deterministic`, `binomial` or `nonminus`")
+            "nouneven" => Segregation::Random(BinomialNoUneven(BinomialSegregation).into()),
+            _ => unreachable!("Possible values are `deterministic`, `binomial` or `nouneven`")
             };
 
         let app = DynamicalApp {
