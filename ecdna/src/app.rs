@@ -8,7 +8,7 @@ use ecdna_data::{
 };
 use ecdna_dynamics::{
     dynamics::{Clear, Dynamic, Dynamics, Name, Save},
-    segregation::Segregation,
+    segregation::{BinomialNoNminus, Segregation},
 };
 use ecdna_dynamics::{
     run::{
@@ -526,7 +526,8 @@ impl DynamicalApp {
             "deterministic" => Segregation::Deterministic,
             "binomial" => Segregation::Random(BinomialSegregation.into()),
             "nouneven" => Segregation::Random(BinomialNoUneven(BinomialSegregation).into()),
-            _ => unreachable!("Possible values are `deterministic`, `binomial` or `nouneven`")
+            "nonminus" => Segregation::Random(BinomialNoNminus(BinomialSegregation).into()),
+            _ => unreachable!("Possible values are `deterministic`, `binomial`, `nonminus` or `nouneven`")
             };
 
         let app = DynamicalApp {

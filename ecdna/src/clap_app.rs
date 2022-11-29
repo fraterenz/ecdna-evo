@@ -162,14 +162,15 @@ pub fn clap_app() -> Command<'static> {
                     .help_heading("CONFIG"))
             .arg(arg!(--segregation [value] "The type of ecDNA segregation used for the stochastic simulations")
                     .possible_values(
-                        ["binomial", "nouneven", "deterministic"]
+                        ["binomial", "nouneven", "nonminus", "deterministic"]
                     )
                     .default_value("binomial")
                     .help(
 				    		"Possible values:\n\
 				    		\t- binomial: assumes cells can inherit a random number of ecDNA copies according to the Binomial distribution.\n\
 				    		\t- nouneven: same as Binomial, but cannot generate a complete uneven segregation event (k1=2k, k2=0 or viceversa).\n\
-				    		\t- deterministic: the two daughter cells get the same number of copies k1=k and k2=k.\n"
+				    		\t- nonminus: same as Binomial, but every time a uneven segregation is simulated, remove the nminus cell resulting from that division, this should emulate infinite fitness for NPlus cells\n\
+                            \t- deterministic: the two daughter cells get the same number of copies k1=k and k2=k.\n"
                     )
                     .help_heading("CONFIG")
             )

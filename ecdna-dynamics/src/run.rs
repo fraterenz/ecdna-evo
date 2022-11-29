@@ -1,7 +1,7 @@
 use crate::dynamics::{
     Dynamic, Dynamics, GillespieT, MeanDyn, Moments, NMinus, NPlus, Uneven,
 };
-use crate::segregation::Segregation;
+use crate::segregation::{IsUneven, Segregation};
 use anyhow::ensure;
 use ecdna_data::data::{
     Data, EcDNADistribution, EcDNASummary, Entropy, Frequency, Mean,
@@ -519,9 +519,9 @@ impl System {
             AdvanceRun::Proliferate1 => {
                 // Generate randomly a `NPlus` cell that will proliferate next
                 // and update the ecdna distribution as well.
-                self.is_uneven =
-                    self.ecdna_distr.proliferate_nplus(segregation, rng);
-                if self.is_uneven {
+                if let IsUneven::True =
+                    self.ecdna_distr.proliferate_nplus(segregation, rng)
+                {
                     self.nminus += 1;
                 }
             }
@@ -617,7 +617,7 @@ impl EcDNADistributionNPlus {
         &mut self,
         segregation: &Segregation,
         rng: &mut Pcg64Mcg,
-    ) -> bool {
+    ) -> IsUneven {
         //! Updates the distribution of ecdna per cell and returns `true` if a
         //! new `NMinus` cell appeared after division, i.e. if a complete
         //! uneven random segregation occurred.
@@ -625,36 +625,19 @@ impl EcDNADistributionNPlus {
         //! This happened if the mother cell gives all its ecDNA copies to only
         //! one daughter cell, that is one daughter cells inherits 2k copies
         //! whereas the other cell doesn't get any, thus it's a `NMinus` cell.
-        let idx = self.pick_nplus_cell(rng);
-        let (daughter1, daughter2, uneven_segregation) =
-            self.dna_segregation(idx, segregation, rng);
-
-        if uneven_segregation {
-            self.0[idx] = daughter1 + daughter2; // n + 0 = n = 0 + n
-        } else {
-            self.0[idx] = daughter1; // update old cell ecDNA copies
-            self.0.push(daughter2); // create new NPlus cell
-        }
-        uneven_segregation
-    }
-
-    fn dna_segregation(
-        &self,
-        idx: usize,
-        segregation: &Segregation,
-        rng: &mut Pcg64Mcg,
-    ) -> (DNACopy, DNACopy, bool) {
-        //! Simulate the proliferation of one `NPlus` cell and returns whether a
-        //! uneven segregation occured (i.e. one daughter cell inherited all
-        //! ecDNA material from mother cells).
         //! Double the ecDNA content and then distribute the multiplied ec_dna
         //! material among two daughter cells according to [`Segregate`].
-        let (k1, k2) = segregation.segregate(self.0[idx], rng);
+        let idx = self.pick_nplus_cell(rng);
+        let (k1, k2, uneven_segregation) =
+            segregation.segregate(self.0[idx], rng);
 
-        // uneven_segregation happens if there is at least one zero
-        let uneven = k1 == 0 || k2 == 0;
-
-        (k1, k2, uneven)
+        if let IsUneven::False = uneven_segregation {
+            self.0[idx] = k1; // update old cell ecDNA copies
+            self.0.push(k2); // create new NPlus cell
+        } else {
+            self.0[idx] = k1 + k2; // n + 0 = n = 0 + n
+        }
+        uneven_segregation
     }
 
     fn compute_mean(&self, ntot: &NbIndividuals) -> f32 {
