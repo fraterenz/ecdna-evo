@@ -564,11 +564,9 @@ mod tests {
     use super::*;
     use crate::DNACopy;
     use ecdna_sim::NbIndividuals;
-    use fake::Fake;
     use quickcheck::Gen;
     use quickcheck_macros::quickcheck;
-    use rand::rngs::SmallRng;
-    use rand::{Rng, SeedableRng};
+    use rand::SeedableRng;
     use rand_pcg::Pcg64Mcg;
     use test_case::test_case;
 
@@ -758,13 +756,18 @@ mod tests {
     #[derive(Debug, Clone)]
     struct ValidEcDNADistributionFixture(pub EcDNADistribution);
 
+    impl quickcheck::Arbitrary for EcDNADistribution {
+        fn arbitrary(g: &mut Gen) -> Self {
+            todo!(
+                "Should have non-empty vec with a valid ecDNA distribution?"
+            );
+            Vec::arbitrary(g).into()
+        }
+    }
+
     impl quickcheck::Arbitrary for ValidEcDNADistributionFixture {
-        fn arbitrary(_g: &mut Gen) -> Self {
-            // TODO should use g instead of rng but Gen does not seem to impl Rng trait??
-            let mut rng = SmallRng::from_entropy();
-            let ecdna =
-                EcDNADistribution::from(vec![]).fake_with_rng(&mut rng);
-            Self(ecdna)
+        fn arbitrary(g: &mut Gen) -> Self {
+            Self(EcDNADistribution::arbitrary(g))
         }
     }
 

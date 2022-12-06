@@ -279,12 +279,7 @@ impl BayesianApp {
             _ => unreachable!("Possible vaules are patient or culture"),
         };
 
-        let segregation = match config.segregation.as_ref() {
-            "deterministic" => Segregation::Deterministic,
-            "binomial" => Segregation::Random(BinomialSegregation.into()),
-            "nouneven" => Segregation::Random(BinomialNoUneven(BinomialSegregation).into()),
-            _ => unreachable!("Possible values are `deterministic`, `binomial` or `nouneven`")
-            };
+        let segregation = Segregation::Random(BinomialSegregation.into());
 
         let app = BayesianApp {
             patient,
@@ -836,7 +831,6 @@ pub struct Bayesian {
     pub delta1: Vec<f32>,
     pub delta2: Vec<f32>,
     pub init_copies: Vec<DNACopy>,
-    pub segregation: String,
     pub seed: u64,
     pub growth: String,
     pub savedir: PathBuf,
@@ -884,9 +878,6 @@ impl Bayesian {
             savedir
         );
 
-        let segregation: String =
-            matches.value_of_t("segregation").unwrap_or_else(|e| e.exit());
-
         Bayesian {
             patient,
             runs,
@@ -897,7 +888,6 @@ impl Bayesian {
             delta2,
             init_copies,
             seed,
-            segregation,
             growth,
             savedir,
             verbosity,
