@@ -566,6 +566,7 @@ mod tests {
     use ecdna_sim::NbIndividuals;
     use quickcheck::Gen;
     use quickcheck_macros::quickcheck;
+    use rand::Rng;
     use rand::SeedableRng;
     use rand_pcg::Pcg64Mcg;
     use test_case::test_case;
@@ -758,10 +759,17 @@ mod tests {
 
     impl quickcheck::Arbitrary for EcDNADistribution {
         fn arbitrary(g: &mut Gen) -> Self {
-            todo!(
-                "Should have non-empty vec with a valid ecDNA distribution?"
-            );
-            Vec::arbitrary(g).into()
+            // u8 otherwise it can overflow
+            let mut ecdna_distribution: Vec<u8> = Vec::arbitrary(g);
+            // < 20 so we can undersample the distribution
+            while ecdna_distribution.len() < 20 {
+                ecdna_distribution = Vec::arbitrary(g);
+            }
+            ecdna_distribution
+                .into_iter()
+                .map(|ele| ele as DNACopy)
+                .collect::<Vec<DNACopy>>()
+                .into()
         }
     }
 
