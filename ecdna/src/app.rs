@@ -8,6 +8,7 @@ use ecdna_data::{
 };
 use ecdna_dynamics::{
     dynamics::{Clear, Dynamic, Dynamics, Name, Save},
+    run::EndRun,
     segregation::{BinomialNoNminus, Segregation},
 };
 use ecdna_dynamics::{
@@ -30,6 +31,10 @@ use std::{
     ops::Deref,
     path::{Path, PathBuf},
 };
+
+// The number of time a run restarts when there are no individuals left because
+// of the high cell death
+const NB_RESTARTS: u64 = 30;
 
 pub fn build_config() -> Config {
     //! Build the app by parsing CL arguments with `clap` to build the structs
@@ -428,7 +433,7 @@ impl Perform for BayesianApp {
                 for (timepoint, sample) in
                     self.patient.samples.iter().enumerate()
                 {
-                    let run_ended = run.simulate(
+                    let (run_ended, _) = run.simulate(
                         &self.segregation,
                         &mut None,
                         &sample.tumour_size,
@@ -686,13 +691,14 @@ impl Perform for DynamicalApp {
                     self.ecdna.clone(),
                     self.ecdna.nb_cells() as usize,
                 );
-                let seed_run = idx as u64 + self.seed;
-                let mut rng = Pcg64Mcg::seed_from_u64(seed_run);
 
+                let mut j = 0u64;
+                let mut seed_run = idx as u64 * NB_RESTARTS + self.seed + j;
+                let mut rng = Pcg64Mcg::seed_from_u64(seed_run);
                 let mut run = Run::new(
                     idx,
                     0f32,
-                    initial_state,
+                    initial_state.clone(),
                     self.rates.clone(),
                     Seed::new(seed_run),
                     self.experiments[0].tumour_cells, //assume same size
@@ -703,24 +709,49 @@ impl Perform for DynamicalApp {
 
                 // for all sequecing experiemnts
                 for (i, experiment) in self.experiments.iter().enumerate() {
-                    // simulate and update both the run and the dynamics
-                    let run_ended = run.simulate(
-                        &self.segregation,
-                        &mut Some(&mut dynamics),
-                        &experiment.tumour_cells,
-                        self.rates.estimate_max_iter(&experiment.tumour_cells),
-                    );
-                    (run, dynamics) = self
-                        .save(
-                            run_ended,
-                            &self.absolute_path,
-                            dynamics,
+                    loop {
+                        seed_run = idx as u64 * NB_RESTARTS + self.seed + j;
+                        rng = Pcg64Mcg::seed_from_u64(seed_run);
+
+                        // simulate and update both the run and the dynamics
+                        let (run_ended, stop_condition) = run.simulate(
+                            &self.segregation,
+                            &mut Some(&mut dynamics),
                             &experiment.tumour_cells,
-                            &experiment.sample_cells,
-                            i,
-                        )
-                        .with_context(|| format!("Cannot save run {}", idx))
-                        .unwrap();
+                            self.rates
+                                .estimate_max_iter(&experiment.tumour_cells),
+                        );
+                        if stop_condition == EndRun::NoIndividualsLeft
+                            && j < NB_RESTARTS
+                        {
+                            run = Run::new(
+                                idx,
+                                0f32,
+                                initial_state.clone(),
+                                self.rates.clone(),
+                                Seed::new(seed_run),
+                                self.experiments[0].tumour_cells, //assume same size
+                                &mut rng,
+                            );
+                            dynamics.clear();
+                            j += 1;
+                            continue;
+                        }
+                        (run, dynamics) = self
+                            .save(
+                                run_ended,
+                                &self.absolute_path,
+                                dynamics,
+                                &experiment.tumour_cells,
+                                &experiment.sample_cells,
+                                i,
+                            )
+                            .with_context(|| {
+                                format!("Cannot save run {}", idx)
+                            })
+                            .unwrap();
+                        break;
+                    }
                 }
             });
 

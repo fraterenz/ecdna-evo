@@ -33,6 +33,12 @@ impl Dynamics {
         path.pop().unwrap();
         Ok(path)
     }
+
+    pub fn clear(&mut self) {
+        for d in &mut self.0 {
+            d.clear()
+        }
+    }
 }
 
 impl Deref for Dynamics {

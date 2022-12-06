@@ -199,7 +199,7 @@ impl Run<Started> {
         dynamics: &mut Option<&mut Dynamics>,
         max_cells: &NbIndividuals,
         max_iter: usize,
-    ) -> Run<Ended> {
+    ) -> (Run<Ended>, EndRun) {
         //! Simulate one realisation of the birth-death stochastic process.
         //!
         //! If the some `dynamics` are given, those quantities will be
@@ -263,21 +263,24 @@ impl Run<Started> {
 
         let data = self.create_data(&condition);
 
-        Run {
-            idx,
-            bd_process: process,
-            init_state,
-            state: Ended {
-                data,
-                gillespie_time: time,
-                sampled_run: None,
-                last_iter: iter,
+        (
+            Run {
+                idx,
+                bd_process: process,
+                init_state,
+                state: Ended {
+                    data,
+                    gillespie_time: time,
+                    sampled_run: None,
+                    last_iter: iter,
+                },
+                restarted,
+                seed,
+                rng,
+                population_size: *max_cells,
             },
-            restarted,
-            seed,
-            rng,
-            population_size: *max_cells,
-        }
+            condition,
+        )
     }
 
     fn create_data(self, stop_condition: &EndRun) -> Data {
