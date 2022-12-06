@@ -523,6 +523,7 @@ impl System {
                     self.ecdna_distr.proliferate_nplus(segregation, rng)
                 {
                     self.nminus += 1;
+                    self.is_uneven = true;
                 }
             }
             AdvanceRun::Proliferate2 => {

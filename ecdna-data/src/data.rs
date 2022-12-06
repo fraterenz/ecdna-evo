@@ -747,7 +747,7 @@ mod tests {
             let nb_cells = 1000u16;
             let range = rand::distributions::Uniform::new(0, nb_cells);
             let mut distribution = (0..nb_cells)
-                .map(|_| rng.sample(&range))
+                .map(|_| rng.sample(range))
                 .collect::<Vec<DNACopy>>();
             distribution.push(0);
             distribution.into()
