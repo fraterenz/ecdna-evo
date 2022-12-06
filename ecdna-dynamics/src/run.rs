@@ -206,7 +206,7 @@ impl Run<Started> {
         //! calculated using the [`Update`] method.
         let mut iter = self.init_state.init_iter;
 
-        let (time, condition, ntot) = {
+        let (time, condition) = {
             loop {
                 let ntot = self.get_nplus() + *self.get_nminus();
 
@@ -218,21 +218,18 @@ impl Run<Started> {
                     break (
                         self.state.system.event.time,
                         EndRun::NoIndividualsLeft,
-                        ntot,
                     );
                 };
                 if iter >= max_iter {
                     break (
                         self.state.system.event.time,
                         EndRun::MaxItersReached,
-                        ntot,
                     );
                 };
                 if &ntot >= max_cells {
                     break (
                         self.state.system.event.time,
                         EndRun::MaxIndividualsReached,
-                        ntot,
                     );
                 }
 
@@ -248,8 +245,10 @@ impl Run<Started> {
             }
         };
 
-        if let BirthDeathProcess::PureBirth(_) = &self.bd_process {
-            assert!(ntot > 0, "No cells found with PureBirth process")
+        if condition == EndRun::NoIndividualsLeft {
+            if let BirthDeathProcess::PureBirth(_) = &self.bd_process {
+                unreachable!("No cells found with PureBirth process")
+            }
         }
 
         let (idx, process, init_state, seed, rng, restarted) = (
