@@ -690,23 +690,6 @@ mod tests {
         );
     }
 
-    #[ignore]
-    #[quickcheck]
-    fn ecdna_undersample_sample_reproducible_different_trials(
-        seed: u64,
-        distribution: ValidEcDNADistributionFixture,
-    ) -> bool {
-        let mut rng = Pcg64Mcg::seed_from_u64(seed);
-        let nb_cells: NbIndividuals = distribution.0.nb_cells() - 1;
-
-        let first =
-            distribution.clone().0.sample_distribution(nb_cells, &mut rng);
-
-        let second = distribution.0.sample_distribution(nb_cells, &mut rng);
-
-        first != second
-    }
-
     #[quickcheck]
     fn ecdna_undersample_reproducible(
         seed: u64,
@@ -724,13 +707,14 @@ mod tests {
     }
 
     #[quickcheck]
-    #[ignore]
     fn ecdna_undersample_reproducible_different_trials(
         seed: u64,
         distribution: ValidEcDNADistributionFixture,
     ) -> bool {
         let mut rng = Pcg64Mcg::seed_from_u64(seed);
-        let nb_cells: NbIndividuals = distribution.0.nb_cells() - 1;
+        // there is a small chance that the test will fail because by chance it
+        // can pick the exact same 5 individual cells
+        let nb_cells: NbIndividuals = 5;
 
         let ecdna = distribution.0;
         let first = ecdna.clone().undersample(&nb_cells, &mut rng);
@@ -762,7 +746,7 @@ mod tests {
             // u8 otherwise it can overflow
             let mut ecdna_distribution: Vec<u8> = Vec::arbitrary(g);
             // < 20 so we can undersample the distribution
-            while ecdna_distribution.len() < 20 {
+            while ecdna_distribution.len() < 40 {
                 ecdna_distribution = Vec::arbitrary(g);
             }
             ecdna_distribution
