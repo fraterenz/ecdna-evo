@@ -1,3 +1,4 @@
+use criterion::black_box;
 use criterion::criterion_group;
 use criterion::criterion_main;
 use criterion::BenchmarkId;
@@ -24,7 +25,10 @@ fn random_segregation_no_nminus(c: &mut Criterion) {
             ecdna_copies,
             |b, &ecdna_copies| {
                 b.iter(|| {
-                    segregation.segregate(ecdna_copies as u16, &mut rng)
+                    segregation.segregate(
+                        black_box(ecdna_copies as u16),
+                        black_box(&mut rng),
+                    )
                 });
             },
         );
@@ -47,7 +51,10 @@ fn random_segregation(c: &mut Criterion) {
             ecdna_copies,
             |b, &ecdna_copies| {
                 b.iter(|| {
-                    segregation.segregate(ecdna_copies as u16, &mut rng)
+                    segregation.segregate(
+                        black_box(ecdna_copies as u16),
+                        black_box(&mut rng),
+                    )
                 });
             },
         );

@@ -374,6 +374,7 @@ name = "ecdna-sim"
 version = "0.4.4"
 dependencies = [
  "anyhow",
+ "criterion",
  "enum_dispatch",
  "num-traits",
  "quickcheck",
