@@ -1,6 +1,6 @@
 //! Perform the approximate Bayesian computation to infer the most probable
 //! fitness and death coefficients from the data.
-use ecdna_data::data::{EcDNADistribution, Entropy, Frequency, Mean};
+use ecdna_data::data::{EcDNADistributionData, Entropy, Frequency, Mean};
 use ecdna_data::patient::SequencingData;
 use ecdna_dynamics::run::{DNACopy, Ended, Run};
 use ecdna_sim::{NbIndividuals, Seed};
@@ -206,7 +206,7 @@ pub trait Distance {
     fn distance(&self, run: &Run<Ended>) -> f32;
 }
 
-impl Distance for EcDNADistribution {
+impl Distance for EcDNADistributionData {
     fn distance(&self, run: &Run<Ended>) -> f32 {
         //! The run and the patient's data ecDNA distributions (considering
         //! cells w/o ecDNA) are different if the Kolmogorov-Smirnov statistic

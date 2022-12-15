@@ -1,5 +1,5 @@
 //! A `Patient` is a collection of `SequencingData` that have been collected and sequenced from the same tumour mass but at different timepoints.
-use crate::data::{EcDNADistribution, Entropy, Frequency, Mean};
+use crate::data::{EcDNADistributionData, Entropy, Frequency, Mean};
 use anyhow::{anyhow, ensure, Context};
 use ecdna_sim::NbIndividuals;
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,7 @@ use std::path::Path;
 #[builder(build_fn(validate = "Self::validate"))]
 pub struct SequencingData {
     #[builder(setter(strip_option), default)]
-    pub ecdna: Option<EcDNADistribution>,
+    pub ecdna: Option<EcDNADistributionData>,
     #[builder(setter(into, strip_option), default)]
     pub mean: Option<Mean>,
     #[builder(setter(into, strip_option), default)]
