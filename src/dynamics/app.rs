@@ -23,6 +23,7 @@ pub struct Dynamics {
     pub path2dir: PathBuf,
     pub runs: usize,
     pub debug: bool,
+    pub sequential: bool,
     pub verbose: u8,
 }
 
@@ -129,10 +130,14 @@ impl Simulate for Dynamics {
         if self.debug {
             (0..1).into_iter().for_each(simulate_run)
         } else {
-            (0..self.runs)
-                .into_par_iter()
-                .progress_count(self.runs as u64)
-                .for_each(simulate_run)
+            if self.sequential {
+                (0..self.runs).into_iter().for_each(simulate_run)
+            } else {
+                (0..self.runs)
+                    .into_par_iter()
+                    .progress_count(self.runs as u64)
+                    .for_each(simulate_run)
+            }
         };
 
         println!("{} End simulating dynamics", Utc::now(),);

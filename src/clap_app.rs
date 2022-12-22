@@ -1,5 +1,4 @@
-use std::{collections::HashMap, path::PathBuf};
-
+use crate::{dynamics::app::Dynamics, Simulate, MAX_ITER};
 use anyhow::Context;
 use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
 use ssa::{
@@ -19,8 +18,7 @@ use ssa::{
     process::{Iteration, Process},
     NbIndividuals,
 };
-
-use crate::{dynamics::app::Dynamics, Simulate, MAX_ITER};
+use std::{collections::HashMap, path::PathBuf};
 
 #[derive(Debug, Parser)] // requires `derive` feature
 #[command(name = "ecdna")]
@@ -54,6 +52,7 @@ impl Cli {
                 seed,
                 runs,
                 debug,
+                sequential,
                 verbose,
             } => {
                 if save.is_some() {
@@ -177,6 +176,7 @@ impl Cli {
                     runs,
                     save,
                     debug,
+                    sequential,
                     verbose,
                 }))
             }
@@ -221,11 +221,14 @@ enum Commands {
         )]
         cells: NbIndividuals,
         /// Seed for reproducibility
-        #[arg(short, long, default_value_t = 26)]
+        #[arg(long, default_value_t = 26)]
         seed: u64,
         /// Triggers debug mode: max verbosity and 1 sequential simulation
         #[arg(short, long, action = ArgAction::SetTrue, default_value_t = false)]
         debug: bool,
+        /// Run sequentially each run instead of using rayon for parallelisation
+        #[arg(short, long, action = ArgAction::SetTrue, default_value_t = false, conflicts_with = "debug")]
+        sequential: bool,
         /// Whether to track over simulations the evolution of the mean ecDNA
         /// copies in the tumour population
         #[arg(short, long, action = ArgAction::SetTrue)]
