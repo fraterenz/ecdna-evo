@@ -4,7 +4,6 @@ use crate::clap_app::Cli;
 
 mod clap_app;
 mod dynamics;
-mod run;
 
 /// The number of max iterations that we max simulate compared to the cells.
 /// The max number of iterations will be MAX_ITER * cells.

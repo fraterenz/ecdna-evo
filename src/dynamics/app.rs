@@ -6,14 +6,12 @@ use rand_pcg::Pcg64Mcg;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use ssa::{
     process::{Process, StopReason},
+    run::{CellCulture, Ended, Growth, PatientStudy, Run, Started},
     NbIndividuals,
 };
 use std::path::PathBuf;
 
-use crate::{
-    run::{CellCulture, Ended, Growth, PatientStudy, Run, Started},
-    Simulate, NB_RESTARTS,
-};
+use crate::{Simulate, NB_RESTARTS};
 
 pub struct Dynamics {
     pub subsampling: Option<Vec<NbIndividuals>>,
