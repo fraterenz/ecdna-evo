@@ -156,18 +156,21 @@ impl Run<Ended> {
 
     pub fn undersample(self, nb_cells: &NbIndividuals, idx: usize) -> Self {
         //! Returns a copy of the run with a subsampled process.
-        Run {
-            idx,
-            bd_process: self.bd_process.random_sample(nb_cells),
-            state: Ended {
-                gillespie_time: self.state.gillespie_time,
-                last_iter: self.state.last_iter,
-                sampled_run: Some(self.idx),
+        match self.bd_process {
+            Process::EcDNAProcess(p) => Run {
+                idx,
+                bd_process: p.random_sample(nb_cells).into(),
+                state: Ended {
+                    gillespie_time: self.state.gillespie_time,
+                    last_iter: self.state.last_iter,
+                    sampled_run: Some(self.idx),
+                },
+                restarted: self.restarted,
+                growth: self.growth,
+                rng: self.rng,
+                verbosity: self.verbosity,
             },
-            restarted: self.restarted,
-            growth: self.growth,
-            rng: self.rng,
-            verbosity: self.verbosity,
+            _ => todo!(),
         }
     }
 

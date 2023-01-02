@@ -5,7 +5,7 @@ use ssa::{
     ecdna::{
         data::EcDNADistribution,
         ecdna::{
-            BirthDeathMeanTimeEcDNA, BirthDeathTimeEcDNA,
+            BirthDeathMeanTimeEcDNA, BirthDeathTimeEcDNA, EcDNAProcess,
             PureBirthMeanTimeEcDNA, PureBirthTimeEcDNA,
         },
         proliferation::{EcDNAGrowth, Exponential},
@@ -14,7 +14,6 @@ use ssa::{
             Segregation,
         },
     },
-    events::Event,
     process::{Iteration, Process},
     NbIndividuals,
 };
@@ -84,7 +83,6 @@ impl Cli {
                     None => EcDNADistribution::new(HashMap::<u16, NbIndividuals>::from([(1, 1)]), iterations)
 
                 };
-                // save to unwrap because there is always the entry 0
                 let (nminus, nplus) =
                     (*distribution.get_nminus(), distribution.compute_nplus());
 
@@ -104,43 +102,37 @@ impl Cli {
                         let initial_population =
                             [nminus, nplus, nminus, nplus];
                         let iteration = Iteration::new(
-                            [
-                                Event::ProliferateNMinus,
-                                Event::ProliferateNPlus,
-                                Event::DeathNMinus,
-                                Event::DeathNPlus,
-                            ],
                             [b0, b1, d0, d1],
                             initial_population,
                             cells,
                             iterations,
                         );
                         match with_mean {
-                            true => BirthDeathMeanTimeEcDNA::new(
-                                0f32,
-                                growth,
-                                iteration,
-                                distribution,
-                                verbose,
-                            )?
-                            .into(),
-                            false => BirthDeathTimeEcDNA::new(
-                                0f32,
-                                growth,
-                                iteration,
-                                distribution,
-                                verbose,
-                            )?
-                            .into(),
+                            true => Process::EcDNAProcess(
+                                BirthDeathMeanTimeEcDNA::new(
+                                    0f32,
+                                    growth,
+                                    iteration,
+                                    distribution,
+                                    verbose,
+                                )?
+                                .into(),
+                            ),
+                            false => Process::EcDNAProcess(
+                                BirthDeathTimeEcDNA::new(
+                                    0f32,
+                                    growth,
+                                    iteration,
+                                    distribution,
+                                    verbose,
+                                )?
+                                .into(),
+                            ),
                         }
                     }
                     false => {
                         let initial_population = [nminus, nplus];
                         let iteration = Iteration::new(
-                            [
-                                Event::ProliferateNMinus,
-                                Event::ProliferateNPlus,
-                            ],
                             [b0, b1],
                             initial_population,
                             cells,
@@ -148,22 +140,26 @@ impl Cli {
                         );
 
                         match with_mean {
-                            true => PureBirthMeanTimeEcDNA::new(
-                                0f32,
-                                growth,
-                                iteration,
-                                distribution,
-                                verbose,
-                            )?
-                            .into(),
-                            false => PureBirthTimeEcDNA::new(
-                                0f32,
-                                growth,
-                                iteration,
-                                distribution,
-                                verbose,
-                            )?
-                            .into(),
+                            true => Process::EcDNAProcess(
+                                PureBirthMeanTimeEcDNA::new(
+                                    0f32,
+                                    growth,
+                                    iteration,
+                                    distribution,
+                                    verbose,
+                                )?
+                                .into(),
+                            ),
+                            false => Process::EcDNAProcess(
+                                PureBirthTimeEcDNA::new(
+                                    0f32,
+                                    growth,
+                                    iteration,
+                                    distribution,
+                                    verbose,
+                                )?
+                                .into(),
+                            ),
                         }
                     }
                 };
