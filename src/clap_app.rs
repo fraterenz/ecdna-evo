@@ -4,8 +4,8 @@ use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
 use ssa::{
     ecdna::{
         data::EcDNADistribution,
-        ecdna::{
-            BirthDeathMeanTimeEcDNA, BirthDeathTimeEcDNA, EcDNAProcess,
+        process::{
+            BirthDeathMeanTimeEcDNA, BirthDeathTimeEcDNA,
             PureBirthMeanTimeEcDNA, PureBirthTimeEcDNA,
         },
         proliferation::{EcDNAGrowth, Exponential},
@@ -14,8 +14,8 @@ use ssa::{
             Segregation,
         },
     },
-    process::{Iteration, Process},
-    NbIndividuals,
+    iteration::Iteration,
+    NbIndividuals, Process,
 };
 use std::{collections::HashMap, path::PathBuf};
 

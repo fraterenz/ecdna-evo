@@ -5,9 +5,9 @@ use rand::SeedableRng;
 use rand_pcg::Pcg64Mcg;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use ssa::{
-    process::{Process, StopReason},
+    iteration::StopReason,
     run::{CellCulture, Ended, Growth, PatientStudy, Run, Started},
-    NbIndividuals,
+    NbIndividuals, Process,
 };
 use std::path::PathBuf;
 
@@ -127,15 +127,13 @@ impl Simulate for Dynamics {
 
         if self.debug {
             (0..1).into_iter().for_each(simulate_run)
+        } else if self.sequential {
+            (0..self.runs).into_iter().for_each(simulate_run)
         } else {
-            if self.sequential {
-                (0..self.runs).into_iter().for_each(simulate_run)
-            } else {
-                (0..self.runs)
-                    .into_par_iter()
-                    .progress_count(self.runs as u64)
-                    .for_each(simulate_run)
-            }
+            (0..self.runs)
+                .into_par_iter()
+                .progress_count(self.runs as u64)
+                .for_each(simulate_run)
         };
 
         println!("{} End simulating dynamics", Utc::now(),);
