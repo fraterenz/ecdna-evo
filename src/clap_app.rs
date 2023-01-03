@@ -100,7 +100,6 @@ impl Cli {
                     }
                 };
 
-                let with_mean = mean.is_some();
                 let cells = if debug { 100 } else { cells };
                 let verbose = if debug { u8::MAX } else { verbose };
 
@@ -114,7 +113,7 @@ impl Cli {
                             cells,
                             iterations,
                         );
-                        match with_mean {
+                        match mean {
                             true => Process::EcDNAProcess(
                                 BirthDeathMeanTimeEcDNA::new(
                                     0f32,
@@ -146,7 +145,7 @@ impl Cli {
                             iterations,
                         );
 
-                        match with_mean {
+                        match mean {
                             true => Process::EcDNAProcess(
                                 PureBirthMeanTimeEcDNA::new(
                                     0f32,
@@ -250,8 +249,8 @@ enum Commands {
         sequential: bool,
         /// Whether to track over simulations the evolution of the mean ecDNA
         /// copies in the tumour population
-        #[arg(short, long, action = ArgAction::SetTrue)]
-        mean: Option<bool>,
+        #[arg(short, long, action = ArgAction::SetTrue, default_value_t = false)]
+        mean: bool,
         /// Path to store the results of the simulations
         #[arg(value_name = "DIR", value_parser = |path: &str| { let path_b = PathBuf::from(path); if path_b.is_dir() { Ok(path_b) } else { Err("Cannot find dir") }} ) ]
         path: PathBuf,
