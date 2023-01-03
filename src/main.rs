@@ -1,6 +1,12 @@
 use chrono::Utc;
+use enum_dispatch::enum_dispatch;
+use indicatif::ParallelProgressIterator;
+use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+use ssa::run::Growth;
+use ssa::Process;
 
-use crate::clap_app::Cli;
+use crate::clap_app::{Cli, Parallel};
+use crate::dynamics::app::Dynamics;
 
 mod clap_app;
 mod dynamics;
@@ -13,23 +19,58 @@ pub const MAX_ITER: usize = 3;
 const NB_RESTARTS: u64 = 30;
 
 /// Run the simulations
+#[enum_dispatch]
 pub trait Simulate {
-    fn run(self: Box<Self>) -> anyhow::Result<()>;
+    fn run(
+        &self,
+        idx: usize,
+        process: Process,
+        growth: Growth,
+    ) -> anyhow::Result<()>;
+}
+
+pub struct SimulationOptions {
+    simulation: Simulation,
+    parallel: Parallel,
+    runs: usize,
+    growth: Growth,
+    process: Process,
+}
+
+#[enum_dispatch(Simulate)]
+enum Simulation {
+    Dynamics,
+    // Abc,
 }
 
 fn main() {
-    let cli = Cli::build();
-    match cli {
+    let simulation = Cli::build();
+    println!("{} Starting the simulation", Utc::now());
+    match simulation {
         Ok(cli) => {
-            std::process::exit(match cli.run() {
-                Ok(_) => {
-                    println!("{} End simulation", Utc::now(),);
-                    0
+            std::process::exit({
+                match cli.parallel {
+                    Parallel::Debug => {
+                        cli.simulation.run(0, cli.process, cli.growth).unwrap()
+                    }
+                    Parallel::False => {
+                        (0..cli.runs).into_iter().for_each(|idx| {
+                            cli.simulation
+                                .run(idx, cli.process.clone(), cli.growth)
+                                .unwrap()
+                        })
+                    }
+                    Parallel::True => (0..cli.runs)
+                        .into_par_iter()
+                        .progress_count(cli.runs as u64)
+                        .for_each(|idx| {
+                            cli.simulation
+                                .run(idx, cli.process.clone(), cli.growth)
+                                .unwrap()
+                        }),
                 }
-                Err(err) => {
-                    eprintln!("{} Error: {:?}", Utc::now(), err);
-                    1
-                }
+                println!("{} End simulation", Utc::now(),);
+                0
             });
         }
         Err(err) => {

@@ -1,4 +1,4 @@
-use crate::{dynamics::app::Dynamics, Simulate, MAX_ITER};
+use crate::{dynamics::app::Dynamics, SimulationOptions, MAX_ITER};
 use anyhow::Context;
 use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
 use ssa::{
@@ -15,9 +15,16 @@ use ssa::{
         },
     },
     iteration::Iteration,
+    run::{CellCulture, PatientStudy},
     NbIndividuals, Process,
 };
 use std::{collections::HashMap, path::PathBuf};
+
+pub enum Parallel {
+    False,
+    True,
+    Debug,
+}
 
 #[derive(Debug, Parser)] // requires `derive` feature
 #[command(name = "ecdna")]
@@ -31,7 +38,7 @@ pub struct Cli {
 }
 
 impl Cli {
-    pub fn build() -> anyhow::Result<Box<dyn Simulate>> {
+    pub fn build() -> anyhow::Result<SimulationOptions> {
         let args = Cli::parse();
 
         match args.command {
@@ -163,18 +170,34 @@ impl Cli {
                         }
                     }
                 };
+                let growth = if subsampling.is_some() {
+                    CellCulture.into()
+                } else {
+                    PatientStudy.into()
+                };
 
-                Ok(Box::new(Dynamics {
-                    subsampling,
-                    process,
-                    seed,
-                    path2dir: path,
+                let parallel = if debug {
+                    Parallel::Debug
+                } else if sequential {
+                    Parallel::False
+                } else {
+                    Parallel::True
+                };
+
+                Ok(SimulationOptions {
+                    simulation: Dynamics {
+                        subsampling,
+                        seed,
+                        path2dir: path,
+                        save,
+                        verbose,
+                    }
+                    .into(),
+                    parallel,
                     runs,
-                    save,
-                    debug,
-                    sequential,
-                    verbose,
-                }))
+                    process,
+                    growth,
+                })
             }
             Commands::Abc { .. } => todo!(),
         }
@@ -313,17 +336,14 @@ impl std::fmt::Display for GrowthOptions {
 
 #[derive(Debug, Args)]
 #[command(args_conflicts_with_subcommands = true)]
-
 struct Abc {
     #[command(subcommand)]
     command: Option<StashCommands>,
-
     #[command(flatten)]
     push: StashPush,
 }
 
 #[derive(Debug, Subcommand)]
-
 enum StashCommands {
     Push(StashPush),
     Pop { stash: Option<String> },
@@ -331,7 +351,6 @@ enum StashCommands {
 }
 
 #[derive(Debug, Args)]
-
 struct StashPush {
     #[arg(short, long)]
     message: Option<String>,
