@@ -1,15 +1,14 @@
 use chrono::Utc;
-use enum_dispatch::enum_dispatch;
 use indicatif::ParallelProgressIterator;
-use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use ssa::run::Growth;
+use rayon::prelude::{
+    IndexedParallelIterator, IntoParallelIterator, ParallelIterator,
+};
 use ssa::Process;
 
 use crate::clap_app::{Cli, Parallel};
-use crate::dynamics::app::Dynamics;
 
+mod app;
 mod clap_app;
-mod dynamics;
 
 /// The number of max iterations that we max simulate compared to the cells.
 /// The max number of iterations will be MAX_ITER * cells.
@@ -19,28 +18,14 @@ pub const MAX_ITER: usize = 3;
 const NB_RESTARTS: u64 = 30;
 
 /// Run the simulations
-#[enum_dispatch]
 pub trait Simulate {
-    fn run(
-        &self,
-        idx: usize,
-        process: Process,
-        growth: Growth,
-    ) -> anyhow::Result<()>;
+    fn run(&self, idx: usize, process: Process) -> anyhow::Result<()>;
 }
 
 pub struct SimulationOptions {
-    simulation: Simulation,
+    simulation: Box<dyn Simulate + Sync>,
     parallel: Parallel,
-    runs: usize,
-    growth: Growth,
-    process: Process,
-}
-
-#[enum_dispatch(Simulate)]
-enum Simulation {
-    Dynamics,
-    // Abc,
+    processes: Vec<Process>,
 }
 
 fn main() {
@@ -49,24 +34,22 @@ fn main() {
     match simulation {
         Ok(cli) => {
             std::process::exit({
+                let runs = cli.processes.len() as u64;
                 match cli.parallel {
-                    Parallel::Debug => {
-                        cli.simulation.run(0, cli.process, cli.growth).unwrap()
+                    Parallel::Debug | Parallel::False => {
+                        cli.processes.into_iter().enumerate().for_each(
+                            |(idx, process)| {
+                                cli.simulation.run(idx, process).unwrap()
+                            },
+                        )
                     }
-                    Parallel::False => {
-                        (0..cli.runs).into_iter().for_each(|idx| {
-                            cli.simulation
-                                .run(idx, cli.process.clone(), cli.growth)
-                                .unwrap()
-                        })
-                    }
-                    Parallel::True => (0..cli.runs)
+                    Parallel::True => cli
+                        .processes
                         .into_par_iter()
-                        .progress_count(cli.runs as u64)
-                        .for_each(|idx| {
-                            cli.simulation
-                                .run(idx, cli.process.clone(), cli.growth)
-                                .unwrap()
+                        .enumerate()
+                        .progress_count(runs)
+                        .for_each(|(idx, process)| {
+                            cli.simulation.run(idx, process).unwrap()
                         }),
                 }
                 println!("{} End simulation", Utc::now(),);

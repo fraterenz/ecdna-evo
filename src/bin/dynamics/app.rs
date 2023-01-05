@@ -3,7 +3,7 @@ use rand::SeedableRng;
 use rand_pcg::Pcg64Mcg;
 use ssa::{
     iteration::StopReason,
-    run::{Ended, Growth, Run, Started},
+    run::{Ended, Run, Started},
     NbIndividuals, Process,
 };
 use std::path::PathBuf;
@@ -22,7 +22,6 @@ impl Dynamics {
     fn run_helper(
         &self,
         run: Run<Started>,
-        growth: Growth,
         idx: usize,
         mut j: u64,
     ) -> Run<Ended> {
@@ -38,8 +37,7 @@ impl Dynamics {
 
             // clone the process because we restart with new simulation with
             // fresh data
-            let run =
-                Run::new(idx, process.clone(), growth, 0, rng, self.verbose);
+            let run = Run::new(idx, process.clone(), rng, self.verbose);
             (run_ended, stop) = run.simulate(0);
             j += 1;
         }
@@ -51,18 +49,13 @@ impl Dynamics {
 }
 
 impl Simulate for Dynamics {
-    fn run(
-        &self,
-        idx: usize,
-        process: Process,
-        growth: Growth,
-    ) -> anyhow::Result<()> {
+    fn run(&self, idx: usize, process: Process) -> anyhow::Result<()> {
         let seed_run = idx as u64 * NB_RESTARTS + self.seed;
         if self.verbose > 0 {
             println!("Seed: {:#?}", seed_run);
         }
         let rng = Pcg64Mcg::seed_from_u64(seed_run);
-        let mut run = Run::new(idx, process, growth, 0, rng, self.verbose);
+        let mut run = Run::new(idx, process, rng, self.verbose);
 
         if run.verbosity > 0 {
             println!("{:#?}", run);
@@ -73,9 +66,8 @@ impl Simulate for Dynamics {
                 if self.verbose > 1 {
                     println!("Subsampling {} with {} cells", i, nb_cells);
                 }
-                let run_ended = self
-                    .run_helper(run, growth, idx, 0)
-                    .undersample(nb_cells, i);
+                let run_ended =
+                    self.run_helper(run, idx, 0).undersample(nb_cells, i);
                 run_ended
                     .save(&self.path2dir)
                     .with_context(|| {
@@ -89,7 +81,7 @@ impl Simulate for Dynamics {
                 println!("Nosubsampling");
             }
             // no subsampling no saving
-            self.run_helper(run, growth, idx, 0)
+            self.run_helper(run, idx, 0)
                 .save(&self.path2dir)
                 .with_context(|| format!("Cannot save run {}", idx))
                 .unwrap();
