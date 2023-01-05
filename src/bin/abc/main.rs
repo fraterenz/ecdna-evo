@@ -8,6 +8,8 @@ use ssa::Process;
 
 use crate::clap_app::{Cli, Parallel};
 
+/// Perform the ABC to infer the fitness coefficient from the data.
+mod abc;
 mod app;
 mod clap_app;
 

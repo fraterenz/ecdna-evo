@@ -4,7 +4,6 @@ use rand_distr::{Distribution, Uniform};
 use rand_pcg::Pcg64Mcg;
 use ssa::{
     ecdna::{
-        abc::{Data, Input, Summaries},
         data::EcDNADistribution,
         process::ABC,
         proliferation::{EcDNAGrowth, Exponential},
@@ -18,7 +17,11 @@ use ssa::{
 };
 use std::{collections::HashMap, path::PathBuf};
 
-use crate::{app::Abc, SimulationOptions};
+use crate::{
+    abc::{Data, Input, Summaries},
+    app::Abc,
+    SimulationOptions,
+};
 
 pub enum Parallel {
     False,

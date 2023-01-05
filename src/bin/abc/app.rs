@@ -1,12 +1,10 @@
 use anyhow::Context;
 use rand::SeedableRng;
 use rand_pcg::Pcg64Mcg;
-use ssa::{
-    ecdna::abc::{ABCRejection, Data},
-    run::Run,
-    Process,
-};
+use ssa::{run::Run, Process};
 use std::path::PathBuf;
+
+use crate::abc::{ABCRejection, Data};
 
 pub struct Abc {
     pub seed: u64,
