@@ -76,32 +76,40 @@ impl ABCRejection {
     pub fn run(run: &ABC, target: &Data) -> ABCResult {
         //! Run the ABC rejection method by comparing the run's data against the
         //! patient's data (`target`).
-        let ecdna = if let Some(target_distribution) = &target.distribution {
-            let (distance, convergence) =
-                target_distribution.ks_distance(run.get_ecdna_distribution());
-            if convergence {
-                Some(distance)
+        let ecdna_run = run.get_ecdna_distribution();
+        let (mean, frequency, entropy) = (
+            ecdna_run.compute_mean(),
+            ecdna_run.compute_frequency(),
+            ecdna_run.compute_entropy(),
+        );
+        let ecdna_stat =
+            if let Some(target_distribution) = &target.distribution {
+                let (distance, convergence) =
+                    target_distribution.ks_distance(ecdna_run);
+                if convergence {
+                    Some(distance)
+                } else {
+                    None
+                }
             } else {
                 None
-            }
-        } else {
-            None
-        };
-        let mean = target.mean.as_ref().map(|target_mean| {
+            };
+        let mean_stat = target.mean.as_ref().map(|target_mean| {
             relative_change(
                 target_mean,
                 &run.get_ecdna_distribution().compute_mean(),
             )
         });
 
-        let frequency = target.frequency.as_ref().map(|target_frequency| {
-            relative_change(
-                target_frequency,
-                &run.get_ecdna_distribution().compute_frequency(),
-            )
-        });
+        let frequency_stat =
+            target.frequency.as_ref().map(|target_frequency| {
+                relative_change(
+                    target_frequency,
+                    &run.get_ecdna_distribution().compute_frequency(),
+                )
+            });
 
-        let entropy = target.entropy.as_ref().map(|target_entropy| {
+        let entropy_stat = target.entropy.as_ref().map(|target_entropy| {
             relative_change(
                 target_entropy,
                 &run.get_ecdna_distribution().compute_entropy(),
@@ -112,16 +120,29 @@ impl ABCRejection {
         let b0 = rates[0];
         let b1 = rates[1];
 
-        ABCResult { ecdna, mean, frequency, entropy, b0, b1 }
+        ABCResult {
+            ecdna_stat,
+            mean_stat,
+            mean,
+            frequency_stat,
+            frequency,
+            entropy_stat,
+            entropy,
+            b0,
+            b1,
+        }
     }
 }
 
 #[derive(Debug, Serialize)]
 pub struct ABCResult {
-    ecdna: Option<f32>,
-    mean: Option<f32>,
-    frequency: Option<f32>,
-    entropy: Option<f32>,
+    ecdna_stat: Option<f32>,
+    mean_stat: Option<f32>,
+    mean: f32,
+    frequency_stat: Option<f32>,
+    frequency: f32,
+    entropy_stat: Option<f32>,
+    entropy: f32,
     b0: f32,
     b1: f32,
 }
