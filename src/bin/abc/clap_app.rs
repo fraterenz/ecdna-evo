@@ -47,7 +47,7 @@ pub struct Cli {
     b0: f32,
     /// proliferation rate of the cells with ecdnas.
     /// when a range is specified, abc samples a rate randomly from this range
-    #[arg(long, value_name = "rate", num_args=0..=2)]
+    #[arg(long, value_name = "rate", num_args = 2)]
     b1: Vec<f32>,
     #[arg(short, long, default_value_t = 100, conflicts_with = "debug")]
     /// number of independent runs used to recover the posterior distribution
@@ -59,6 +59,9 @@ pub struct Cli {
     /// seed for reproducibility
     #[arg(long, default_value_t = 26)]
     seed: u64,
+    /// triggers sequential mode
+    #[arg(short, long, action = ArgAction::SetTrue, default_value_t = false, conflicts_with = "debug")]
+    sequential: bool,
     /// triggers debug mode: max verbosity and 1 sequential simulation
     #[arg(short, long, action = ArgAction::SetTrue, default_value_t = false)]
     debug: bool,
@@ -85,8 +88,13 @@ impl Cli {
     pub fn build() -> anyhow::Result<SimulationOptions> {
         let cli = Cli::parse();
 
-        let parallel =
-            if cli.debug { Parallel::Debug } else { Parallel::True };
+        let parallel = if cli.debug {
+            Parallel::Debug
+        } else if cli.sequential {
+            Parallel::False
+        } else {
+            Parallel::True
+        };
 
         // we assume fixed initial pop for now, starting with one cell
         // with 1 ecDNA
