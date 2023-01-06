@@ -4,6 +4,7 @@ use anyhow::Context;
 use serde::Serialize;
 use ssa::ecdna::data::EcDNADistribution;
 use ssa::ecdna::process::ABC;
+use ssa::NbIndividuals;
 use std::fs;
 use std::path::Path;
 
@@ -119,6 +120,8 @@ impl ABCRejection {
         let rates = *run.get_rates();
         let b0 = rates[0];
         let b1 = rates[1];
+        let pop_size = run.get_ecdna_distribution().get_nminus()
+            + run.get_ecdna_distribution().compute_nplus();
 
         ABCResult {
             idx,
@@ -131,6 +134,7 @@ impl ABCRejection {
             entropy,
             b0,
             b1,
+            pop_size,
         }
     }
 }
@@ -138,15 +142,16 @@ impl ABCRejection {
 #[derive(Debug, Serialize)]
 pub struct ABCResult {
     idx: usize,
-    ecdna_stat: Option<f32>,
-    mean_stat: Option<f32>,
     mean: f32,
-    frequency_stat: Option<f32>,
+    mean_stat: Option<f32>,
     frequency: f32,
-    entropy_stat: Option<f32>,
+    frequency_stat: Option<f32>,
     entropy: f32,
+    entropy_stat: Option<f32>,
+    ecdna_stat: Option<f32>,
     b0: f32,
     b1: f32,
+    pop_size: NbIndividuals,
 }
 
 impl ABCResult {
