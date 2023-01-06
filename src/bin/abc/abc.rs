@@ -73,7 +73,7 @@ impl Data {
 pub struct ABCRejection;
 
 impl ABCRejection {
-    pub fn run(run: &ABC, target: &Data) -> ABCResult {
+    pub fn run(run: &ABC, target: &Data, idx: usize) -> ABCResult {
         //! Run the ABC rejection method by comparing the run's data against the
         //! patient's data (`target`).
         let ecdna_run = run.get_ecdna_distribution();
@@ -121,6 +121,7 @@ impl ABCRejection {
         let b1 = rates[1];
 
         ABCResult {
+            idx,
             ecdna_stat,
             mean_stat,
             mean,
@@ -136,6 +137,7 @@ impl ABCRejection {
 
 #[derive(Debug, Serialize)]
 pub struct ABCResult {
+    idx: usize,
     ecdna_stat: Option<f32>,
     mean_stat: Option<f32>,
     mean: f32,

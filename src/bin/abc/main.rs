@@ -4,7 +4,7 @@ use indicatif::ParallelProgressIterator;
 use rayon::prelude::{
     IndexedParallelIterator, IntoParallelIterator, ParallelIterator,
 };
-use ssa::Process;
+use ssa::ecdna::process::ABC;
 
 use crate::clap_app::{Cli, Parallel};
 
@@ -16,7 +16,7 @@ mod clap_app;
 pub struct SimulationOptions {
     simulation: Abc,
     parallel: Parallel,
-    processes: Vec<Process>,
+    processes: Vec<ABC>,
 }
 
 fn main() {

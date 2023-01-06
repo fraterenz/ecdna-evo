@@ -1,7 +1,6 @@
-use anyhow::Context;
 use rand::SeedableRng;
 use rand_pcg::Pcg64Mcg;
-use ssa::{run::Run, Process};
+use ssa::{ecdna::process::ABC, run::Run, Process};
 use std::path::PathBuf;
 
 use crate::abc::{ABCRejection, Data};
@@ -17,7 +16,7 @@ impl Abc {
     pub fn run(
         &self,
         idx: usize,
-        process: Process,
+        process: ABC,
         data: &Data,
     ) -> anyhow::Result<()> {
         //! Find the posterior distribution of the fitness coefficient using
@@ -28,20 +27,21 @@ impl Abc {
             println!("Seed: {:#?}", seed_run);
         }
         let rng = Pcg64Mcg::seed_from_u64(seed_run);
-        let run = Run::new(idx, process, rng, self.verbose);
+        let run = Run::new(
+            idx,
+            Process::EcDNAProcess(process.into()).into(),
+            rng,
+            self.verbose,
+        );
 
         if run.verbosity > 0 {
             println!("{:#?}", run);
         }
         let (run_ended, _) = run.simulate(0);
-        run_ended
-            .save(&self.path2dir)
-            .with_context(|| format!("Cannot save run {}", idx))
-            .unwrap();
         match run_ended.bd_process {
             Process::EcDNAProcess(process) => match process {
                 ssa::ecdna::process::EcDNAProcess::ABC(run) => {
-                    ABCRejection::run(&run, data).save(
+                    ABCRejection::run(&run, data, idx).save(
                         &self.path2dir,
                         idx,
                         self.verbose,

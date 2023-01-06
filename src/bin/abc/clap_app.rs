@@ -6,14 +6,14 @@ use ssa::{
     ecdna::{
         data::EcDNADistribution,
         process::ABC,
-        proliferation::{EcDNAGrowth, Exponential},
+        proliferation::Exponential,
         segregation::{
             BinomialNoNminus, BinomialNoUneven, BinomialSegregation,
             RandomSegregation, Segregation,
         },
     },
     iteration::Iteration,
-    NbIndividuals, Process,
+    NbIndividuals,
 };
 use std::{collections::HashMap, path::PathBuf};
 
@@ -121,38 +121,32 @@ impl Cli {
         // create proceses to simulate
         let mut rng = Pcg64Mcg::seed_from_u64(cli.seed);
         // we assume pure birth only, hence 2
-        let iterations: Vec<Iteration<2>> = (0..cli.runs)
-            .map(|_| {
-                // sample at random a fitness, assuming b1[0] > b1[1]
-                let b1 = Uniform::new(&cli.b1[0], &cli.b1[1]).sample(&mut rng);
-                Iteration::new(
-                    [cli.b0, b1],
-                    initial_population,
-                    cli.cells,
-                    cli.cells as usize,
-                )
-            })
-            .collect();
+        let iterations = (0..cli.runs).map(|_| {
+            // sample at random a fitness, assuming b1[0] > b1[1]
+            let b1 = Uniform::new(cli.b1[0], cli.b1[1]).sample(&mut rng);
+            Iteration::new(
+                [cli.b0, b1],
+                initial_population,
+                cli.cells,
+                cli.cells as usize,
+            )
+        });
         let processes = iterations
             .into_iter()
             .map(|iteration| {
-                Process::EcDNAProcess(
-                    ABC::new(
-                        EcDNAGrowth::Exponential(Exponential {
-                            segregation: Segregation::Random(
-                                RandomSegregation::BinomialSegregation(
-                                    BinomialSegregation,
-                                ),
+                ABC::new(
+                    Exponential {
+                        segregation: Segregation::Random(
+                            RandomSegregation::BinomialSegregation(
+                                BinomialSegregation,
                             ),
-                        })
-                        .into(),
-                        iteration,
-                        distribution.clone(),
-                        cli.verbose,
-                    )
-                    .expect("Cannot create the ABC simulation")
-                    .into(),
+                        ),
+                    },
+                    iteration,
+                    distribution.clone(),
+                    cli.verbose,
                 )
+                .expect("Cannot create the ABC simulation")
             })
             .collect();
 
@@ -168,26 +162,6 @@ impl Cli {
         })
     }
 }
-//
-//             Commands::Abc {
-//                 b0,
-//                 b1,
-//                 runs,
-//                 cells,
-//                 seed,
-//                 debug,
-//                 path,
-//                 mean,
-//                 frequency,
-//                 entropy,
-//                 data,
-//                 verbose,
-//             } => {
-// }
-//
-// #[derive(Debug, Subcommand)]
-// enum Commands {
-// }
 
 #[derive(ValueEnum, Copy, Clone, Debug, PartialEq, Eq)]
 enum SegregationOptions {
