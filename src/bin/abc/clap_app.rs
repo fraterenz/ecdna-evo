@@ -47,7 +47,7 @@ pub struct Cli {
     b0: f32,
     /// proliferation rate of the cells with ecdnas.
     /// when a range is specified, abc samples a rate randomly from this range
-    #[arg(long, value_name = "rate", num_args = 2)]
+    #[arg(long, required = true, value_name = "rate", num_args = 2)]
     b1: Vec<f32>,
     #[arg(short, long, default_value_t = 100)]
     /// number of independent runs used to recover the posterior distribution
@@ -76,6 +76,10 @@ pub struct Cli {
     /// use the entropy to infer the posterior distribution
     #[arg(long, conflicts_with = "data")]
     entropy: Option<f32>,
+    /// The tumour size at which we believe the subsample of the tumour has
+    /// been taken
+    #[arg(long)]
+    subsample: Option<NbIndividuals>,
     /// the ecdna distribution used to infer the posterior distribution.
     /// when present, abc will compute from this file the mean, the entropy as well as the frequency.
     #[arg(long, value_name = "FILE", value_parser = |path: &str| { let path_b = PathBuf::from(path); if path_b.extension() == Some(std::ffi::OsStr::new("json")) { Ok(path_b) } else { Err("must be json file: extension must be .json)") }} ) ]
@@ -159,6 +163,7 @@ impl Cli {
             },
             parallel,
             processes,
+            subsample: cli.subsample,
         })
     }
 }

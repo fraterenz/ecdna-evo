@@ -4,7 +4,7 @@ use indicatif::ParallelProgressIterator;
 use rayon::prelude::{
     IndexedParallelIterator, IntoParallelIterator, ParallelIterator,
 };
-use ssa::ecdna::process::ABC;
+use ssa::{ecdna::process::ABC, NbIndividuals};
 
 use crate::clap_app::{Cli, Parallel};
 
@@ -17,6 +17,8 @@ pub struct SimulationOptions {
     simulation: Abc,
     parallel: Parallel,
     processes: Vec<ABC>,
+    /// subsample tumour when it has reached this size
+    subsample: Option<NbIndividuals>,
 }
 
 fn main() {
@@ -31,7 +33,12 @@ fn main() {
                         cli.processes.into_iter().enumerate().for_each(
                             |(idx, process)| {
                                 cli.simulation
-                                    .run(idx, process, &cli.simulation.target)
+                                    .run(
+                                        idx,
+                                        process,
+                                        &cli.simulation.target,
+                                        cli.subsample,
+                                    )
                                     .unwrap()
                             },
                         )
@@ -43,7 +50,12 @@ fn main() {
                         .progress_count(runs)
                         .for_each(|(idx, process)| {
                             cli.simulation
-                                .run(idx, process, &cli.simulation.target)
+                                .run(
+                                    idx,
+                                    process,
+                                    &cli.simulation.target,
+                                    cli.subsample,
+                                )
                                 .unwrap()
                         }),
                 }

@@ -1,9 +1,10 @@
+use app::Dynamics;
 use chrono::Utc;
 use indicatif::ParallelProgressIterator;
 use rayon::prelude::{
     IndexedParallelIterator, IntoParallelIterator, ParallelIterator,
 };
-use ssa::Process;
+use ssa::{NbIndividuals, Process, RestartGrowth};
 
 use crate::clap_app::{Cli, Parallel};
 
@@ -17,15 +18,17 @@ pub const MAX_ITER: usize = 3;
 /// of the high cell death
 const NB_RESTARTS: u64 = 30;
 
-/// Run the simulations
-pub trait Simulate {
-    fn run(&self, idx: usize, process: Process) -> anyhow::Result<()>;
-}
-
 pub struct SimulationOptions {
-    simulation: Box<dyn Simulate + Sync>,
+    simulation: Dynamics,
     parallel: Parallel,
     processes: Vec<Process>,
+    sampling_options: Option<SamplingOptions>,
+}
+
+#[derive(Clone)]
+pub struct SamplingOptions {
+    sample_at: Vec<NbIndividuals>,
+    restart_growth: RestartGrowth,
 }
 
 fn main() {
@@ -39,7 +42,9 @@ fn main() {
                     Parallel::Debug | Parallel::False => {
                         cli.processes.into_iter().enumerate().for_each(
                             |(idx, process)| {
-                                cli.simulation.run(idx, process).unwrap()
+                                cli.simulation
+                                    .run(idx, process, &cli.sampling_options)
+                                    .unwrap()
                             },
                         )
                     }
@@ -49,7 +54,9 @@ fn main() {
                         .enumerate()
                         .progress_count(runs)
                         .for_each(|(idx, process)| {
-                            cli.simulation.run(idx, process).unwrap()
+                            cli.simulation
+                                .run(idx, process, &cli.sampling_options)
+                                .unwrap()
                         }),
                 }
                 println!("{} End simulation", Utc::now(),);

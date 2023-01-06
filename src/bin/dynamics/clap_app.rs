@@ -14,11 +14,11 @@ use ssa::{
         },
     },
     iteration::Iteration,
-    NbIndividuals, Process,
+    NbIndividuals, Process, RestartGrowth,
 };
 use std::{collections::HashMap, path::PathBuf};
 
-use crate::{app::Dynamics, SimulationOptions, MAX_ITER};
+use crate::{app::Dynamics, SamplingOptions, SimulationOptions, MAX_ITER};
 
 pub enum Parallel {
     False,
@@ -75,6 +75,13 @@ pub struct Cli {
     /// copies in the tumour population
     #[arg(short, long, action = ArgAction::SetTrue, default_value_t = false)]
     mean: bool,
+    /// The number of cells kept after subsampling.
+    #[arg(long, num_args = 0.., value_name = "CELLS", requires = "restart_growth")]
+    subsample: Option<Vec<NbIndividuals>>,
+    /// Whether to restart tumour growth from the sample (cell-lines) or from
+    /// the whole population
+    #[arg(long, requires = "subsample")]
+    restart_growth: Option<RestartGrowthOptions>,
     /// Path to store the results of the simulations
     #[arg(
         value_name = "DIR",
@@ -100,38 +107,17 @@ pub struct Cli {
         )
     ]
     initial: Option<PathBuf>,
-    /// The number of cells kept for each subsampling
-    #[arg(
-        long, value_name = "CELLS",
-         num_args = 0..,
-         value_enum,
-         conflicts_with = "save",
-         long_help = "The number of cells kept for each subsampling. Samples are taken as soon as the tumour reaches `cells` cells. Then, the tumour restarts growing from these subsample."
-        )
-    ]
-    subsampling: Option<Vec<NbIndividuals>>,
     #[arg(short, long, default_value_t = 12, conflicts_with = "debug")]
     /// Number of independent realisations to simulate of the same stochastic process
     runs: usize,
     #[arg(short, long, action = clap::ArgAction::Count, conflicts_with = "debug", default_value_t = 0)]
     verbose: u8,
-    /// Timepoints at which we save the ecDNA distribution
-    #[arg(
-            long,
-            value_name = "CELLS",
-            num_args = 0..,
-            value_enum
-        )]
-    save: Option<Vec<NbIndividuals>>,
 }
 
 impl Cli {
     pub fn build() -> anyhow::Result<SimulationOptions> {
         let cli = Cli::parse();
 
-        if cli.save.is_some() {
-            todo!()
-        }
         // if both d0, d1 are either unset or equal to 0, pure birth,
         // else birthdeath
         let (is_birth_death_d0, d0) = match cli.d0 {
@@ -307,24 +293,51 @@ impl Cli {
             }
         };
 
-        let parallel = if cli.debug {
-            Parallel::Debug
+        let (parallel, runs) = if cli.debug {
+            (Parallel::Debug, 1)
         } else if cli.sequential {
-            Parallel::False
+            (Parallel::False, cli.runs)
         } else {
-            Parallel::True
+            (Parallel::True, cli.runs)
         };
 
+        let path2dir = match cli.subsample.as_ref() {
+            Some(samples) => {
+                let samples_str: Vec<String> =
+                    samples.iter().map(|ele| ele.to_string()).collect();
+                cli.path.join(format!(
+                    "{}samples{}population",
+                    samples_str.join("_"),
+                    cli.cells
+                ))
+            }
+            None => cli
+                .path
+                .join(format!("{}samples{}population", cli.cells, cli.cells)),
+        };
+
+        let sampling_options = cli.restart_growth.map(|sampling_options| {
+            let restart_growth = match sampling_options {
+                RestartGrowthOptions::ContinueFromSubsample => {
+                    RestartGrowth::ContinueFromSubsample
+                }
+                RestartGrowthOptions::ContinueFromPopulation => {
+                    RestartGrowth::ContinueFromPopulation
+                }
+            };
+            SamplingOptions {
+                sample_at: cli
+                    .subsample
+                    .expect("Clap has checked due to requires"),
+                restart_growth,
+            }
+        });
+
         Ok(SimulationOptions {
-            simulation: Box::new(Dynamics {
-                subsampling: cli.subsampling,
-                seed: cli.seed,
-                path2dir: cli.path,
-                save: cli.save,
-                verbose,
-            }),
+            simulation: Dynamics { seed: cli.seed, path2dir, verbose },
             parallel,
-            processes: vec![process; cli.runs],
+            processes: vec![process; runs],
+            sampling_options,
         })
     }
 }
@@ -335,6 +348,12 @@ enum SegregationOptions {
     BinomialNoUneven,
     BinomialSegregation,
     BinomialNoNminus,
+}
+
+#[derive(ValueEnum, Copy, Clone, Debug, PartialEq, Eq)]
+enum RestartGrowthOptions {
+    ContinueFromSubsample,
+    ContinueFromPopulation,
 }
 
 impl std::fmt::Display for SegregationOptions {
