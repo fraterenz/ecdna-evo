@@ -29,7 +29,7 @@ impl Abc {
         let rng = Pcg64Mcg::seed_from_u64(seed_run);
         let run = Run::new(
             idx,
-            Process::EcDNAProcess(process.into()).into(),
+            Process::EcDNAProcess(process.into()),
             rng,
             self.verbose,
         );

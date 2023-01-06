@@ -75,7 +75,7 @@ pub struct ABCRejection;
 
 impl ABCRejection {
     pub fn run(run: &ABC, target: &Data, idx: usize) -> ABCResult {
-        //! Run the ABC rejection method by comparing the run's data against the
+        //! Run the ABC rejection method by comparing the `idx` run against the
         //! patient's data (`target`).
         let ecdna_run = run.get_ecdna_distribution();
         let (mean, frequency, entropy) = (
@@ -90,6 +90,7 @@ impl ABCRejection {
                 if convergence {
                     Some(distance)
                 } else {
+                    println!("DID NOT CONVERGE!");
                     None
                 }
             } else {

@@ -49,12 +49,12 @@ pub struct Cli {
     /// when a range is specified, abc samples a rate randomly from this range
     #[arg(long, value_name = "rate", num_args = 2)]
     b1: Vec<f32>,
-    #[arg(short, long, default_value_t = 100, conflicts_with = "debug")]
+    #[arg(short, long, default_value_t = 100)]
     /// number of independent runs used to recover the posterior distribution
     /// of the fitness coefficient
     runs: usize,
     /// number of cells to simulate
-    #[arg(long, short, default_value_t = 100000, conflicts_with = "debug")]
+    #[arg(long, short, default_value_t = 100000)]
     cells: NbIndividuals,
     /// seed for reproducibility
     #[arg(long, default_value_t = 26)]
@@ -88,12 +88,12 @@ impl Cli {
     pub fn build() -> anyhow::Result<SimulationOptions> {
         let cli = Cli::parse();
 
-        let parallel = if cli.debug {
-            Parallel::Debug
+        let (parallel, runs) = if cli.debug {
+            (Parallel::Debug, 1)
         } else if cli.sequential {
-            Parallel::False
+            (Parallel::False, cli.runs)
         } else {
-            Parallel::True
+            (Parallel::True, cli.runs)
         };
 
         // we assume fixed initial pop for now, starting with one cell
@@ -121,7 +121,7 @@ impl Cli {
         // create proceses to simulate
         let mut rng = Pcg64Mcg::seed_from_u64(cli.seed);
         // we assume pure birth only, hence 2
-        let iterations = (0..cli.runs).map(|_| {
+        let iterations = (0..runs).map(|_| {
             // sample at random a fitness, assuming b1[0] > b1[1]
             let b1 = Uniform::new(cli.b1[0], cli.b1[1]).sample(&mut rng);
             Iteration::new(
