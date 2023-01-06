@@ -14,11 +14,11 @@ use ssa::{
         },
     },
     iteration::Iteration,
-    NbIndividuals, Process, RestartGrowth,
+    NbIndividuals, Process,
 };
 use std::{collections::HashMap, path::PathBuf};
 
-use crate::{app::Dynamics, SamplingOptions, SimulationOptions, MAX_ITER};
+use crate::{app::Dynamics, SimulationOptions, MAX_ITER};
 
 pub enum Parallel {
     False,
@@ -78,10 +78,6 @@ pub struct Cli {
     /// The number of cells kept after subsampling.
     #[arg(long, num_args = 0.., value_name = "CELLS", requires = "restart_growth")]
     subsample: Option<Vec<NbIndividuals>>,
-    /// Whether to restart tumour growth from the sample (cell-lines) or from
-    /// the whole population
-    #[arg(long, requires = "subsample")]
-    restart_growth: Option<RestartGrowthOptions>,
     /// Path to store the results of the simulations
     #[arg(
         value_name = "DIR",
@@ -316,28 +312,11 @@ impl Cli {
                 .join(format!("{}samples{}population", cli.cells, cli.cells)),
         };
 
-        let sampling_options = cli.restart_growth.map(|sampling_options| {
-            let restart_growth = match sampling_options {
-                RestartGrowthOptions::ContinueFromSubsample => {
-                    RestartGrowth::ContinueFromSubsample
-                }
-                RestartGrowthOptions::ContinueFromPopulation => {
-                    RestartGrowth::ContinueFromPopulation
-                }
-            };
-            SamplingOptions {
-                sample_at: cli
-                    .subsample
-                    .expect("Clap has checked due to requires"),
-                restart_growth,
-            }
-        });
-
         Ok(SimulationOptions {
             simulation: Dynamics { seed: cli.seed, path2dir, verbose },
             parallel,
             processes: vec![process; runs],
-            sampling_options,
+            sampling_at: cli.subsample,
         })
     }
 }
@@ -348,12 +327,6 @@ enum SegregationOptions {
     BinomialNoUneven,
     BinomialSegregation,
     BinomialNoNminus,
-}
-
-#[derive(ValueEnum, Copy, Clone, Debug, PartialEq, Eq)]
-enum RestartGrowthOptions {
-    ContinueFromSubsample,
-    ContinueFromPopulation,
 }
 
 impl std::fmt::Display for SegregationOptions {

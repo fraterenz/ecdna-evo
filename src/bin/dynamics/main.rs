@@ -4,7 +4,7 @@ use indicatif::ParallelProgressIterator;
 use rayon::prelude::{
     IndexedParallelIterator, IntoParallelIterator, ParallelIterator,
 };
-use ssa::{NbIndividuals, Process, RestartGrowth};
+use ssa::{NbIndividuals, Process};
 
 use crate::clap_app::{Cli, Parallel};
 
@@ -22,13 +22,7 @@ pub struct SimulationOptions {
     simulation: Dynamics,
     parallel: Parallel,
     processes: Vec<Process>,
-    sampling_options: Option<SamplingOptions>,
-}
-
-#[derive(Clone)]
-pub struct SamplingOptions {
-    sample_at: Vec<NbIndividuals>,
-    restart_growth: RestartGrowth,
+    sampling_at: Option<Vec<NbIndividuals>>,
 }
 
 fn main() {
@@ -43,7 +37,7 @@ fn main() {
                         cli.processes.into_iter().enumerate().for_each(
                             |(idx, process)| {
                                 cli.simulation
-                                    .run(idx, process, &cli.sampling_options)
+                                    .run(idx, process, &cli.sampling_at)
                                     .unwrap()
                             },
                         )
@@ -55,7 +49,7 @@ fn main() {
                         .progress_count(runs)
                         .for_each(|(idx, process)| {
                             cli.simulation
-                                .run(idx, process, &cli.sampling_options)
+                                .run(idx, process, &cli.sampling_at)
                                 .unwrap()
                         }),
                 }

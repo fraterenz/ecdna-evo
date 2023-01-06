@@ -4,11 +4,11 @@ use rand_pcg::Pcg64Mcg;
 use ssa::{
     iteration::StopReason,
     run::{Ended, Run, Started},
-    NbIndividuals, Process, RandomSampling, RestartGrowth,
+    NbIndividuals, Process, RandomSampling,
 };
 use std::path::{Path, PathBuf};
 
-use crate::{SamplingOptions, NB_RESTARTS};
+use crate::NB_RESTARTS;
 
 pub struct Dynamics {
     pub seed: u64,
@@ -24,7 +24,6 @@ impl Dynamics {
         mut j: u64,
         seed: u64,
         sampling_at: Option<NbIndividuals>,
-        restart_growth: Option<&RestartGrowth>,
         path2dir: Option<&Path>,
     ) -> Run<Ended> {
         let mut rng = Pcg64Mcg::seed_from_u64(seed);
@@ -57,12 +56,6 @@ impl Dynamics {
                     })
                     .unwrap();
                 run_ended.bd_process.random_sample(sample_at, &mut rng);
-            } else {
-                if let RestartGrowth::ContinueFromSubsample =
-                    restart_growth.unwrap()
-                {
-                    run_ended.bd_process.random_sample(sample_at, &mut rng);
-                }
             }
         }
         run_ended
@@ -72,7 +65,7 @@ impl Dynamics {
         &self,
         idx: usize,
         process: Process,
-        sampling_options: &Option<SamplingOptions>,
+        sampling_at: &Option<Vec<NbIndividuals>>,
     ) -> anyhow::Result<()> {
         let seed_run = idx as u64 * NB_RESTARTS + self.seed;
         if self.verbose > 0 {
@@ -84,25 +77,24 @@ impl Dynamics {
             println!("{:#?}", run);
         }
 
-        if let Some(info) = sampling_options {
+        if let Some(sampling_at) = sampling_at {
             if self.verbose > 0 {
                 println!("Subsampling");
             }
             let path2dir =
-                &self.path2dir.join((info.sample_at.len() - 1).to_string());
-            for (i, sample_at) in info.sample_at.iter().enumerate() {
+                &self.path2dir.join((sampling_at.len() - 1).to_string());
+            for (i, sample_at) in sampling_at.iter().enumerate() {
                 if self.verbose > 1 {
                     println!("{}-th subsample with {} cells", i, sample_at);
                 }
                 // save only at last sample
-                let last_sample = i == info.sample_at.len() - 1;
+                let last_sample = i == sampling_at.len() - 1;
                 let run_ended = self.run_helper(
                     run,
                     idx,
                     0,
                     seed_run,
                     Some(*sample_at),
-                    Some(&info.restart_growth),
                     if last_sample { Some(path2dir) } else { None },
                 );
                 if last_sample {
@@ -123,7 +115,7 @@ impl Dynamics {
                 println!("Nosubsampling");
             }
             // no subsampling no saving
-            self.run_helper(run, idx, 0, seed_run, None, None, None)
+            self.run_helper(run, idx, 0, seed_run, None, None)
                 .save(&self.path2dir)
                 .with_context(|| format!("Cannot save run {}", idx))
                 .unwrap();
