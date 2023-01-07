@@ -81,10 +81,10 @@ pub struct Cli {
     /// Path to store the results of the simulations
     #[arg(
         value_name = "DIR",
-        value_parser = |path: &str| {
-            let path_b = PathBuf::from(path);
-            if path_b.is_dir() { Ok(path_b) } else { Err("Cannot find dir") }
-        }
+        // value_parser = |path: &str| {
+        //     let path_b = PathBuf::from(path);
+        //     if path_b.is_dir() { Ok(path_b) } else { Err("Cannot find dir") }
+        // }
         )
     ]
     path: PathBuf,
