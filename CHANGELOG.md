@@ -91,3 +91,10 @@ events.
 ### Changes
 - Save ecDNA statistics also before subsampling `dynamics`
 - Add segregation mode to perform the nonminus experiment
+
+## 0.7.0
+The code uses now the `ssa` lib.
+
+Perform ABC with subsampling (one timepoint only for now) with only pure-birth.
+ABC infers only the fitness coefficient, that is the birth-rate of cells with
+ecDNAs `b1`.

@@ -76,7 +76,7 @@ pub struct Cli {
     #[arg(short, long, action = ArgAction::SetTrue, default_value_t = false)]
     mean: bool,
     /// The number of cells kept after subsampling.
-    #[arg(long, num_args = 0.., value_name = "CELLS", requires = "restart_growth")]
+    #[arg(long, num_args = 0.., value_name = "CELLS")]
     subsample: Option<Vec<NbIndividuals>>,
     /// Path to store the results of the simulations
     #[arg(
