@@ -6,10 +6,9 @@ use ssa::{
     ecdna::{
         data::EcDNADistribution,
         process::ABC,
-        proliferation::Exponential,
         segregation::{
             BinomialNoNminus, BinomialNoUneven, BinomialSegregation,
-            RandomSegregation, Segregation,
+            Segregation,
         },
     },
     iteration::Iteration,
@@ -138,19 +137,8 @@ impl Cli {
         let processes = iterations
             .into_iter()
             .map(|iteration| {
-                ABC::new(
-                    Exponential {
-                        segregation: Segregation::Random(
-                            RandomSegregation::BinomialSegregation(
-                                BinomialSegregation,
-                            ),
-                        ),
-                    },
-                    iteration,
-                    distribution.clone(),
-                    cli.verbose,
-                )
-                .expect("Cannot create the ABC simulation")
+                ABC::new(iteration, distribution.clone(), cli.verbose)
+                    .expect("Cannot create the ABC simulation")
             })
             .collect();
 
