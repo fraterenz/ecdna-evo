@@ -166,14 +166,14 @@ impl ABCResult {
             .with_context(|| "Cannot create dir abc".to_string())?;
         let mut abc = path2folder.join("abc").join(id.to_string());
         abc.set_extension("csv");
-        let results = serde_json::to_string(&self)
-            .expect("Cannot serialize the results from ABC inference");
         if verbosity > 1 {
             println!("Saving ABC results to {:#?}", abc);
         }
-        fs::write(abc, results).with_context(|| {
-            "Cannot save the results from ABC inference".to_string()
+        let mut wtr = csv::Writer::from_path(abc)?;
+        wtr.serialize(&self).with_context(|| {
+            "Cannot serialize the results from ABC inference".to_string()
         })?;
+        wtr.flush()?;
         Ok(())
     }
 }
