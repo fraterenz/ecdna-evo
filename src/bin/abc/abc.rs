@@ -3,7 +3,7 @@
 use anyhow::Context;
 use serde::Serialize;
 use ssa::ecdna::data::EcDNADistribution;
-use ssa::ecdna::process::ABC;
+use ssa::ecdna::process::PureBirthNoDynamics;
 use ssa::NbIndividuals;
 use std::fs;
 use std::path::Path;
@@ -74,7 +74,12 @@ impl Data {
 pub struct ABCRejection;
 
 impl ABCRejection {
-    pub fn run(run: &ABC, target: &Data, idx: usize) -> ABCResult {
+    pub fn run(
+        run: &PureBirthNoDynamics,
+        target: &Data,
+        idx: usize,
+        verbosity: u8,
+    ) -> ABCResult {
         //! Run the ABC rejection method by comparing the `idx` run against the
         //! patient's data (`target`).
         let ecdna_run = run.get_ecdna_distribution();
@@ -83,6 +88,12 @@ impl ABCRejection {
             ecdna_run.compute_frequency(),
             ecdna_run.compute_entropy(),
         );
+        if verbosity > 0 {
+            println!(
+                "Statistics of the run: Mean: {}, Freq: {}, Entropy: {}",
+                mean, frequency, entropy
+            );
+        }
         let ecdna_stat =
             if let Some(target_distribution) = &target.distribution {
                 let (distance, convergence) =
@@ -96,27 +107,24 @@ impl ABCRejection {
             } else {
                 None
             };
-        let mean_stat = target.mean.as_ref().map(|target_mean| {
-            relative_change(
-                target_mean,
-                &run.get_ecdna_distribution().compute_mean(),
-            )
-        });
+        let mean_stat = target
+            .mean
+            .as_ref()
+            .map(|target_mean| relative_change(target_mean, &mean));
 
         let frequency_stat =
             target.frequency.as_ref().map(|target_frequency| {
-                relative_change(
-                    target_frequency,
-                    &run.get_ecdna_distribution().compute_frequency(),
-                )
+                relative_change(target_frequency, &frequency)
             });
 
-        let entropy_stat = target.entropy.as_ref().map(|target_entropy| {
-            relative_change(
-                target_entropy,
-                &run.get_ecdna_distribution().compute_entropy(),
-            )
-        });
+        let entropy_stat = target
+            .entropy
+            .as_ref()
+            .map(|target_entropy| relative_change(target_entropy, &entropy));
+
+        if verbosity > 0 {
+            println!("The stats are: ks:{:#?}, mean: {:#?}, freq: {:#?}, entropy: {:#?}", ecdna_stat, mean_stat, frequency_stat, entropy_stat);
+        }
 
         let rates = *run.get_rates();
         let b0 = rates[0];

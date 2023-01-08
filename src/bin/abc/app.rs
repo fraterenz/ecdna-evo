@@ -1,7 +1,9 @@
 use rand::SeedableRng;
 use rand_pcg::Pcg64Mcg;
 use ssa::{
-    ecdna::process::ABC, run::Run, NbIndividuals, Process, RandomSampling,
+    ecdna::process::{EcDNAProcess, PureBirthNoDynamics},
+    run::Run,
+    NbIndividuals, Process, RandomSampling,
 };
 use std::path::PathBuf;
 
@@ -18,7 +20,7 @@ impl Abc {
     pub fn run(
         &self,
         idx: usize,
-        process: ABC,
+        process: PureBirthNoDynamics,
         data: &Data,
         sample_at: Option<NbIndividuals>,
     ) -> anyhow::Result<()> {
@@ -46,8 +48,8 @@ impl Abc {
 
         match run_ended.bd_process {
             Process::EcDNAProcess(process) => match process {
-                ssa::ecdna::process::EcDNAProcess::ABC(run) => {
-                    ABCRejection::run(&run, data, idx).save(
+                EcDNAProcess::PureBirthNoDynamics(run) => {
+                    ABCRejection::run(&run, data, idx, self.verbose).save(
                         &self.path2dir,
                         idx,
                         self.verbose,

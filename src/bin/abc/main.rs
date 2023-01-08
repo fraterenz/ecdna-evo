@@ -4,7 +4,7 @@ use indicatif::ParallelProgressIterator;
 use rayon::prelude::{
     IndexedParallelIterator, IntoParallelIterator, ParallelIterator,
 };
-use ssa::{ecdna::process::ABC, NbIndividuals};
+use ssa::{ecdna::process::PureBirthNoDynamics, NbIndividuals};
 
 use crate::clap_app::{Cli, Parallel};
 
@@ -16,7 +16,7 @@ mod clap_app;
 pub struct SimulationOptions {
     simulation: Abc,
     parallel: Parallel,
-    processes: Vec<ABC>,
+    processes: Vec<PureBirthNoDynamics>,
     /// subsample tumour when it has reached this size
     subsample: Option<NbIndividuals>,
 }

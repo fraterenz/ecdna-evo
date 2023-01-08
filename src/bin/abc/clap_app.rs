@@ -5,10 +5,11 @@ use rand_pcg::Pcg64Mcg;
 use ssa::{
     ecdna::{
         data::EcDNADistribution,
-        process::ABC,
+        process::PureBirthNoDynamics,
+        proliferation::{EcDNAGrowth, Exponential},
         segregation::{
             BinomialNoNminus, BinomialNoUneven, BinomialSegregation,
-            Segregation,
+            RandomSegregation, Segregation,
         },
     },
     iteration::Iteration,
@@ -137,8 +138,19 @@ impl Cli {
         let processes = iterations
             .into_iter()
             .map(|iteration| {
-                ABC::new(iteration, distribution.clone(), cli.verbose)
-                    .expect("Cannot create the ABC simulation")
+                PureBirthNoDynamics::new(
+                    iteration,
+                    distribution.clone(),
+                    EcDNAGrowth::Exponential(Exponential {
+                        segregation: Segregation::Random(
+                            RandomSegregation::BinomialSegregation(
+                                BinomialSegregation,
+                            ),
+                        ),
+                    }),
+                    cli.verbose,
+                )
+                .expect("Cannot create the ABC simulation")
             })
             .collect();
 

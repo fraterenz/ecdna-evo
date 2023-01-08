@@ -4,8 +4,8 @@ use ssa::{
     ecdna::{
         data::EcDNADistribution,
         process::{
-            BirthDeathMeanTimeEcDNA, BirthDeathTimeEcDNA, PureBirthEcDNA,
-            PureBirthMeanTimeEcDNA, PureBirthTimeEcDNA,
+            BirthDeathMeanTime, BirthDeathTime, PureBirth, PureBirthMeanTime,
+            PureBirthTime,
         },
         proliferation::{EcDNAGrowth, Exponential},
         segregation::{
@@ -175,7 +175,7 @@ impl Cli {
                     true => {
                         if cli.time {
                             Process::EcDNAProcess(
-                                BirthDeathMeanTimeEcDNA::new(
+                                BirthDeathMeanTime::new(
                                     0f32,
                                     growth,
                                     iteration,
@@ -201,7 +201,7 @@ impl Cli {
                     false => {
                         if cli.time {
                             Process::EcDNAProcess(
-                                BirthDeathTimeEcDNA::new(
+                                BirthDeathTime::new(
                                     0f32,
                                     growth,
                                     iteration,
@@ -239,7 +239,7 @@ impl Cli {
                     true => {
                         if cli.time {
                             Process::EcDNAProcess(
-                                PureBirthMeanTimeEcDNA::new(
+                                PureBirthMeanTime::new(
                                     0f32,
                                     growth,
                                     iteration,
@@ -264,7 +264,7 @@ impl Cli {
                     false => {
                         if cli.time {
                             Process::EcDNAProcess(
-                                PureBirthTimeEcDNA::new(
+                                PureBirthTime::new(
                                     0f32,
                                     growth,
                                     iteration,
@@ -275,7 +275,7 @@ impl Cli {
                             )
                         } else {
                             Process::EcDNAProcess(
-                                PureBirthEcDNA::new(
+                                PureBirth::new(
                                     growth,
                                     iteration,
                                     distribution,
