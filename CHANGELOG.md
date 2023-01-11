@@ -98,3 +98,13 @@ The code uses now the `ssa` lib.
 Perform ABC with subsampling (one timepoint only for now) with only pure-birth.
 ABC infers only the fitness coefficient, that is the birth-rate of cells with
 ecDNAs `b1`.
+
+**Advantages:**
+
+- reduced by approximatively one half the code base
+- more general, should be directly applicable the other problems/processes (see `ssa::hsc`)
+
+## 0.7.1
+Some many bug fixes.
+The previous version (v.0.7.0) contains so much bugs that it should not be used.
+**`ssa` version:** 0.1.1
