@@ -113,3 +113,12 @@ The previous version (v.0.7.0) contains so much bugs that it should not be used.
 Update `ssa` version.
 
 **`ssa` version:** 0.1.2
+
+
+## 0.8.0
+There are two main changes:
+1. refactor: create a new lib `ecdna-lib` and moved `abc.rs` and the ecDNA distribution there.
+2. Use `ChaCha8` as rng instead of `Pcg`, so we can set the stream in independent threads, see [here](https://rust-random.github.io/book/guide-parallel.html).
+
+
+**`ssa` version:** 0.2.0

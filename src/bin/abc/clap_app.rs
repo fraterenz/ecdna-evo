@@ -1,10 +1,10 @@
 use clap::{ArgAction, ArgGroup, Parser, ValueEnum};
+use ecdna_lib::{abc::Data, distribution::EcDNADistribution};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Uniform};
 use ssa::{
     ecdna::{
-        data::EcDNADistribution,
         process::PureBirthNoDynamics,
         proliferation::{EcDNAGrowth, Exponential},
         segregation::{
@@ -17,11 +17,7 @@ use ssa::{
 };
 use std::{collections::HashMap, path::PathBuf};
 
-use crate::{
-    abc::{Data, Input, Summaries},
-    app::Abc,
-    SimulationOptions,
-};
+use crate::{app::Abc, SimulationOptions};
 
 pub enum Parallel {
     False,
@@ -109,18 +105,28 @@ impl Cli {
         );
 
         // load data
-        let input = match cli.data {
-            Some(path2file) => Input::Distribution(EcDNADistribution::load(
-                &path2file,
-                cli.cells as usize,
-            )?),
-            None => Input::Summaries(Summaries::new(
-                cli.mean,
-                cli.frequency,
-                cli.entropy,
-            )),
+        let data = match cli.data {
+            Some(path2file) => {
+                let distribution =
+                    EcDNADistribution::load(&path2file, cli.cells as usize)?;
+                let mean = distribution.compute_mean();
+                let frequency = distribution.compute_frequency();
+                let entropy = distribution.compute_entropy();
+
+                Data {
+                    distribution: Some(distribution),
+                    mean: Some(mean),
+                    frequency: Some(frequency),
+                    entropy: Some(entropy),
+                }
+            }
+            None => Data {
+                distribution: None,
+                mean: cli.mean,
+                frequency: cli.frequency,
+                entropy: cli.entropy,
+            },
         };
-        let data = Data::from_input(input);
 
         // create proceses to simulate
         let mut rng = ChaCha8Rng::seed_from_u64(cli.seed);

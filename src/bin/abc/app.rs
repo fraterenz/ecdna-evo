@@ -1,3 +1,4 @@
+use ecdna_lib::abc::{ABCRejection, ABCResultBuilder, Data};
 use rand::SeedableRng;
 use rand_chacha::{self, ChaCha8Rng};
 use ssa::{
@@ -6,8 +7,6 @@ use ssa::{
     NbIndividuals, Process, RandomSampling,
 };
 use std::path::PathBuf;
-
-use crate::abc::{ABCRejection, ABCResultBuilder, Data};
 
 pub struct Abc {
     pub seed: u64,

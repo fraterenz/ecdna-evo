@@ -1,8 +1,8 @@
 use anyhow::Context;
 use clap::{ArgAction, Parser, ValueEnum};
+use ecdna_lib::distribution::EcDNADistribution;
 use ssa::{
     ecdna::{
-        data::EcDNADistribution,
         process::{
             BirthDeathMeanTime, BirthDeathTime, PureBirth, PureBirthMeanTime,
             PureBirthTime,

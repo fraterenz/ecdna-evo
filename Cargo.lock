@@ -333,7 +333,7 @@ dependencies = [
  "chrono",
  "clap",
  "csv",
- "derive_builder",
+ "ecdna-lib",
  "enum_dispatch",
  "fake",
  "indicatif",
@@ -347,6 +347,20 @@ dependencies = [
  "serde_json",
  "ssa",
  "test-case",
+]
+
+[[package]]
+name = "ecdna-lib"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "csv",
+ "derive_builder",
+ "rand",
+ "rand_chacha",
+ "rand_distr",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -874,6 +888,7 @@ name = "ssa"
 version = "0.1.2"
 dependencies = [
  "anyhow",
+ "ecdna-lib",
  "enum_dispatch",
  "rand",
  "rand_chacha",
