@@ -1,6 +1,6 @@
 use anyhow::Context;
 use rand::SeedableRng;
-use rand_pcg::Pcg64Mcg;
+use rand_chacha::ChaCha8Rng;
 use ssa::{
     iteration::StopReason,
     run::{Ended, Run, Started},
@@ -22,11 +22,12 @@ impl Dynamics {
         run: Run<Started>,
         idx: usize,
         mut j: u64,
-        seed: u64,
+        stream: u64,
         sampling_at: Option<NbIndividuals>,
         path2dir: Option<&Path>,
     ) -> Run<Ended> {
-        let mut rng = Pcg64Mcg::seed_from_u64(seed);
+        let mut rng = ChaCha8Rng::seed_from_u64(self.seed);
+        rng.set_stream(stream);
         let process = run.bd_process.clone();
         let (mut run_ended, mut stop) = run.simulate(0, &mut rng);
         // restart, this can happen when high death rates
@@ -35,7 +36,7 @@ impl Dynamics {
             if self.verbose > 1 {
                 println!("Restarting with seed {} because all lineages have died out", seed_run);
             }
-            let mut rng = Pcg64Mcg::seed_from_u64(seed_run);
+            let mut rng = ChaCha8Rng::seed_from_u64(seed_run);
 
             // clone the process because we restart with new simulation with
             // fresh data
@@ -67,9 +68,9 @@ impl Dynamics {
         process: Process,
         sampling_at: &Option<Vec<NbIndividuals>>,
     ) -> anyhow::Result<()> {
-        let seed_run = idx as u64 * NB_RESTARTS + self.seed;
+        let stream = idx as u64 * NB_RESTARTS;
         if self.verbose > 0 {
-            println!("Seed: {:#?}", seed_run);
+            println!("Stream: {:#?}", stream);
         }
         let mut run = Run::new(idx, process, self.verbose);
 
@@ -93,7 +94,7 @@ impl Dynamics {
                     run,
                     idx,
                     0,
-                    seed_run,
+                    stream,
                     Some(*sample_at),
                     if last_sample { Some(path2dir) } else { None },
                 );
@@ -115,7 +116,7 @@ impl Dynamics {
                 println!("Nosubsampling");
             }
             // no subsampling no saving
-            self.run_helper(run, idx, 0, seed_run, None, None)
+            self.run_helper(run, idx, 0, stream, None, None)
                 .save(&self.path2dir)
                 .with_context(|| format!("Cannot save run {}", idx))
                 .unwrap();

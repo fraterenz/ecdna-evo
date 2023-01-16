@@ -13,6 +13,9 @@ mod abc;
 mod app;
 mod clap_app;
 
+#[macro_use]
+extern crate derive_builder;
+
 pub struct SimulationOptions {
     simulation: Abc,
     parallel: Parallel,

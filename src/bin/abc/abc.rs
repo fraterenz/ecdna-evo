@@ -3,7 +3,6 @@
 use anyhow::Context;
 use serde::Serialize;
 use ssa::ecdna::data::EcDNADistribution;
-use ssa::ecdna::process::PureBirthNoDynamics;
 use ssa::NbIndividuals;
 use std::fs;
 use std::path::Path;
@@ -75,25 +74,15 @@ pub struct ABCRejection;
 
 impl ABCRejection {
     pub fn run(
-        run: &PureBirthNoDynamics,
+        mut builder: ABCResultBuilder,
+        ecdna_run: &EcDNADistribution,
         target: &Data,
-        idx: usize,
         verbosity: u8,
     ) -> ABCResult {
         //! Run the ABC rejection method by comparing the `idx` run against the
         //! patient's data (`target`).
-        let ecdna_run = run.get_ecdna_distribution();
-        let (mean, frequency, entropy) = (
-            ecdna_run.compute_mean(),
-            ecdna_run.compute_frequency(),
-            ecdna_run.compute_entropy(),
-        );
-        if verbosity > 0 {
-            println!(
-                "Statistics of the run: Mean: {}, Freq: {}, Entropy: {}",
-                mean, frequency, entropy
-            );
-        }
+        let pop_size = ecdna_run.get_nminus() + ecdna_run.compute_nplus();
+        builder.pop_size(pop_size);
         let ecdna_stat =
             if let Some(target_distribution) = &target.distribution {
                 let (distance, convergence) =
@@ -107,56 +96,53 @@ impl ABCRejection {
             } else {
                 None
             };
+        builder.ecdna_stat(ecdna_stat);
+
+        let mean = ecdna_run.compute_mean();
+        builder.mean(mean);
         let mean_stat = target
             .mean
             .as_ref()
             .map(|target_mean| relative_change(target_mean, &mean));
+        builder.mean_stat(mean_stat);
 
+        let frequency = ecdna_run.compute_frequency();
+        builder.frequency(frequency);
         let frequency_stat =
             target.frequency.as_ref().map(|target_frequency| {
                 relative_change(target_frequency, &frequency)
             });
+        builder.frequency_stat(frequency_stat);
 
+        let entropy = ecdna_run.compute_entropy();
+        builder.entropy(entropy);
         let entropy_stat = target
             .entropy
             .as_ref()
             .map(|target_entropy| relative_change(target_entropy, &entropy));
+        builder.entropy_stat(entropy_stat);
 
         if verbosity > 0 {
             println!("The stats are: ks:{:#?}, mean: {:#?}, freq: {:#?}, entropy: {:#?}", ecdna_stat, mean_stat, frequency_stat, entropy_stat);
         }
 
-        let rates = *run.get_rates();
-        let b0 = rates[0];
-        let b1 = rates[1];
-        let pop_size = run.get_ecdna_distribution().get_nminus()
-            + run.get_ecdna_distribution().compute_nplus();
-
-        ABCResult {
-            idx,
-            ecdna_stat,
-            mean_stat,
-            mean,
-            frequency_stat,
-            frequency,
-            entropy_stat,
-            entropy,
-            b0,
-            b1,
-            pop_size,
-        }
+        builder.build().expect("Cannot build ABC results")
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Builder, Debug, Serialize)]
 pub struct ABCResult {
     idx: usize,
     mean: f32,
+    #[builder(default)]
     mean_stat: Option<f32>,
     frequency: f32,
+    #[builder(default)]
     frequency_stat: Option<f32>,
     entropy: f32,
+    #[builder(default)]
     entropy_stat: Option<f32>,
+    #[builder(default)]
     ecdna_stat: Option<f32>,
     b0: f32,
     b1: f32,
@@ -167,12 +153,17 @@ impl ABCResult {
     pub fn save(
         &self,
         path2folder: &Path,
-        id: usize,
         verbosity: u8,
     ) -> anyhow::Result<()> {
+        if verbosity > 0 {
+            println!(
+                "Statistics of the run: Mean: {}, Freq: {}, Entropy: {}",
+                self.mean, self.frequency, self.entropy
+            );
+        }
         fs::create_dir_all(path2folder.join("abc"))
             .with_context(|| "Cannot create dir abc".to_string())?;
-        let mut abc = path2folder.join("abc").join(id.to_string());
+        let mut abc = path2folder.join("abc").join(self.idx.to_string());
         abc.set_extension("csv");
         if verbosity > 1 {
             println!("Saving ABC results to {:#?}", abc);

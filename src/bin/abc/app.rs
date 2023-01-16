@@ -1,5 +1,5 @@
 use rand::SeedableRng;
-use rand_pcg::Pcg64Mcg;
+use rand_chacha::{self, ChaCha8Rng};
 use ssa::{
     ecdna::process::{EcDNAProcess, PureBirthNoDynamics},
     run::Run,
@@ -7,7 +7,7 @@ use ssa::{
 };
 use std::path::PathBuf;
 
-use crate::abc::{ABCRejection, Data};
+use crate::abc::{ABCRejection, ABCResultBuilder, Data};
 
 pub struct Abc {
     pub seed: u64,
@@ -29,11 +29,11 @@ impl Abc {
         //! The fitness coefficient is the birth-rate of cells with ecDNAs.
         //!
         //! Perform subsampling when `sample_at` is some.
-        let seed_run = idx as u64 + self.seed;
         if self.verbose > 0 {
-            println!("Seed: {:#?}", seed_run);
+            println!("Stream: {:#?}", idx);
         }
-        let mut rng = Pcg64Mcg::seed_from_u64(seed_run);
+        let mut rng = ChaCha8Rng::seed_from_u64(self.seed);
+        rng.set_stream(idx as u64);
         let run =
             Run::new(idx, Process::EcDNAProcess(process.into()), self.verbose);
         if run.verbosity > 0 {
@@ -49,11 +49,20 @@ impl Abc {
         match run_ended.bd_process {
             Process::EcDNAProcess(process) => match process {
                 EcDNAProcess::PureBirthNoDynamics(run) => {
-                    ABCRejection::run(&run, data, idx, self.verbose).save(
-                        &self.path2dir,
-                        idx,
+                    let mut builder = ABCResultBuilder::default();
+                    // run data
+                    let rates = *run.get_rates();
+                    builder.b0(rates[0]);
+                    builder.b1(rates[1]);
+                    builder.idx(idx);
+
+                    ABCRejection::run(
+                        builder,
+                        run.get_ecdna_distribution(),
+                        data,
                         self.verbose,
                     )
+                    .save(&self.path2dir, self.verbose)
                 }
                 _ => unreachable!("Cannot perform ABC without abc process"),
             },

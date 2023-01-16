@@ -1,7 +1,7 @@
 use clap::{ArgAction, ArgGroup, Parser, ValueEnum};
 use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Uniform};
-use rand_pcg::Pcg64Mcg;
 use ssa::{
     ecdna::{
         data::EcDNADistribution,
@@ -123,7 +123,7 @@ impl Cli {
         let data = Data::from_input(input);
 
         // create proceses to simulate
-        let mut rng = Pcg64Mcg::seed_from_u64(cli.seed);
+        let mut rng = ChaCha8Rng::seed_from_u64(cli.seed);
         // we assume pure birth only, hence 2
         let iterations = (0..runs).map(|_| {
             // sample at random a fitness, assuming b1[0] > b1[1]
