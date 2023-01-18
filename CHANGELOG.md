@@ -122,3 +122,8 @@ There are two main changes:
 
 
 **`ssa` version:** 0.2.0
+
+## 0.8.1
+Update `ssa` version
+
+**`ssa` version:** 0.2.1
