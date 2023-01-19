@@ -1,16 +1,17 @@
 use clap::{ArgAction, ArgGroup, Parser, ValueEnum};
-use ecdna_lib::{abc::Data, distribution::EcDNADistribution};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Uniform};
 use ssa::{
     ecdna::{
+        abc::Data,
         process::PureBirthNoDynamics,
         proliferation::{EcDNAGrowth, Exponential},
         segregation::{
             BinomialNoNminus, BinomialNoUneven, BinomialSegregation,
             RandomSegregation, Segregation,
         },
+        EcDNADistribution,
     },
     iteration::Iteration,
     NbIndividuals,

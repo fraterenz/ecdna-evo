@@ -1,6 +1,5 @@
 use anyhow::Context;
 use clap::{ArgAction, Parser, ValueEnum};
-use ecdna_lib::distribution::EcDNADistribution;
 use ssa::{
     ecdna::{
         process::{
@@ -12,6 +11,7 @@ use ssa::{
             BinomialNoNminus, BinomialNoUneven, BinomialSegregation,
             Segregation,
         },
+        EcDNADistribution,
     },
     iteration::Iteration,
     NbIndividuals, Process,

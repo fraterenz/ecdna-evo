@@ -1,10 +1,12 @@
 use anyhow::Context;
-use ecdna_lib::abc::{ABCRejection, ABCResult, ABCResultBuilder, Data};
 use rand::SeedableRng;
 use rand_chacha::{self, ChaCha8Rng};
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use ssa::{
-    ecdna::process::{EcDNAProcess, PureBirthNoDynamics},
+    ecdna::{
+        abc::{ABCRejection, ABCResult, ABCResultBuilder, Data},
+        process::{EcDNAProcess, PureBirthNoDynamics},
+    },
     run::Run,
     NbIndividuals, Process, RandomSampling,
 };
