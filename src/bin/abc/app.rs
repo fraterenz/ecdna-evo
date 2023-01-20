@@ -43,35 +43,6 @@ impl Serialize for ABCResultFitness {
     }
 }
 
-impl ABCResultFitness {
-    pub fn save(
-        &self,
-        path2folder: &Path,
-        verbosity: u8,
-    ) -> anyhow::Result<()> {
-        if verbosity > 0 {
-            println!(
-                "Statistics of the run: Mean: {}, Freq: {}, Entropy: {}",
-                self.result.mean, self.result.frequency, self.result.entropy
-            );
-        }
-        fs::create_dir_all(path2folder.join("abc"))
-            .with_context(|| "Cannot create dir abc".to_string())?;
-        let mut abc =
-            path2folder.join("abc").join(self.result.idx.to_string());
-        abc.set_extension("csv");
-        if verbosity > 1 {
-            println!("Saving ABC results to {:#?}", abc);
-        }
-        let mut wtr = csv::Writer::from_path(abc)?;
-        wtr.serialize(&self).with_context(|| {
-            "Cannot serialize the results from ABC inference".to_string()
-        })?;
-        wtr.flush()?;
-        Ok(())
-    }
-}
-
 pub struct Abc {
     pub seed: u64,
     pub path2dir: PathBuf,
@@ -86,7 +57,7 @@ impl Abc {
         process: PureBirthNoDynamics,
         data: &Data,
         sample_at: Option<NbIndividuals>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<ABCResultFitness> {
         //! Find the posterior distribution of the fitness coefficient using
         //! ABC on taking `data` as input.
         //! The fitness coefficient is the birth-rate of cells with ecDNAs.
@@ -117,7 +88,7 @@ impl Abc {
                     // run data
                     let rates = *run.get_rates();
 
-                    ABCResultFitness {
+                    Ok(ABCResultFitness {
                         result: ABCRejection::run(
                             builder,
                             run.get_ecdna_distribution(),
@@ -126,12 +97,43 @@ impl Abc {
                         ),
                         b0: rates[0],
                         b1: rates[1],
-                    }
-                    .save(&self.path2dir, self.verbose)
+                    })
                 }
                 _ => unreachable!("Cannot perform ABC without abc process"),
             },
-        }?;
-        Ok(())
+        }
     }
+}
+
+pub fn save(
+    results: Vec<ABCResultFitness>,
+    path2folder: &Path,
+    verbosity: u8,
+) -> anyhow::Result<()> {
+    fs::create_dir_all(path2folder)
+        .with_context(|| "Cannot create dir".to_string())?;
+
+    let mut abc = path2folder.join("abc");
+    abc.set_extension("csv");
+    if verbosity > 1 {
+        println!("Saving ABC results to {:#?}", abc);
+    }
+    let mut wtr = csv::Writer::from_path(abc)?;
+
+    for res in results {
+        if verbosity > 0 {
+            println!(
+                "Statistics of run {}: Mean: {}, Freq: {}, Entropy: {}",
+                res.result.idx,
+                res.result.mean,
+                res.result.frequency,
+                res.result.entropy
+            );
+        }
+        wtr.serialize(&res).with_context(|| {
+            "Cannot serialize the results from ABC inference".to_string()
+        })?;
+    }
+    wtr.flush()?;
+    Ok(())
 }

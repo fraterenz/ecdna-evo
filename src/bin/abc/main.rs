@@ -6,7 +6,10 @@ use rayon::prelude::{
 };
 use ssa::{ecdna::process::PureBirthNoDynamics, NbIndividuals};
 
-use crate::clap_app::{Cli, Parallel};
+use crate::{
+    app::{save, ABCResultFitness},
+    clap_app::{Cli, Parallel},
+};
 
 mod app;
 mod clap_app;
@@ -26,27 +29,12 @@ fn main() {
         Ok(cli) => {
             std::process::exit({
                 let runs = cli.processes.len() as u64;
-                match cli.parallel {
-                    Parallel::Debug | Parallel::False => {
-                        cli.processes.into_iter().enumerate().for_each(
-                            |(idx, process)| {
-                                cli.simulation
-                                    .run(
-                                        idx,
-                                        process,
-                                        &cli.simulation.target,
-                                        cli.subsample,
-                                    )
-                                    .unwrap()
-                            },
-                        )
-                    }
-                    Parallel::True => cli
+                let results: Vec<ABCResultFitness> = match cli.parallel {
+                    Parallel::Debug | Parallel::False => cli
                         .processes
-                        .into_par_iter()
+                        .into_iter()
                         .enumerate()
-                        .progress_count(runs)
-                        .for_each(|(idx, process)| {
+                        .map(|(idx, process)| {
                             cli.simulation
                                 .run(
                                     idx,
@@ -55,8 +43,43 @@ fn main() {
                                     cli.subsample,
                                 )
                                 .unwrap()
-                        }),
-                }
+                        })
+                        .collect(),
+                    Parallel::True => cli
+                        .processes
+                        .into_par_iter()
+                        .enumerate()
+                        .progress_count(runs)
+                        .map(|(idx, process)| {
+                            cli.simulation
+                                .run(
+                                    idx,
+                                    process,
+                                    &cli.simulation.target,
+                                    cli.subsample,
+                                )
+                                .unwrap()
+                        })
+                        .collect(),
+                };
+                if let Err(err) = save(
+                    results,
+                    &cli.simulation.path2dir,
+                    cli.simulation.verbose,
+                ) {
+                    eprintln!(
+                        "{} Error while saving the results into {:#?}, {}",
+                        Utc::now(),
+                        &cli.simulation.path2dir,
+                        err
+                    );
+                    std::process::exit(1);
+                };
+                println!(
+                    "{} Saving the results into {:#?}",
+                    Utc::now(),
+                    &cli.simulation.path2dir
+                );
                 println!("{} End simulation", Utc::now(),);
                 0
             });
