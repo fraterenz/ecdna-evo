@@ -127,3 +127,6 @@ There are two main changes:
 Update `ssa` version
 
 **`ssa` version:** 0.2.1
+
+## 0.9.0
+Save a single `abc.csv` file for all runs instead of the `abc` folder with inside all runs.
