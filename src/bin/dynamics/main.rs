@@ -1,10 +1,11 @@
 use app::Dynamics;
 use chrono::Utc;
+use clap_app::EcDNAProcess;
 use indicatif::ParallelProgressIterator;
 use rayon::prelude::{
     IndexedParallelIterator, IntoParallelIterator, ParallelIterator,
 };
-use ssa::{NbIndividuals, Process};
+use ssa::NbIndividuals;
 
 use crate::clap_app::{Cli, Parallel};
 
@@ -21,7 +22,7 @@ const NB_RESTARTS: u64 = 30;
 pub struct SimulationOptions {
     simulation: Dynamics,
     parallel: Parallel,
-    processes: Vec<Process>,
+    processes: Vec<EcDNAProcess>,
     sampling_at: Option<Vec<NbIndividuals>>,
 }
 

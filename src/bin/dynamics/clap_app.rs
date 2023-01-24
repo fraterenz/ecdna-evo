@@ -1,20 +1,17 @@
 use anyhow::Context;
 use clap::{ArgAction, Parser, ValueEnum};
-use ssa::{
-    ecdna::{
-        process::{
-            BirthDeathMeanTime, BirthDeathTime, PureBirth, PureBirthMeanTime,
-            PureBirthTime,
-        },
-        proliferation::{EcDNAGrowth, Exponential},
-        segregation::{
-            BinomialNoNminus, BinomialNoUneven, BinomialSegregation,
-            Segregation,
-        },
-        EcDNADistribution,
+use ecdna_evo::{
+    process::PureBirth,
+    proliferation::Exponential,
+    segregation::{
+        BinomialNoNminus, BinomialNoUneven, BinomialSegregation,
+        Deterministic, Segregate,
     },
-    iteration::Iteration,
-    NbIndividuals, Process,
+};
+use ssa::{
+    distribution::EcDNADistribution,
+    iteration::{Iterate, Iteration},
+    NbIndividuals, Process, RandomSampling, ToFile,
 };
 use std::{collections::HashMap, path::PathBuf};
 
@@ -152,18 +149,17 @@ impl Cli {
         let (nminus, nplus) =
             (*distribution.get_nminus(), distribution.compute_nplus());
 
-        let growth = match cli.growth {
+        let proliferation = match cli.growth {
             GrowthOptions::Constant => todo!(),
-            GrowthOptions::Exponential => {
-                EcDNAGrowth::Exponential(Exponential { segregation })
-            }
+            GrowthOptions::Exponential => Exponential {},
         };
 
         let cells = if cli.debug { 100 } else { cli.cells };
         let verbose = if cli.debug { u8::MAX } else { cli.verbose };
 
-        let process: Process = match is_birth_death {
+        let process = match is_birth_death {
             true => {
+                todo!();
                 let initial_population = [nminus, nplus, nminus, nplus];
                 let iteration = Iteration::new(
                     [cli.b0, cli.b1, d0, d1],
@@ -174,16 +170,7 @@ impl Cli {
                 match cli.mean {
                     true => {
                         if cli.time {
-                            Process::EcDNAProcess(
-                                BirthDeathMeanTime::new(
-                                    0f32,
-                                    growth,
-                                    iteration,
-                                    distribution,
-                                    verbose,
-                                )?
-                                .into(),
-                            )
+                            todo!();
                         } else {
                             todo!();
                             // Process::EcDNAProcess(
@@ -200,16 +187,7 @@ impl Cli {
                     }
                     false => {
                         if cli.time {
-                            Process::EcDNAProcess(
-                                BirthDeathTime::new(
-                                    0f32,
-                                    growth,
-                                    iteration,
-                                    distribution,
-                                    verbose,
-                                )?
-                                .into(),
-                            )
+                            todo!();
                         } else {
                             todo!();
                             // Process::EcDNAProcess(
@@ -238,16 +216,7 @@ impl Cli {
                 match cli.mean {
                     true => {
                         if cli.time {
-                            Process::EcDNAProcess(
-                                PureBirthMeanTime::new(
-                                    0f32,
-                                    growth,
-                                    iteration,
-                                    distribution,
-                                    verbose,
-                                )?
-                                .into(),
-                            )
+                            todo!();
                         } else {
                             todo!();
                             //  Process::EcDNAProcess(
@@ -263,25 +232,17 @@ impl Cli {
                     }
                     false => {
                         if cli.time {
-                            Process::EcDNAProcess(
-                                PureBirthTime::new(
-                                    0f32,
-                                    growth,
-                                    iteration,
-                                    distribution,
-                                    verbose,
-                                )?
-                                .into(),
-                            )
+                            todo!();
                         } else {
-                            Process::EcDNAProcess(
+                            EcDNAProcess::PureBirthExp(
                                 PureBirth::new(
-                                    growth,
+                                    proliferation,
+                                    segregation,
                                     iteration,
                                     distribution,
                                     verbose,
-                                )?
-                                .into(),
+                                )
+                                .unwrap(),
                             )
                         }
                     }
@@ -329,6 +290,93 @@ enum SegregationOptions {
     BinomialNoNminus,
 }
 
+#[derive(Debug, Clone)]
+pub enum EcDNAProcess {
+    PureBirthExp(PureBirth<Exponential, Segregation>),
+}
+
+impl Process for EcDNAProcess {}
+impl ToFile for EcDNAProcess {
+    fn save(
+        &self,
+        path2dir: &std::path::Path,
+        id: usize,
+    ) -> anyhow::Result<()> {
+        match self {
+            Self::PureBirthExp(p) => p.save(path2dir, id),
+        }
+    }
+}
+impl RandomSampling for EcDNAProcess {
+    fn random_sample(
+        &mut self,
+        nb_individuals: NbIndividuals,
+        rng: &mut rand_chacha::ChaCha8Rng,
+    ) {
+        match self {
+            Self::PureBirthExp(p) => p.random_sample(nb_individuals, rng),
+        }
+    }
+}
+
+impl Iterate for EcDNAProcess {
+    fn next_reaction(
+        &mut self,
+        iter: usize,
+        rng: &mut rand_chacha::ChaCha8Rng,
+    ) -> (ssa::iteration::SimState, Option<ssa::iteration::NextReaction>) {
+        match self {
+            Self::PureBirthExp(p) => p.next_reaction(iter, rng),
+        }
+    }
+    fn update_process(
+        &mut self,
+        reaction: ssa::iteration::NextReaction,
+        rng: &mut rand_chacha::ChaCha8Rng,
+    ) {
+        match self {
+            Self::PureBirthExp(p) => p.update_process(reaction, rng),
+        }
+    }
+    fn update_iteration(&mut self) {
+        match self {
+            Self::PureBirthExp(p) => p.update_iteration(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Segregation {
+    Deterministic(Deterministic),
+    BinomialNoUneven(BinomialNoUneven),
+    BinomialNoNminus(BinomialNoNminus),
+    BinomialSegregation(BinomialSegregation),
+}
+
+impl Segregate for Segregation {
+    fn ecdna_segregation(
+        &self,
+        copies: ecdna_evo::segregation::DNACopySegregating,
+        rng: &mut rand_chacha::ChaCha8Rng,
+        verbosity: u8,
+    ) -> (u64, u64, ecdna_evo::segregation::IsUneven) {
+        match self {
+            Self::Deterministic(s) => {
+                s.ecdna_segregation(copies, rng, verbosity)
+            }
+            Self::BinomialNoUneven(s) => {
+                s.ecdna_segregation(copies, rng, verbosity)
+            }
+            Self::BinomialNoNminus(s) => {
+                s.ecdna_segregation(copies, rng, verbosity)
+            }
+            Self::BinomialSegregation(s) => {
+                s.ecdna_segregation(copies, rng, verbosity)
+            }
+        }
+    }
+}
+
 impl std::fmt::Display for SegregationOptions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.to_possible_value()
@@ -347,15 +395,21 @@ enum GrowthOptions {
 impl From<SegregationOptions> for Segregation {
     fn from(segregation: SegregationOptions) -> Self {
         match segregation {
-            SegregationOptions::Deterministic => Self::Deterministic,
+            SegregationOptions::Deterministic => {
+                Segregation::Deterministic(Deterministic)
+            }
             SegregationOptions::BinomialNoUneven => {
-                Self::Random(BinomialNoUneven(BinomialSegregation).into())
+                Segregation::BinomialNoUneven(BinomialNoUneven(
+                    BinomialSegregation,
+                ))
             }
             SegregationOptions::BinomialNoNminus => {
-                Self::Random(BinomialNoNminus(BinomialSegregation).into())
+                Segregation::BinomialNoNminus(BinomialNoNminus(
+                    BinomialSegregation,
+                ))
             }
             SegregationOptions::BinomialSegregation => {
-                Self::Random(BinomialSegregation.into())
+                Segregation::BinomialSegregation(BinomialSegregation)
             }
         }
     }

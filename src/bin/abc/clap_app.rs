@@ -1,19 +1,13 @@
 use clap::{ArgAction, ArgGroup, Parser, ValueEnum};
+use ecdna_evo::{
+    process::PureBirthNoDynamics, proliferation::Exponential,
+    segregation::BinomialSegregation,
+};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Uniform};
 use ssa::{
-    ecdna::{
-        abc::Data,
-        process::PureBirthNoDynamics,
-        proliferation::{EcDNAGrowth, Exponential},
-        segregation::{
-            BinomialNoNminus, BinomialNoUneven, BinomialSegregation,
-            RandomSegregation, Segregation,
-        },
-        EcDNADistribution,
-    },
-    iteration::Iteration,
+    abc::Data, distribution::EcDNADistribution, iteration::Iteration,
     NbIndividuals,
 };
 use std::{collections::HashMap, path::PathBuf};
@@ -142,19 +136,16 @@ impl Cli {
                 cli.cells as usize,
             )
         });
-        let processes = iterations
+        let processes: Vec<
+            PureBirthNoDynamics<Exponential, BinomialSegregation>,
+        > = iterations
             .into_iter()
             .map(|iteration| {
                 PureBirthNoDynamics::new(
                     iteration,
                     distribution.clone(),
-                    EcDNAGrowth::Exponential(Exponential {
-                        segregation: Segregation::Random(
-                            RandomSegregation::BinomialSegregation(
-                                BinomialSegregation,
-                            ),
-                        ),
-                    }),
+                    Exponential {},
+                    BinomialSegregation,
                     cli.verbose,
                 )
                 .expect("Cannot create the ABC simulation")
@@ -184,38 +175,6 @@ enum SegregationOptions {
 }
 
 impl std::fmt::Display for SegregationOptions {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.to_possible_value()
-            .expect("no values are skipped")
-            .get_name()
-            .fmt(f)
-    }
-}
-
-#[derive(ValueEnum, Copy, Clone, Debug, PartialEq, Eq)]
-enum GrowthOptions {
-    Exponential,
-    Constant,
-}
-
-impl From<SegregationOptions> for Segregation {
-    fn from(segregation: SegregationOptions) -> Self {
-        match segregation {
-            SegregationOptions::Deterministic => Self::Deterministic,
-            SegregationOptions::BinomialNoUneven => {
-                Self::Random(BinomialNoUneven(BinomialSegregation).into())
-            }
-            SegregationOptions::BinomialNoNminus => {
-                Self::Random(BinomialNoNminus(BinomialSegregation).into())
-            }
-            SegregationOptions::BinomialSegregation => {
-                Self::Random(BinomialSegregation.into())
-            }
-        }
-    }
-}
-
-impl std::fmt::Display for GrowthOptions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.to_possible_value()
             .expect("no values are skipped")

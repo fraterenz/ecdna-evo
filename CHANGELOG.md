@@ -130,3 +130,9 @@ Update `ssa` version
 
 ## 0.9.0
 Save a single `abc.csv` file for all runs instead of the `abc` folder with inside all runs.
+
+## 0.10.0
+This crate has now also its library, since in `ssa` v0.3.0 `enum_dispatch`ed heterogenous collection of processes has been removed.
+
+**`ssa` version**: 0.3.0
+

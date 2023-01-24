@@ -8,7 +8,7 @@ use ssa::{
 };
 use std::path::{Path, PathBuf};
 
-use crate::NB_RESTARTS;
+use crate::{clap_app::EcDNAProcess, NB_RESTARTS};
 
 pub struct Dynamics {
     pub seed: u64,
@@ -19,13 +19,13 @@ pub struct Dynamics {
 impl Dynamics {
     fn run_helper(
         &self,
-        run: Run<Started>,
+        run: Run<Started, EcDNAProcess>,
         idx: usize,
         mut j: u64,
         stream: u64,
         sampling_at: Option<NbIndividuals>,
         path2dir: Option<&Path>,
-    ) -> Run<Ended> {
+    ) -> Run<Ended, EcDNAProcess> {
         let mut rng = ChaCha8Rng::seed_from_u64(self.seed);
         rng.set_stream(stream);
         let process = run.bd_process.clone();
@@ -65,7 +65,7 @@ impl Dynamics {
     pub fn run(
         &self,
         idx: usize,
-        process: Process,
+        process: EcDNAProcess,
         sampling_at: &Option<Vec<NbIndividuals>>,
     ) -> anyhow::Result<()> {
         let stream = idx as u64 * NB_RESTARTS;

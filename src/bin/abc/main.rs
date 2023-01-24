@@ -1,10 +1,14 @@
 use app::Abc;
 use chrono::Utc;
+use ecdna_evo::{
+    process::PureBirthNoDynamics, proliferation::Exponential,
+    segregation::BinomialSegregation,
+};
 use indicatif::ParallelProgressIterator;
 use rayon::prelude::{
     IndexedParallelIterator, IntoParallelIterator, ParallelIterator,
 };
-use ssa::{ecdna::process::PureBirthNoDynamics, NbIndividuals};
+use ssa::NbIndividuals;
 
 use crate::{
     app::{save, ABCResultFitness},
@@ -17,7 +21,7 @@ mod clap_app;
 pub struct SimulationOptions {
     simulation: Abc,
     parallel: Parallel,
-    processes: Vec<PureBirthNoDynamics>,
+    processes: Vec<PureBirthNoDynamics<Exponential, BinomialSegregation>>,
     /// subsample tumour when it has reached this size
     subsample: Option<NbIndividuals>,
 }

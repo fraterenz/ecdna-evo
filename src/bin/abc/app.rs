@@ -1,15 +1,12 @@
 use anyhow::Context;
+use ecdna_evo::process::PureBirthNoDynamics;
+use ecdna_evo::proliferation::Exponential;
+use ecdna_evo::segregation::BinomialSegregation;
 use rand::SeedableRng;
 use rand_chacha::{self, ChaCha8Rng};
 use serde::{ser::SerializeStruct, Serialize, Serializer};
-use ssa::{
-    ecdna::{
-        abc::{ABCRejection, ABCResult, ABCResultBuilder, Data},
-        process::{EcDNAProcess, PureBirthNoDynamics},
-    },
-    run::Run,
-    NbIndividuals, Process, RandomSampling,
-};
+use ssa::abc::{ABCRejection, ABCResult, ABCResultBuilder, Data};
+use ssa::{run::Run, NbIndividuals, RandomSampling};
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
@@ -54,7 +51,7 @@ impl Abc {
     pub fn run(
         &self,
         idx: usize,
-        process: PureBirthNoDynamics,
+        process: PureBirthNoDynamics<Exponential, BinomialSegregation>,
         data: &Data,
         sample_at: Option<NbIndividuals>,
     ) -> anyhow::Result<ABCResultFitness> {
@@ -68,8 +65,7 @@ impl Abc {
         }
         let mut rng = ChaCha8Rng::seed_from_u64(self.seed);
         rng.set_stream(idx as u64);
-        let run =
-            Run::new(idx, Process::EcDNAProcess(process.into()), self.verbose);
+        let run = Run::new(idx, process, self.verbose);
         if run.verbosity > 0 {
             println!("{:#?}", run);
         }
@@ -80,28 +76,21 @@ impl Abc {
             run_ended.bd_process.random_sample(sample_at, &mut rng);
         }
 
-        match run_ended.bd_process {
-            Process::EcDNAProcess(process) => match process {
-                EcDNAProcess::PureBirthNoDynamics(run) => {
-                    let mut builder = ABCResultBuilder::default();
-                    builder.idx(idx);
-                    // run data
-                    let rates = *run.get_rates();
+        let mut builder = ABCResultBuilder::default();
+        builder.idx(idx);
+        // run data
+        let rates = *run_ended.bd_process.get_rates();
 
-                    Ok(ABCResultFitness {
-                        result: ABCRejection::run(
-                            builder,
-                            run.get_ecdna_distribution(),
-                            data,
-                            self.verbose,
-                        ),
-                        b0: rates[0],
-                        b1: rates[1],
-                    })
-                }
-                _ => unreachable!("Cannot perform ABC without abc process"),
-            },
-        }
+        Ok(ABCResultFitness {
+            result: ABCRejection::run(
+                builder,
+                run_ended.bd_process.get_ecdna_distribution(),
+                data,
+                self.verbose,
+            ),
+            b0: rates[0],
+            b1: rates[1],
+        })
     }
 }
 
