@@ -1,8 +1,8 @@
 //! The ecDNA data model.
 use std::path::Path;
 
+use crate::distribution::EcDNADistribution;
 use anyhow::Context;
-use ssa::distribution::EcDNADistribution;
 use ssa::{write2file, NbIndividuals};
 
 /// Some summary statistics for the [`EcDNADistribution`].

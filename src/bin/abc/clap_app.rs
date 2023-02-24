@@ -1,15 +1,9 @@
 use clap::{ArgAction, ArgGroup, Parser, ValueEnum};
-use ecdna_evo::{
-    process::PureBirthNoDynamics, proliferation::Exponential,
-    segregation::BinomialSegregation,
-};
+use ecdna_evo::{abc::Data, distribution::EcDNADistribution};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Uniform};
-use ssa::{
-    abc::Data, distribution::EcDNADistribution, iteration::Iteration,
-    NbIndividuals,
-};
+use ssa::NbIndividuals;
 use std::{collections::HashMap, path::PathBuf};
 
 use crate::{app::Abc, SimulationOptions};
@@ -93,7 +87,6 @@ impl Cli {
 
         // we assume fixed initial pop for now, starting with one cell
         // with 1 ecDNA
-        let initial_population = [0, 1];
         let distribution = EcDNADistribution::new(
             HashMap::from([(0, 0), (1, 1)]),
             cli.cells as usize,
@@ -122,34 +115,9 @@ impl Cli {
                 entropy: cli.entropy,
             },
         };
-
-        // create proceses to simulate
         let mut rng = ChaCha8Rng::seed_from_u64(cli.seed);
-        // we assume pure birth only, hence 2
-        let iterations = (0..runs).map(|_| {
-            // sample at random a fitness, assuming b1[0] > b1[1]
-            let b1 = Uniform::new(cli.b1[0], cli.b1[1]).sample(&mut rng);
-            Iteration::new(
-                [cli.b0, b1],
-                initial_population,
-                cli.cells,
-                cli.cells as usize,
-            )
-        });
-        let processes: Vec<
-            PureBirthNoDynamics<Exponential, BinomialSegregation>,
-        > = iterations
-            .into_iter()
-            .map(|iteration| {
-                PureBirthNoDynamics::new(
-                    iteration,
-                    distribution.clone(),
-                    Exponential {},
-                    BinomialSegregation,
-                    cli.verbose,
-                )
-                .expect("Cannot create the ABC simulation")
-            })
+        let fitness_coefficients = (0..runs)
+            .map(|_| Uniform::new(cli.b1[0], cli.b1[1]).sample(&mut rng))
             .collect();
 
         Ok(SimulationOptions {
@@ -160,8 +128,12 @@ impl Cli {
                 target: data,
             },
             parallel,
-            processes,
+            max_cells: cli.cells,
+            max_iterations: cli.cells as usize,
+            fitness_coefficients,
+            initial_distribution: distribution,
             subsample: cli.subsample,
+            verbose: cli.verbose,
         })
     }
 }

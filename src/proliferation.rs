@@ -1,8 +1,7 @@
+use rand_chacha::ChaCha8Rng;
 use std::num::NonZeroU16;
 
-use rand_chacha::ChaCha8Rng;
-use ssa::distribution::EcDNADistribution;
-
+use crate::distribution::EcDNADistribution;
 use crate::segregation::{DNACopySegregating, IsUneven, Segregate};
 
 /// Update the [`EcDNADistribution`].

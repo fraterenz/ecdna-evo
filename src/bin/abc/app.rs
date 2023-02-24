@@ -1,11 +1,13 @@
 use anyhow::Context;
+use ecdna_evo::abc::{ABCRejection, ABCResult, ABCResultBuilder, Data};
 use ecdna_evo::process::PureBirthNoDynamics;
 use ecdna_evo::proliferation::Exponential;
 use ecdna_evo::segregation::BinomialSegregation;
 use rand::SeedableRng;
 use rand_chacha::{self, ChaCha8Rng};
 use serde::{ser::SerializeStruct, Serialize, Serializer};
-use ssa::abc::{ABCRejection, ABCResult, ABCResultBuilder, Data};
+use ssa::iteration::CurrentState;
+use ssa::rates::ReactionRates;
 use ssa::{run::Run, NbIndividuals, RandomSampling};
 use std::fs;
 use std::path::Path;
@@ -51,13 +53,20 @@ impl Abc {
     pub fn run(
         &self,
         idx: usize,
-        process: PureBirthNoDynamics<Exponential, BinomialSegregation>,
+        mut process: PureBirthNoDynamics<Exponential, BinomialSegregation>,
         data: &Data,
+        mut initial_state: CurrentState<2>,
+        birth_rates: &ReactionRates<2>,
+        max_cells: NbIndividuals,
+        max_iter: usize,
         sample_at: Option<NbIndividuals>,
     ) -> anyhow::Result<ABCResultFitness> {
         //! Find the posterior distribution of the fitness coefficient using
         //! ABC on taking `data` as input.
-        //! The fitness coefficient is the birth-rate of cells with ecDNAs.
+        //!
+        //! We can run abc on PureBirth processes only for now, that is we can
+        //! only infer the fitness coefficient without cell-death, where the
+        //! fitness coefficient is the birth-rate of cells with ecDNAs.
         //!
         //! Perform subsampling when `sample_at` is some.
         if self.verbose > 0 {
@@ -65,31 +74,39 @@ impl Abc {
         }
         let mut rng = ChaCha8Rng::seed_from_u64(self.seed);
         rng.set_stream(idx as u64);
-        let run = Run::new(idx, process, self.verbose);
+        let run = Run::new(idx, max_cells, max_iter, self.verbose);
         if run.verbosity > 0 {
             println!("{:#?}", run);
         }
 
-        let (mut run_ended, _) = run.simulate(0, &mut rng);
+        let (_, stop_reason) = run.simulate(
+            0,
+            &mut initial_state,
+            birth_rates,
+            &mut process,
+            &mut rng,
+        );
+
+        if self.verbose > 1 {
+            println!("Stopped simulation because {:#?}", stop_reason);
+        }
 
         if let Some(sample_at) = sample_at {
-            run_ended.bd_process.random_sample(sample_at, &mut rng);
+            process.random_sample(sample_at, &mut rng);
         }
 
         let mut builder = ABCResultBuilder::default();
         builder.idx(idx);
-        // run data
-        let rates = *run_ended.bd_process.get_rates();
 
         Ok(ABCResultFitness {
             result: ABCRejection::run(
                 builder,
-                run_ended.bd_process.get_ecdna_distribution(),
+                process.get_ecdna_distribution(),
                 data,
                 self.verbose,
             ),
-            b0: rates[0],
-            b1: rates[1],
+            b0: birth_rates.0[0],
+            b1: birth_rates.0[1],
         })
     }
 }

@@ -138,3 +138,6 @@ This crate has now also its library, since in `ssa` v0.3.0 `enum_dispatch`ed het
 
 ## 0.10.1
 Update `ecdna-evo` version in `Cargo.toml`
+
+## 0.11.0
+**`ssa` version**: 0.4.0

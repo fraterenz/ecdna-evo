@@ -327,12 +327,13 @@ dependencies = [
 
 [[package]]
 name = "ecdna-evo"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "chrono",
  "clap",
  "csv",
+ "ecdna-lib",
  "indicatif",
  "quickcheck",
  "quickcheck_macros",
@@ -347,7 +348,7 @@ dependencies = [
 
 [[package]]
 name = "ecdna-lib"
-version = "0.1.1"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "csv",
@@ -860,10 +861,9 @@ dependencies = [
 
 [[package]]
 name = "ssa"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
- "ecdna-lib",
  "rand",
  "rand_chacha",
  "rand_distr",

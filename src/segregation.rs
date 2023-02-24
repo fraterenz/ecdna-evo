@@ -1,9 +1,9 @@
 //! The ecDNA segregation rules applied upon proliferation of a cell with
 //! ecDNAs.
+use crate::DNACopy;
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Binomial, Distribution};
 use serde::{Deserialize, Serialize};
-use ssa::DNACopy;
 use std::num::NonZeroU16;
 
 impl From<DNACopySegregating> for DNACopy {
@@ -250,12 +250,12 @@ mod tests {
     #[quickcheck]
     fn segregate_deterministic_test(copies: AvoidOverflowDNACopy, seed: u64) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        let ecdna_copies: DNACopy = copies.0;
+        let ecdna_copies = DNACopySegregating(copies.0);
         let (k1, k2, is_uneven) =
             Deterministic {}.ecdna_segregation(ecdna_copies, &mut rng, 0);
         // uneven numbers
         assert_eq!(k1, k2);
-        assert_eq!(ecdna_copies.get(), k1);
+        assert_eq!(ecdna_copies.0.get() as u64, k1);
         assert_eq!(is_uneven, IsUneven::False);
     }
 

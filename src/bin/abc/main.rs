@@ -1,14 +1,14 @@
 use app::Abc;
 use chrono::Utc;
 use ecdna_evo::{
-    process::PureBirthNoDynamics, proliferation::Exponential,
-    segregation::BinomialSegregation,
+    distribution::EcDNADistribution, process::PureBirthNoDynamics,
+    proliferation::Exponential, segregation::BinomialSegregation,
 };
 use indicatif::ParallelProgressIterator;
 use rayon::prelude::{
     IndexedParallelIterator, IntoParallelIterator, ParallelIterator,
 };
-use ssa::NbIndividuals;
+use ssa::{iteration::CurrentState, rates::ReactionRates, NbIndividuals};
 
 use crate::{
     app::{save, ABCResultFitness},
@@ -21,9 +21,13 @@ mod clap_app;
 pub struct SimulationOptions {
     simulation: Abc,
     parallel: Parallel,
-    processes: Vec<PureBirthNoDynamics<Exponential, BinomialSegregation>>,
     /// subsample tumour when it has reached this size
     subsample: Option<NbIndividuals>,
+    max_cells: NbIndividuals,
+    max_iterations: usize,
+    fitness_coefficients: Vec<f32>,
+    initial_distribution: EcDNADistribution,
+    verbose: u8,
 }
 
 fn main() {
@@ -31,41 +35,56 @@ fn main() {
     println!("{} Starting the simulation", Utc::now());
     match simulation {
         Ok(cli) => {
+            let runs = cli.fitness_coefficients.len();
             std::process::exit({
-                let runs = cli.processes.len() as u64;
+                let my_closure = |(idx, b1)| -> ABCResultFitness {
+                    {
+                        let rates = ReactionRates([1f32, b1]);
+                        let initial_state = CurrentState {
+                            population: [
+                                *cli.initial_distribution.get_nminus(),
+                                cli.initial_distribution.compute_nplus(),
+                            ],
+                        };
+
+                        let process = PureBirthNoDynamics::new(
+                            cli.initial_distribution.clone(),
+                            Exponential {},
+                            BinomialSegregation,
+                            cli.verbose,
+                        )
+                        .expect("Cannot create the process");
+                        cli.simulation
+                            .run(
+                                idx,
+                                process,
+                                &cli.simulation.target,
+                                initial_state,
+                                &rates,
+                                cli.max_cells,
+                                cli.max_iterations,
+                                cli.subsample,
+                            )
+                            .unwrap()
+                    }
+                };
+
                 let results: Vec<ABCResultFitness> = match cli.parallel {
                     Parallel::Debug | Parallel::False => cli
-                        .processes
+                        .fitness_coefficients
                         .into_iter()
                         .enumerate()
-                        .map(|(idx, process)| {
-                            cli.simulation
-                                .run(
-                                    idx,
-                                    process,
-                                    &cli.simulation.target,
-                                    cli.subsample,
-                                )
-                                .unwrap()
-                        })
+                        .map(|(idx, b1)| my_closure((idx, b1)))
                         .collect(),
                     Parallel::True => cli
-                        .processes
+                        .fitness_coefficients
                         .into_par_iter()
                         .enumerate()
-                        .progress_count(runs)
-                        .map(|(idx, process)| {
-                            cli.simulation
-                                .run(
-                                    idx,
-                                    process,
-                                    &cli.simulation.target,
-                                    cli.subsample,
-                                )
-                                .unwrap()
-                        })
+                        .progress_count(runs as u64)
+                        .map(|idx| my_closure(idx))
                         .collect(),
                 };
+
                 if let Err(err) = save(
                     results,
                     &cli.simulation.path2dir,

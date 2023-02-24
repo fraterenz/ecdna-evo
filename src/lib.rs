@@ -9,6 +9,8 @@ pub mod proliferation;
 /// EcDNA segregation models.
 pub mod segregation;
 
+pub use ecdna_lib::{abc, distribution, DNACopy};
+
 #[cfg(test)]
 pub mod test_util {
     use std::{
@@ -16,12 +18,14 @@ pub mod test_util {
         num::{NonZeroU16, NonZeroU8},
     };
 
+    use crate::segregation::RandomSegregation;
+
     use super::segregation::{
         BinomialNoNminus, BinomialNoUneven, BinomialSegregation,
-        DNACopySegregating, Segregation,
+        DNACopySegregating,
     };
+    use ecdna_lib::DNACopy;
     use quickcheck::{Arbitrary, Gen};
-    use ssa::{distribution::EcDNADistribution, DNACopy};
 
     #[derive(Clone, Debug)]
     struct DNACopyGreaterOne(DNACopy);
@@ -70,19 +74,23 @@ pub mod test_util {
         }
     }
 
-    impl Arbitrary for Segregation {
+    impl Arbitrary for RandomSegregation {
         fn arbitrary(g: &mut Gen) -> Self {
             let y = g.choose(&[0u8, 1u8, 2u8, 3u8, 4u8]).unwrap();
             let bin = BinomialSegregation;
+            todo!();
             if y % 2 == 0 {
                 match y {
-                    0 => return Self::Random(bin.into()),
-                    2 => return Self::Random(BinomialNoUneven(bin).into()),
+                    0 => return RandomSegregation::BinomialSegregation(bin),
+                    2 => {
+                        return Self::BinomialNoUneven(
+                            BinomialNoUneven(bin).into(),
+                        )
+                    }
                     4 => return Self::Random(BinomialNoNminus(bin).into()),
                     _ => unreachable!(),
                 };
             }
-            Self::Deterministic
         }
     }
 

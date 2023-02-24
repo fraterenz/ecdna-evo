@@ -1,18 +1,13 @@
 use anyhow::Context;
 use clap::{ArgAction, Parser, ValueEnum};
 use ecdna_evo::{
-    process::PureBirth,
-    proliferation::Exponential,
+    distribution::EcDNADistribution,
     segregation::{
         BinomialNoNminus, BinomialNoUneven, BinomialSegregation,
         Deterministic, Segregate,
     },
 };
-use ssa::{
-    distribution::EcDNADistribution,
-    iteration::{Iterate, Iteration},
-    NbIndividuals, Process, RandomSampling, ToFile,
-};
+use ssa::NbIndividuals;
 use std::{collections::HashMap, path::PathBuf};
 
 use crate::{app::Dynamics, SimulationOptions, MAX_ITER};
@@ -108,8 +103,10 @@ pub struct Cli {
 }
 
 impl Cli {
-    pub fn build() -> anyhow::Result<SimulationOptions> {
+    pub fn build() -> SimulationOptions {
         let cli = Cli::parse();
+
+        let segregation = cli.segregation.into();
 
         // if both d0, d1 are either unset or equal to 0, pure birth,
         // else birthdeath
@@ -122,8 +119,6 @@ impl Cli {
             Some(rate) => (rate > 0f32, rate),
             None => (false, 0f32),
         };
-        let segregation: Segregation = cli.segregation.into();
-
         let is_birth_death = is_birth_death_d0 | is_birth_death_d1;
         let iterations = if is_birth_death {
             MAX_ITER * cli.cells as usize
@@ -146,109 +141,9 @@ impl Cli {
                 iterations,
             ),
         };
-        let (nminus, nplus) =
-            (*distribution.get_nminus(), distribution.compute_nplus());
-
-        let proliferation = match cli.growth {
-            GrowthOptions::Constant => todo!(),
-            GrowthOptions::Exponential => Exponential {},
-        };
 
         let cells = if cli.debug { 100 } else { cli.cells };
         let verbose = if cli.debug { u8::MAX } else { cli.verbose };
-
-        let process = match is_birth_death {
-            true => {
-                todo!();
-                let initial_population = [nminus, nplus, nminus, nplus];
-                let iteration = Iteration::new(
-                    [cli.b0, cli.b1, d0, d1],
-                    initial_population,
-                    cells,
-                    iterations,
-                );
-                match cli.mean {
-                    true => {
-                        if cli.time {
-                            todo!();
-                        } else {
-                            todo!();
-                            // Process::EcDNAProcess(
-                            //     BirthDeathMeanEcDNA::new(
-                            //         0f32,
-                            //         growth,
-                            //         iteration,
-                            //         distribution,
-                            //         verbose,
-                            //     )?
-                            //     .into(),
-                            // )
-                        }
-                    }
-                    false => {
-                        if cli.time {
-                            todo!();
-                        } else {
-                            todo!();
-                            // Process::EcDNAProcess(
-                            //     BirthDeathEcDNA::new(
-                            //         0f32,
-                            //         growth,
-                            //         iteration,
-                            //         distribution,
-                            //         verbose,
-                            //     )?
-                            //     .into(),
-                            // )
-                        }
-                    }
-                }
-            }
-            false => {
-                let initial_population = [nminus, nplus];
-                let iteration = Iteration::new(
-                    [cli.b0, cli.b1],
-                    initial_population,
-                    cells,
-                    iterations,
-                );
-
-                match cli.mean {
-                    true => {
-                        if cli.time {
-                            todo!();
-                        } else {
-                            todo!();
-                            //  Process::EcDNAProcess(
-                            //      PureBirthMeanEcDNA::new(
-                            //          growth,
-                            //          iteration,
-                            //          distribution,
-                            //          verbose,
-                            //      )?
-                            //      .into(),
-                            //  )
-                        }
-                    }
-                    false => {
-                        if cli.time {
-                            todo!();
-                        } else {
-                            EcDNAProcess::PureBirthExp(
-                                PureBirth::new(
-                                    proliferation,
-                                    segregation,
-                                    iteration,
-                                    distribution,
-                                    verbose,
-                                )
-                                .unwrap(),
-                            )
-                        }
-                    }
-                }
-            }
-        };
 
         let (parallel, runs) = if cli.debug {
             (Parallel::Debug, 1)
@@ -273,76 +168,37 @@ impl Cli {
                 .join(format!("{}samples{}population", cli.cells, cli.cells)),
         };
 
-        Ok(SimulationOptions {
-            simulation: Dynamics { seed: cli.seed, path2dir, verbose },
+        SimulationOptions {
+            simulation: Dynamics {
+                seed: cli.seed,
+                max_cells: cells,
+                max_iterations: iterations,
+                path2dir,
+                verbose,
+            },
+            is_birth_death,
+            b0: cli.b0,
+            b1: cli.b1,
+            d0,
+            d1,
+            mean: cli.mean,
+            time: cli.time,
+            distribution,
             parallel,
-            processes: vec![process; runs],
+            segregation,
             sampling_at: cli.subsample,
-        })
+            growth: cli.growth,
+            runs,
+        }
     }
 }
 
 #[derive(ValueEnum, Copy, Clone, Debug, PartialEq, Eq)]
-enum SegregationOptions {
+pub enum SegregationOptions {
     Deterministic,
     BinomialNoUneven,
     BinomialSegregation,
     BinomialNoNminus,
-}
-
-#[derive(Debug, Clone)]
-pub enum EcDNAProcess {
-    PureBirthExp(PureBirth<Exponential, Segregation>),
-}
-
-impl Process for EcDNAProcess {}
-impl ToFile for EcDNAProcess {
-    fn save(
-        &self,
-        path2dir: &std::path::Path,
-        id: usize,
-    ) -> anyhow::Result<()> {
-        match self {
-            Self::PureBirthExp(p) => p.save(path2dir, id),
-        }
-    }
-}
-impl RandomSampling for EcDNAProcess {
-    fn random_sample(
-        &mut self,
-        nb_individuals: NbIndividuals,
-        rng: &mut rand_chacha::ChaCha8Rng,
-    ) {
-        match self {
-            Self::PureBirthExp(p) => p.random_sample(nb_individuals, rng),
-        }
-    }
-}
-
-impl Iterate for EcDNAProcess {
-    fn next_reaction(
-        &mut self,
-        iter: usize,
-        rng: &mut rand_chacha::ChaCha8Rng,
-    ) -> (ssa::iteration::SimState, Option<ssa::iteration::NextReaction>) {
-        match self {
-            Self::PureBirthExp(p) => p.next_reaction(iter, rng),
-        }
-    }
-    fn update_process(
-        &mut self,
-        reaction: ssa::iteration::NextReaction,
-        rng: &mut rand_chacha::ChaCha8Rng,
-    ) {
-        match self {
-            Self::PureBirthExp(p) => p.update_process(reaction, rng),
-        }
-    }
-    fn update_iteration(&mut self) {
-        match self {
-            Self::PureBirthExp(p) => p.update_iteration(),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -387,7 +243,7 @@ impl std::fmt::Display for SegregationOptions {
 }
 
 #[derive(ValueEnum, Copy, Clone, Debug, PartialEq, Eq)]
-enum GrowthOptions {
+pub enum GrowthOptions {
     Exponential,
     Constant,
 }
