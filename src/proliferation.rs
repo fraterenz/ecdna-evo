@@ -1,4 +1,4 @@
-use rand_chacha::ChaCha8Rng;
+use rand::Rng;
 use std::num::NonZeroU16;
 
 use crate::distribution::EcDNADistribution;
@@ -10,13 +10,13 @@ pub trait EcDNAProliferation {
         &self,
         distribution: &mut EcDNADistribution,
         segregation: &impl Segregate,
-        rng: &mut ChaCha8Rng,
+        rng: &mut impl Rng,
         verbosity: u8,
     ) -> anyhow::Result<IsUneven>;
     fn increase_nminus(&self, distribution: &mut EcDNADistribution);
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Exponential {}
 
 impl EcDNAProliferation for Exponential {
@@ -24,7 +24,7 @@ impl EcDNAProliferation for Exponential {
         &self,
         distribution: &mut EcDNADistribution,
         segregation: &impl Segregate,
-        rng: &mut ChaCha8Rng,
+        rng: &mut impl Rng,
         verbosity: u8,
     ) -> anyhow::Result<IsUneven> {
         //! Can overflow. Updates the ecDNA distribution.
@@ -122,7 +122,7 @@ impl EcDNADeath {
     pub fn decrease_nplus(
         &self,
         distribution: &mut EcDNADistribution,
-        rng: &mut ChaCha8Rng,
+        rng: &mut impl Rng,
         verbosity: u8,
     ) {
         distribution.decrease_nplus(rng, verbosity);
@@ -138,104 +138,111 @@ impl EcDNADeath {
 #[cfg(test)]
 mod tests {
     use crate::{
-        segregation::RandomSegregation,
-        test_util::NonEmptyDistribtionWithNPlusCells,
+        segregation::{
+            BinomialNoNminus, BinomialNoUneven, BinomialSegregation,
+            Deterministic,
+        },
+        test_util::{
+            NonEmptyDistribtionWithNPlusCells, SegregationTypes,
+            TestSegregation,
+        },
     };
 
     use super::*;
     use quickcheck_macros::quickcheck;
     use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
 
     #[quickcheck]
     fn increase_nplus_test(
         seed: u64,
         distribution: NonEmptyDistribtionWithNPlusCells,
-        segregation: impl Segregate,
+        segregation: TestSegregation,
     ) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
 
-        let ecdna = Exponential { segregation };
+        let ecdna = Exponential {};
         let mut distribution = distribution.0;
         let nplus_before_update = distribution.compute_nplus();
         let nminus_before_update = *distribution.get_nminus();
 
-        let is_uneven = ecdna.increase_nplus(&mut distribution, &mut rng, 0);
+        let is_uneven = match segregation.0 {
+            SegregationTypes::Deterministic => {
+                let is_uneven = ecdna
+                    .increase_nplus(
+                        &mut distribution,
+                        &Deterministic,
+                        &mut rng,
+                        0,
+                    )
+                    .unwrap();
 
-        match segregation {
-            Segregation::Deterministic => {
-                assert_eq!(IsUneven::False, is_uneven.unwrap());
+                assert_eq!(IsUneven::False, is_uneven);
+                assert_eq!(
+                    distribution.compute_nplus(),
+                    nplus_before_update + 1
+                );
+                assert_eq!(*distribution.get_nminus(), nminus_before_update);
+                is_uneven
+            }
+            SegregationTypes::BinomialNoUneven => {
+                let is_uneven = ecdna
+                    .increase_nplus(
+                        &mut distribution,
+                        &BinomialNoUneven(BinomialSegregation),
+                        &mut rng,
+                        0,
+                    )
+                    .unwrap();
+                assert_eq!(IsUneven::False, is_uneven);
+                is_uneven
+            }
+            SegregationTypes::BinomialNoNminus => {
+                let is_uneven = ecdna.increase_nplus(
+                    &mut distribution,
+                    &BinomialNoNminus(BinomialSegregation),
+                    &mut rng,
+                    0,
+                );
+                is_uneven.unwrap()
+            }
+            SegregationTypes::BinomialSegregation => {
+                let is_uneven = ecdna.increase_nplus(
+                    &mut distribution,
+                    &BinomialSegregation,
+                    &mut rng,
+                    0,
+                );
+                is_uneven.unwrap()
+            }
+        };
+        match is_uneven {
+            IsUneven::False => {
                 assert_eq!(
                     distribution.compute_nplus(),
                     nplus_before_update + 1
                 );
                 assert_eq!(*distribution.get_nminus(), nminus_before_update);
             }
-            Segregation::Random(seg) => match seg {
-                RandomSegregation::BinomialSegregation(_) => {
-                    match is_uneven.unwrap() {
-                        IsUneven::False => {
-                            // same as deterministic
-                            assert_eq!(
-                                distribution.compute_nplus(),
-                                nplus_before_update + 1
-                            );
-                            assert_eq!(
-                                *distribution.get_nminus(),
-                                nminus_before_update
-                            );
-                        }
-                        IsUneven::True => {
-                            assert_eq!(
-                                distribution.compute_nplus(),
-                                nplus_before_update
-                            );
-                            assert_eq!(
-                                *distribution.get_nminus(),
-                                nminus_before_update + 1
-                            );
-                        }
-                        IsUneven::TrueWithoutNMinusIncrease => unreachable!(),
-                    }
-                }
-                RandomSegregation::BinomialNoUneven(_) => {
-                    // same as deterministic
-                    assert_eq!(IsUneven::False, is_uneven.unwrap());
-                    assert_eq!(
-                        distribution.compute_nplus(),
-                        nplus_before_update + 1
-                    );
-                    assert_eq!(
-                        *distribution.get_nminus(),
-                        nminus_before_update
-                    );
-                }
-                RandomSegregation::BinomialNoNminus(_) => {
-                    match is_uneven.unwrap() {
-                        IsUneven::False
-                        | IsUneven::TrueWithoutNMinusIncrease => {
-                            // same as deterministic
-                            assert_eq!(
-                                distribution.compute_nplus(),
-                                nplus_before_update + 1
-                            );
-                            assert_eq!(
-                                *distribution.get_nminus(),
-                                nminus_before_update
-                            );
-                        }
-                        IsUneven::True => unreachable!(),
-                    }
-                }
-            },
+            IsUneven::True => {
+                assert_eq!(distribution.compute_nplus(), nplus_before_update);
+                assert_eq!(
+                    *distribution.get_nminus(),
+                    nminus_before_update + 1
+                );
+            }
+            IsUneven::TrueWithoutNMinusIncrease => {
+                assert_eq!(distribution.compute_nplus(), nplus_before_update,);
+                assert_eq!(*distribution.get_nminus(), nminus_before_update);
+            }
         }
     }
 
     #[quickcheck]
     fn increase_nminus_test(
         distribution: NonEmptyDistribtionWithNPlusCells,
-        segregation: Segregation,
     ) -> bool {
-        let ecdna = Exponential { segregation };
+        let ecdna = Exponential {};
         let mut distribution = distribution.0;
         let expected_nminus = *distribution.get_nminus() + 1;
         let expected_nplus = distribution.compute_nplus();

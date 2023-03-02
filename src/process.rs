@@ -1,15 +1,14 @@
 use std::{fs, path::Path};
 
 use anyhow::ensure;
-use rand_chacha::ChaCha8Rng;
+use rand::Rng;
 use ssa::{
-    iteration::{AdvanceStep, CurrentState, NextReaction},
-    write2file, NbIndividuals, Process, RandomSampling, ToFile,
+    write2file, AdvanceStep, CurrentState, NbIndividuals, NextReaction,
 };
 
 use crate::{
     distribution::EcDNADistribution, dynamics::EcDNADynamicsTime,
-    segregation::Segregate,
+    segregation::Segregate, RandomSampling, ToFile,
 };
 
 use super::{
@@ -18,8 +17,8 @@ use super::{
     segregation::IsUneven,
 };
 
-#[derive(Debug, Clone)]
-pub enum Event {
+#[derive(Debug, Clone, Copy)]
+pub enum EcDNAEvent {
     ProliferateNPlus,
     ProliferateNMinus,
     DeathNPlus,
@@ -29,23 +28,13 @@ pub enum Event {
     SymmetricDifferentiation,
 }
 
-pub const PUREBIRTH_EVENTS: [Event; 2] =
-    [Event::ProliferateNMinus, Event::ProliferateNPlus];
-
-pub const BIRTHDEATH_EVENTS: [Event; 4] = [
-    Event::ProliferateNMinus,
-    Event::ProliferateNPlus,
-    Event::DeathNMinus,
-    Event::DeathNPlus,
-];
-
-pub enum Dynamic {
-    EcDNA,
-    EcDNAMean,
-}
-
+/// The simulation of the [`EcDNADistribution`] according to a pure-birth
+/// stochastic process.
+///
+/// The distribution can be saved during or at the end of the simulation using
+/// [`Self::save`].
 #[derive(Debug, Clone)]
-pub struct PureBirthNoDynamics<P, S>
+pub struct PureBirth<P, S>
 where
     P: EcDNAProliferation,
     S: Segregate,
@@ -56,7 +45,7 @@ where
     verbosity: u8,
 }
 
-impl<P, S> PureBirthNoDynamics<P, S>
+impl<P, S> PureBirth<P, S>
 where
     P: EcDNAProliferation,
     S: Segregate,
@@ -76,17 +65,45 @@ where
     }
 }
 
-impl<P: EcDNAProliferation + Clone, S: Segregate + Clone> Process<2>
-    for PureBirthNoDynamics<P, S>
+impl<P, S> RandomSampling for PureBirth<P, S>
+where
+    P: EcDNAProliferation,
+    S: Segregate,
 {
+    fn random_sample(
+        &mut self,
+        nb_individuals: NbIndividuals,
+        rng: &mut impl Rng,
+    ) {
+        self.distribution.undersample(nb_individuals, rng);
+    }
 }
 
-impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<2>
-    for PureBirthNoDynamics<P, S>
+impl<P, S> ToFile for PureBirth<P, S>
+where
+    P: EcDNAProliferation,
+    S: Segregate,
 {
-    fn advance_step(&mut self, reaction: NextReaction, rng: &mut ChaCha8Rng) {
-        match PUREBIRTH_EVENTS[reaction.event] {
-            Event::ProliferateNPlus => {
+    fn save(&self, path2dir: &Path, id: usize) -> anyhow::Result<()> {
+        //! Save the ecDNA distribution
+        let path2ecdna = path2dir.join("ecdna");
+        fs::create_dir_all(&path2ecdna).expect("Cannot create dir");
+        let path2file = path2ecdna.join(id.to_string()).with_extension("json");
+        self.distribution.save(&path2file, self.verbosity)?;
+        Ok(())
+    }
+}
+
+impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<2> for PureBirth<P, S> {
+    type Reaction = EcDNAEvent;
+
+    fn advance_step(
+        &mut self,
+        reaction: NextReaction<Self::Reaction>,
+        rng: &mut impl Rng,
+    ) {
+        match reaction.event {
+            EcDNAEvent::ProliferateNPlus => {
                 if let Ok(is_uneven) = self.proliferation.increase_nplus(
                     &mut self.distribution,
                     &self.segregation,
@@ -114,7 +131,7 @@ impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<2>
                     }
                 }
             }
-            Event::ProliferateNMinus => {
+            EcDNAEvent::ProliferateNMinus => {
                 self.proliferation.increase_nminus(&mut self.distribution);
             }
             _ => unreachable!(),
@@ -136,39 +153,17 @@ impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<2>
     }
 }
 
-impl<P: EcDNAProliferation, S: Segregate> ToFile
-    for PureBirthNoDynamics<P, S>
-{
-    fn save(&self, path2dir: &Path, id: usize) -> anyhow::Result<()> {
-        //! Save the ecDNA distribution
-        fs::create_dir_all(path2dir).expect("Cannot create dir");
-        let path2file = path2dir.join(id.to_string());
-        self.distribution.save(&path2file, self.verbosity)?;
-        Ok(())
-    }
-}
-
-impl<P: EcDNAProliferation, S: Segregate> RandomSampling
-    for PureBirthNoDynamics<P, S>
-{
-    fn random_sample(
-        &mut self,
-        nb_individuals: NbIndividuals,
-        rng: &mut ChaCha8Rng,
-    ) {
-        self.distribution.undersample(nb_individuals, rng);
-    }
-}
-
+/// A pure-birth stochastic process tracking the evolution of the
+/// [`EcDNADynamics`] over time.
 #[derive(Debug, Clone)]
-pub struct PureBirth<P: EcDNAProliferation, S: Segregate> {
+pub struct PureBirthNMinusNPlus<P: EcDNAProliferation, S: Segregate> {
     data: EcDNADynamics,
     proliferation: P,
     segregation: S,
     verbosity: u8,
 }
 
-impl<P: EcDNAProliferation, S: Segregate> PureBirth<P, S> {
+impl<P: EcDNAProliferation, S: Segregate> PureBirthNMinusNPlus<P, S> {
     pub fn with_distribution(
         proliferation: P,
         segregation: S,
@@ -191,82 +186,15 @@ impl<P: EcDNAProliferation, S: Segregate> PureBirth<P, S> {
     }
 }
 
-impl<P: EcDNAProliferation + Clone, S: Segregate + Clone> Process<2>
-    for PureBirth<P, S>
+impl<P, S> RandomSampling for PureBirthNMinusNPlus<P, S>
+where
+    P: EcDNAProliferation,
+    S: Segregate,
 {
-}
-
-impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<2> for PureBirth<P, S> {
-    fn advance_step(&mut self, reaction: NextReaction, rng: &mut ChaCha8Rng) {
-        match PUREBIRTH_EVENTS[reaction.event] {
-            Event::ProliferateNPlus => {
-                if let Ok(is_uneven) = self.proliferation.increase_nplus(
-                    &mut self.data.distribution,
-                    &self.segregation,
-                    rng,
-                    self.verbosity,
-                ) {
-                    match is_uneven {
-                        IsUneven::False => {
-                            if self.verbosity > 1 {
-                                println!("IsUneven is false");
-                            }
-                        }
-                        IsUneven::True => {
-                            if self.verbosity > 1 {
-                                println!("IsUneven is true");
-                            }
-                        }
-                        IsUneven::TrueWithoutNMinusIncrease => {
-                            if self.verbosity > 1 {
-                                println!(
-                                    "IsUneven is true but w/o nminus increase"
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-            Event::ProliferateNMinus => {
-                self.proliferation
-                    .increase_nminus(&mut self.data.distribution);
-            }
-            _ => unreachable!(),
-        };
-        if self.verbosity > 1 {
-            println!("Distribution {:#?}", self.data.distribution);
-        }
-
-        self.data.nplus.push(self.data.distribution.compute_nplus());
-        self.data.nminus.push(*self.data.distribution.get_nminus());
-    }
-
-    fn update_state(&self, state: &mut CurrentState<2>) {
-        state.population[0] = *self.data.distribution.get_nminus();
-        state.population[1] = self.data.distribution.compute_nplus();
-        if self.verbosity > 1 {
-            println!(
-                "Update iteration after process update, population: {:#?}",
-                state.population
-            );
-        }
-    }
-}
-
-impl<P: EcDNAProliferation, S: Segregate> ToFile for PureBirth<P, S> {
-    fn save(&self, path2dir: &Path, id: usize) -> anyhow::Result<()> {
-        fs::create_dir_all(path2dir).expect("Cannot create dir");
-        let filename = id.to_string();
-        self.data.save(path2dir, &filename, self.verbosity)?;
-        Ok(())
-    }
-}
-
-impl<P: EcDNAProliferation, S: Segregate> RandomSampling for PureBirth<P, S> {
     fn random_sample(
         &mut self,
         nb_individuals: NbIndividuals,
-        rng: &mut ChaCha8Rng,
+        rng: &mut impl Rng,
     ) {
         if self.verbosity > 0 {
             println!("Subsampling the ecDNA distribution");
@@ -297,17 +225,220 @@ impl<P: EcDNAProliferation, S: Segregate> RandomSampling for PureBirth<P, S> {
     }
 }
 
+impl<P, S> ToFile for PureBirthNMinusNPlus<P, S>
+where
+    P: EcDNAProliferation,
+    S: Segregate,
+{
+    fn save(&self, path2dir: &Path, id: usize) -> anyhow::Result<()> {
+        fs::create_dir_all(path2dir).expect("Cannot create dir");
+        let filename = id.to_string();
+        self.data.save(path2dir, &filename, self.verbosity)?;
+        Ok(())
+    }
+}
+
+impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<2>
+    for PureBirthNMinusNPlus<P, S>
+{
+    type Reaction = EcDNAEvent;
+
+    fn advance_step(
+        &mut self,
+        reaction: NextReaction<Self::Reaction>,
+        rng: &mut impl Rng,
+    ) {
+        match reaction.event {
+            EcDNAEvent::ProliferateNPlus => {
+                if let Ok(is_uneven) = self.proliferation.increase_nplus(
+                    &mut self.data.distribution,
+                    &self.segregation,
+                    rng,
+                    self.verbosity,
+                ) {
+                    match is_uneven {
+                        IsUneven::False => {
+                            if self.verbosity > 1 {
+                                println!("IsUneven is false");
+                            }
+                        }
+                        IsUneven::True => {
+                            if self.verbosity > 1 {
+                                println!("IsUneven is true");
+                            }
+                        }
+                        IsUneven::TrueWithoutNMinusIncrease => {
+                            if self.verbosity > 1 {
+                                println!(
+                                    "IsUneven is true but w/o nminus increase"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            EcDNAEvent::ProliferateNMinus => {
+                self.proliferation
+                    .increase_nminus(&mut self.data.distribution);
+            }
+            _ => unreachable!(),
+        };
+        if self.verbosity > 1 {
+            println!("Distribution {:#?}", self.data.distribution);
+        }
+
+        self.data.nplus.push(self.data.distribution.compute_nplus());
+        self.data.nminus.push(*self.data.distribution.get_nminus());
+    }
+
+    fn update_state(&self, state: &mut CurrentState<2>) {
+        state.population[0] = *self.data.distribution.get_nminus();
+        state.population[1] = self.data.distribution.compute_nplus();
+        if self.verbosity > 1 {
+            println!(
+                "Update iteration after process update, population: {:#?}",
+                state.population
+            );
+        }
+    }
+}
+
+/// The simulation of the [`EcDNADistribution`] according to a birth-death
+/// stochastic process.
+///
+/// The distribution can be saved during or at the end of the simulation using
+/// [`Self::save`].
 #[derive(Debug, Clone)]
-pub struct PureBirthMean<P: EcDNAProliferation, S: Segregate> {
-    data: EcDNADynamics,
-    mean: Vec<f32>,
+pub struct BirthDeath<P, S>
+where
+    P: EcDNAProliferation,
+    S: Segregate,
+{
+    distribution: EcDNADistribution,
     proliferation: P,
     segregation: S,
+    death: EcDNADeath,
     verbosity: u8,
 }
 
-impl<P: EcDNAProliferation, S: Segregate> PureBirthMean<P, S> {
+impl<P, S> BirthDeath<P, S>
+where
+    P: EcDNAProliferation,
+    S: Segregate,
+{
     pub fn new(
+        distribution: EcDNADistribution,
+        proliferation: P,
+        segregation: S,
+        death: EcDNADeath,
+        verbosity: u8,
+    ) -> anyhow::Result<Self> {
+        ensure!(!distribution.is_empty());
+        Ok(Self { distribution, proliferation, segregation, death, verbosity })
+    }
+
+    pub fn get_ecdna_distribution(&self) -> &EcDNADistribution {
+        &self.distribution
+    }
+}
+
+impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<4> for BirthDeath<P, S> {
+    type Reaction = EcDNAEvent;
+
+    fn advance_step(
+        &mut self,
+        reaction: NextReaction<Self::Reaction>,
+        rng: &mut impl Rng,
+    ) {
+        match reaction.event {
+            EcDNAEvent::ProliferateNPlus => {
+                if let Ok(is_uneven) = self.proliferation.increase_nplus(
+                    &mut self.distribution,
+                    &self.segregation,
+                    rng,
+                    self.verbosity,
+                ) {
+                    match is_uneven {
+                        IsUneven::False => {
+                            if self.verbosity > 1 {
+                                println!("IsUneven is false");
+                            }
+                        }
+                        IsUneven::True => {
+                            if self.verbosity > 1 {
+                                println!("IsUneven is true");
+                            }
+                        }
+                        IsUneven::TrueWithoutNMinusIncrease => {
+                            if self.verbosity > 1 {
+                                println!(
+                                    "IsUneven is true but w/o nminus increase"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            EcDNAEvent::ProliferateNMinus => {
+                self.proliferation.increase_nminus(&mut self.distribution);
+            }
+            EcDNAEvent::DeathNMinus => {
+                self.death.decrease_nminus(&mut self.distribution)
+            }
+            EcDNAEvent::DeathNPlus => self.death.decrease_nplus(
+                &mut self.distribution,
+                rng,
+                self.verbosity,
+            ),
+            _ => unreachable!(),
+        };
+        if self.verbosity > 1 {
+            println!("Distribution {:#?}", self.distribution);
+        }
+    }
+
+    fn update_state(&self, state: &mut CurrentState<4>) {
+        state.population[0] = *self.distribution.get_nminus();
+        state.population[1] = self.distribution.compute_nplus();
+        state.population[2] = *self.distribution.get_nminus();
+        state.population[3] = self.distribution.compute_nplus();
+    }
+}
+
+impl<P: EcDNAProliferation, S: Segregate> ToFile for BirthDeath<P, S> {
+    fn save(&self, path2dir: &Path, id: usize) -> anyhow::Result<()> {
+        //! Save the ecDNA distribution
+        let path2ecdna = path2dir.join("ecdna");
+        fs::create_dir_all(&path2ecdna).expect("Cannot create dir");
+        let path2file = path2ecdna.join(id.to_string()).with_extension("json");
+        self.distribution.save(&path2file, self.verbosity)?;
+        Ok(())
+    }
+}
+
+impl<P: EcDNAProliferation, S: Segregate> RandomSampling for BirthDeath<P, S> {
+    fn random_sample(
+        &mut self,
+        nb_individuals: NbIndividuals,
+        rng: &mut impl Rng,
+    ) {
+        self.distribution.undersample(nb_individuals, rng);
+    }
+}
+
+/// A birth-death stochastic process tracking the evolution of the
+/// [`EcDNADynamics`] over time.
+#[derive(Debug, Clone)]
+pub struct BirthDeathNMinusNPlus<P: EcDNAProliferation, S: Segregate> {
+    data: EcDNADynamics,
+    proliferation: P,
+    segregation: S,
+    death: EcDNADeath,
+    verbosity: u8,
+}
+
+impl<P: EcDNAProliferation, S: Segregate> BirthDeathNMinusNPlus<P, S> {
+    pub fn with_distribution(
         proliferation: P,
         segregation: S,
         distribution: EcDNADistribution,
@@ -315,52 +446,121 @@ impl<P: EcDNAProliferation, S: Segregate> PureBirthMean<P, S> {
         verbosity: u8,
     ) -> anyhow::Result<Self> {
         ensure!(!distribution.is_empty());
-        let mut mean = Vec::with_capacity(max_iter);
-        mean.push(distribution.compute_mean());
         Ok(Self {
             data: EcDNADynamics::new(distribution, max_iter),
-            mean,
             proliferation,
+            death: EcDNADeath,
             segregation,
             verbosity,
         })
     }
 }
-
-impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<2>
-    for PureBirthMean<P, S>
-{
-    fn advance_step(&mut self, reaction: NextReaction, rng: &mut ChaCha8Rng) {
-        todo!();
-    }
-
-    fn update_state(&self, state: &mut CurrentState<2>) {
-        todo!();
-    }
-}
-
-impl<P: EcDNAProliferation, S: Segregate> ToFile for PureBirthMean<P, S> {
-    fn save(&self, path2dir: &Path, id: usize) -> anyhow::Result<()> {
-        fs::create_dir_all(path2dir).expect("Cannot create dir");
-        let filename = id.to_string();
-        self.data.save(path2dir, &filename, self.verbosity)?;
-
-        let mut mean = path2dir.join("mean").join(filename);
-        mean.set_extension("csv");
-        write2file(&self.mean, &mean, None, false)?;
-        Ok(())
-    }
-}
-
-impl<P: EcDNAProliferation, S: Segregate> RandomSampling
-    for PureBirthMean<P, S>
+impl<P, S> RandomSampling for BirthDeathNMinusNPlus<P, S>
+where
+    P: EcDNAProliferation,
+    S: Segregate,
 {
     fn random_sample(
         &mut self,
         nb_individuals: NbIndividuals,
-        rng: &mut ChaCha8Rng,
+        rng: &mut impl Rng,
     ) {
-        todo!();
+        self.data.distribution.undersample(nb_individuals, rng);
+    }
+}
+
+impl<P, S> ToFile for BirthDeathNMinusNPlus<P, S>
+where
+    P: EcDNAProliferation,
+    S: Segregate,
+{
+    fn save(&self, path2dir: &Path, id: usize) -> anyhow::Result<()> {
+        fs::create_dir_all(path2dir).expect("Cannot create dir");
+
+        let filename = id.to_string();
+        if self.verbosity > 1 {
+            println!("Saving data in {:#?}", path2dir)
+        }
+
+        self.data.save(path2dir, &filename, self.verbosity)?;
+
+        Ok(())
+    }
+}
+
+impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<4>
+    for BirthDeathNMinusNPlus<P, S>
+{
+    type Reaction = EcDNAEvent;
+    fn advance_step(
+        &mut self,
+        reaction: NextReaction<Self::Reaction>,
+        rng: &mut impl Rng,
+    ) {
+        match reaction.event {
+            EcDNAEvent::ProliferateNPlus => {
+                if let Ok(is_uneven) = self.proliferation.increase_nplus(
+                    &mut self.data.distribution,
+                    &self.segregation,
+                    rng,
+                    self.verbosity,
+                ) {
+                    match is_uneven {
+                        IsUneven::False => {
+                            if self.verbosity > 1 {
+                                println!("IsUneven is false");
+                            }
+                        }
+                        IsUneven::True => {
+                            if self.verbosity > 1 {
+                                println!("IsUneven is true");
+                            }
+                        }
+                        IsUneven::TrueWithoutNMinusIncrease => {
+                            if self.verbosity > 1 {
+                                println!(
+                                    "IsUneven is true but w/o nminus increase"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            EcDNAEvent::ProliferateNMinus => {
+                self.proliferation
+                    .increase_nminus(&mut self.data.distribution);
+            }
+            EcDNAEvent::DeathNMinus => {
+                self.death.decrease_nminus(&mut self.data.distribution)
+            }
+
+            EcDNAEvent::DeathNPlus => self.death.decrease_nplus(
+                &mut self.data.distribution,
+                rng,
+                self.verbosity,
+            ),
+
+            _ => unreachable!(),
+        };
+        if self.verbosity > 1 {
+            println!("Distribution {:#?}", self.data.distribution);
+        }
+
+        self.data.nplus.push(self.data.distribution.compute_nplus());
+        self.data.nminus.push(*self.data.distribution.get_nminus());
+    }
+
+    fn update_state(&self, state: &mut CurrentState<4>) {
+        state.population[0] = *self.data.distribution.get_nminus();
+        state.population[1] = self.data.distribution.compute_nplus();
+        state.population[2] = *self.data.distribution.get_nminus();
+        state.population[3] = self.data.distribution.compute_nplus();
+        if self.verbosity > 1 {
+            println!(
+                "Update iteration after process update, population: {:#?}",
+                state.population
+            );
+        }
     }
 }
 
@@ -396,20 +596,25 @@ impl<P: EcDNAProliferation, S: Segregate> BirthDeathMeanTime<P, S> {
         })
     }
 }
-
-impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<4>
-    for BirthDeathMeanTime<P, S>
+impl<P, S> RandomSampling for BirthDeathMeanTime<P, S>
+where
+    P: EcDNAProliferation,
+    S: Segregate,
 {
-    fn advance_step(&mut self, reaction: NextReaction, rng: &mut ChaCha8Rng) {
-        todo!()
-    }
-
-    fn update_state(&self, state: &mut CurrentState<4>) {
-        todo!();
+    fn random_sample(
+        &mut self,
+        nb_individuals: NbIndividuals,
+        rng: &mut impl Rng,
+    ) {
+        self.data.ecdna_dynamics.distribution.undersample(nb_individuals, rng);
     }
 }
 
-impl<P: EcDNAProliferation, S: Segregate> ToFile for BirthDeathMeanTime<P, S> {
+impl<P, S> ToFile for BirthDeathMeanTime<P, S>
+where
+    P: EcDNAProliferation,
+    S: Segregate,
+{
     fn save(&self, path2dir: &Path, id: usize) -> anyhow::Result<()> {
         fs::create_dir_all(path2dir).expect("Cannot create dir");
 
@@ -420,35 +625,94 @@ impl<P: EcDNAProliferation, S: Segregate> ToFile for BirthDeathMeanTime<P, S> {
 
         self.data.save(path2dir, &filename, self.verbosity)?;
 
-        let mut mean = path2dir.join("mean").join(filename);
+        let mut mean = path2dir.join("mean").join(filename.clone());
         mean.set_extension("csv");
         if self.verbosity > 1 {
             println!("Mean data in {:#?}", path2dir)
         }
         write2file(&self.mean, &mean, None, false)?;
+        let mut time = path2dir.join("time").join(filename);
+        time.set_extension("csv");
+        if self.verbosity > 1 {
+            println!("Time data in {:#?}", path2dir)
+        }
+        write2file(&self.data.time, &time, None, false)?;
         Ok(())
     }
 }
 
-impl<P: EcDNAProliferation, S: Segregate> RandomSampling
+impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<4>
     for BirthDeathMeanTime<P, S>
 {
-    fn random_sample(
+    type Reaction = EcDNAEvent;
+
+    fn advance_step(
         &mut self,
-        nb_individuals: NbIndividuals,
-        rng: &mut ChaCha8Rng,
+        reaction: NextReaction<Self::Reaction>,
+        rng: &mut impl Rng,
     ) {
-        todo!();
+        match reaction.event {
+            EcDNAEvent::ProliferateNPlus => {
+                if let Ok(is_uneven) = self.proliferation.increase_nplus(
+                    &mut self.data.ecdna_dynamics.distribution,
+                    &self.segregation,
+                    rng,
+                    self.verbosity,
+                ) {
+                    match is_uneven {
+                        IsUneven::False => {
+                            if self.verbosity > 1 {
+                                println!("IsUneven is false");
+                            }
+                        }
+                        IsUneven::True => {
+                            if self.verbosity > 1 {
+                                println!("IsUneven is true");
+                            }
+                        }
+                        IsUneven::TrueWithoutNMinusIncrease => {
+                            if self.verbosity > 1 {
+                                println!(
+                                    "IsUneven is true but w/o nminus increase"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            EcDNAEvent::ProliferateNMinus => {
+                self.proliferation.increase_nminus(
+                    &mut self.data.ecdna_dynamics.distribution,
+                );
+            }
+            EcDNAEvent::DeathNMinus => self
+                .death
+                .decrease_nminus(&mut self.data.ecdna_dynamics.distribution),
+            EcDNAEvent::DeathNPlus => self.death.decrease_nplus(
+                &mut self.data.ecdna_dynamics.distribution,
+                rng,
+                self.verbosity,
+            ),
+            _ => unreachable!(),
+        };
+        if self.verbosity > 1 {
+            println!(
+                "Distribution {:#?}",
+                self.data.ecdna_dynamics.distribution
+            );
+        }
+        self.data.time.push(reaction.time);
+        self.mean.push(self.data.ecdna_dynamics.distribution.compute_mean());
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    #[ignore = "todo"]
-    fn random_sample_test() {
-        todo!()
+    fn update_state(&self, state: &mut CurrentState<4>) {
+        state.population[0] =
+            *self.data.ecdna_dynamics.distribution.get_nminus();
+        state.population[1] =
+            self.data.ecdna_dynamics.distribution.compute_nplus();
+        state.population[2] =
+            *self.data.ecdna_dynamics.distribution.get_nminus();
+        state.population[3] =
+            self.data.ecdna_dynamics.distribution.compute_nplus();
     }
 }

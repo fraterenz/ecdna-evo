@@ -1,7 +1,7 @@
 //! The ecDNA segregation rules applied upon proliferation of a cell with
 //! ecDNAs.
 use crate::DNACopy;
-use rand_chacha::ChaCha8Rng;
+use rand::Rng;
 use rand_distr::{Binomial, Distribution};
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU16;
@@ -30,7 +30,9 @@ impl TryFrom<DNACopy> for DNACopySegregating {
 
     fn try_from(value: DNACopy) -> Result<Self, Self::Error> {
         if value <= unsafe { NonZeroU16::new_unchecked(1) } {
-            Err("DNACopySegregating only accepts value superior than one!")
+            Err("DNACopySegregating only accepts value superior than one")
+        } else if value.get() % 2 == 1 {
+            Err("DNACopySegregating only accepts multiple of two values")
         } else {
             Ok(DNACopySegregating(value))
         }
@@ -76,7 +78,7 @@ pub trait Segregate {
     fn ecdna_segregation(
         &self,
         copies: DNACopySegregating,
-        rng: &mut ChaCha8Rng,
+        rng: &mut impl Rng,
         verbosity: u8,
     ) -> (u64, u64, IsUneven);
 }
@@ -110,7 +112,7 @@ impl Segregate for BinomialSegregation {
     fn ecdna_segregation(
         &self,
         copies: DNACopySegregating,
-        rng: &mut ChaCha8Rng,
+        rng: &mut impl Rng,
         verbosity: u8,
     ) -> (u64, u64, IsUneven) {
         // unwrap because p=0.5 will never raise a ProbabilityTooSmall or
@@ -141,10 +143,14 @@ impl Segregate for Deterministic {
     fn ecdna_segregation(
         &self,
         copies: DNACopySegregating,
-        rng: &mut ChaCha8Rng,
+        _rng: &mut impl Rng,
         verbosity: u8,
     ) -> (u64, u64, IsUneven) {
-        todo!();
+        let k1 = copies.0.get() as u64 / 2u64;
+        if verbosity > 1 {
+            println!("Returning {}, {} and IsUneven::False", k1, k1);
+        }
+        (k1, k1, IsUneven::False)
     }
 }
 
@@ -152,7 +158,7 @@ impl Segregate for BinomialNoUneven {
     fn ecdna_segregation(
         &self,
         copies: DNACopySegregating,
-        rng: &mut ChaCha8Rng,
+        rng: &mut impl Rng,
         verbosity: u8,
     ) -> (u64, u64, IsUneven) {
         let (mut k1, mut k2, mut is_uneven) =
@@ -171,7 +177,7 @@ impl Segregate for BinomialNoNminus {
     fn ecdna_segregation(
         &self,
         copies: DNACopySegregating,
-        rng: &mut ChaCha8Rng,
+        rng: &mut impl Rng,
         verbosity: u8,
     ) -> (u64, u64, IsUneven) {
         let (k1, k2, is_uneven) =
@@ -213,6 +219,7 @@ mod tests {
     use quickcheck::{Arbitrary, Gen};
     use quickcheck_macros::quickcheck;
     use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
 
     #[test]
     #[should_panic]
@@ -226,12 +233,18 @@ mod tests {
         DNACopySegregating::try_from(NonZeroU16::new(1).unwrap()).unwrap();
     }
 
-    #[quickcheck]
-    fn try_from_dna_copy_test(copy: DNACopy) {
-        let copy_segregating: DNACopy =
-            DNACopySegregating::try_from(copy).unwrap().try_into().unwrap();
+    #[test]
+    #[should_panic]
+    fn try_from_dna_copy_3_test() {
+        DNACopySegregating::try_from(NonZeroU16::new(1).unwrap()).unwrap();
+    }
 
-        assert_eq!(copy, copy_segregating);
+    #[quickcheck]
+    fn try_from_dna_copy_test(copy: DNACopySegregatingGreatherThanOne) {
+        let copy_segregating: DNACopy =
+            DNACopySegregating::try_from(copy.0).unwrap().try_into().unwrap();
+
+        assert_eq!(u16::try_from(copy.0).unwrap(), copy_segregating.get());
     }
 
     #[derive(Clone, Debug)]
@@ -248,14 +261,16 @@ mod tests {
     }
 
     #[quickcheck]
-    fn segregate_deterministic_test(copies: AvoidOverflowDNACopy, seed: u64) {
+    fn segregate_deterministic_test(
+        copies: DNACopySegregatingGreatherThanOne,
+        seed: u64,
+    ) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        let ecdna_copies = DNACopySegregating(copies.0);
         let (k1, k2, is_uneven) =
-            Deterministic {}.ecdna_segregation(ecdna_copies, &mut rng, 0);
+            Deterministic {}.ecdna_segregation(copies.0, &mut rng, 0);
         // uneven numbers
         assert_eq!(k1, k2);
-        assert_eq!(ecdna_copies.0.get() as u64, k1);
+        assert_eq!(u16::try_from(copies.0).unwrap() as u64, 2 * k1);
         assert_eq!(is_uneven, IsUneven::False);
     }
 

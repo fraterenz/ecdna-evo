@@ -2,14 +2,20 @@ use app::Dynamics;
 use chrono::Utc;
 use clap_app::{GrowthOptions, Segregation};
 use ecdna_evo::{
-    distribution::EcDNADistribution, process::PureBirth,
-    proliferation::Exponential,
+    distribution::EcDNADistribution,
+    process::{
+        BirthDeath, BirthDeathNMinusNPlus, EcDNAEvent, PureBirth,
+        PureBirthNMinusNPlus,
+    },
+    proliferation::{EcDNADeath, Exponential},
 };
 use indicatif::ParallelProgressIterator;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use ssa::{iteration::CurrentState, rates::ReactionRates, NbIndividuals};
+use ssa::{CurrentState, NbIndividuals, ReactionRates};
 
-use crate::clap_app::{Cli, Parallel};
+use crate::clap_app::{
+    BirthDeathType, Cli, Parallel, ProcessType, PureBirthType,
+};
 
 mod app;
 mod clap_app;
@@ -25,13 +31,11 @@ pub struct SimulationOptions {
     simulation: Dynamics,
     parallel: Parallel,
     sampling_at: Option<Vec<NbIndividuals>>,
-    is_birth_death: bool,
+    process_type: ProcessType,
     b0: f32,
     b1: f32,
     d0: f32,
     d1: f32,
-    time: bool,
-    mean: bool,
     distribution: EcDNADistribution,
     segregation: Segregation,
     growth: GrowthOptions,
@@ -44,82 +48,122 @@ fn main() {
         GrowthOptions::Constant => todo!(),
         GrowthOptions::Exponential => Exponential {},
     };
-    let (process, initial_state, rates) = match app.is_birth_death {
-        true => match app.mean {
-            true => {
-                if app.time {
-                    todo!();
-                } else {
-                    todo!();
-                }
-            }
-            false => {
-                if app.time {
-                    todo!();
-                } else {
-                    todo!();
-                }
-            }
-        },
-        false => {
-            let initial_population = CurrentState {
+
+    println!("{} Starting the simulation", Utc::now());
+    let my_closure = |idx| match app.process_type {
+        ProcessType::PureBirth(p_type) => {
+            let initial_state = CurrentState {
                 population: [
                     *app.distribution.get_nminus(),
                     app.distribution.compute_nplus(),
                 ],
             };
             let rates = ReactionRates([app.b0, app.b1]);
-            match app.mean {
-                true => {
-                    if app.time {
-                        todo!();
-                    } else {
-                        todo!();
-                    }
-                }
-                false => {
-                    if app.time {
-                        todo!();
-                    } else {
-                        (
-                            PureBirth::with_distribution(
-                                proliferation,
-                                app.segregation,
-                                app.distribution,
-                                app.simulation.max_iterations,
-                                app.simulation.verbose,
-                            )
-                            .unwrap(),
-                            initial_population,
-                            rates,
+            let reactions =
+                [EcDNAEvent::ProliferateNMinus, EcDNAEvent::ProliferateNPlus];
+            match p_type {
+                PureBirthType::PureBirthNMinusNPlus => app
+                    .simulation
+                    .run(
+                        idx,
+                        PureBirthNMinusNPlus::with_distribution(
+                            proliferation,
+                            app.segregation,
+                            app.distribution.clone(),
+                            app.simulation.iterations.max_iter,
+                            app.simulation.verbose,
                         )
-                    }
-                }
+                        .unwrap(),
+                        initial_state,
+                        &rates,
+                        &reactions,
+                        &app.sampling_at,
+                    )
+                    .unwrap(),
+                PureBirthType::PureBirth => app
+                    .simulation
+                    .run(
+                        idx,
+                        PureBirth::new(
+                            app.distribution.clone(),
+                            proliferation,
+                            app.segregation,
+                            app.simulation.verbose,
+                        )
+                        .unwrap(),
+                        initial_state,
+                        &rates,
+                        &reactions,
+                        &app.sampling_at,
+                    )
+                    .unwrap(),
+            };
+        }
+        ProcessType::BirthDeath(p_type) => {
+            let initial_state = CurrentState {
+                population: [
+                    *app.distribution.get_nminus(),
+                    app.distribution.compute_nplus(),
+                    *app.distribution.get_nminus(),
+                    app.distribution.compute_nplus(),
+                ],
+            };
+            let rates = ReactionRates([app.b0, app.b1, app.d0, app.d1]);
+            let reactions = [
+                EcDNAEvent::ProliferateNMinus,
+                EcDNAEvent::ProliferateNPlus,
+                EcDNAEvent::DeathNMinus,
+                EcDNAEvent::DeathNPlus,
+            ];
+            match p_type {
+                BirthDeathType::BirthDeath => app
+                    .simulation
+                    .run(
+                        idx,
+                        BirthDeath::new(
+                            app.distribution.clone(),
+                            proliferation,
+                            app.segregation,
+                            EcDNADeath,
+                            app.simulation.verbose,
+                        )
+                        .unwrap(),
+                        initial_state,
+                        &rates,
+                        &reactions,
+                        &app.sampling_at,
+                    )
+                    .unwrap(),
+                BirthDeathType::BirthDeathNMinusNPlus => app
+                    .simulation
+                    .run(
+                        idx,
+                        BirthDeathNMinusNPlus::with_distribution(
+                            proliferation,
+                            app.segregation,
+                            app.distribution.clone(),
+                            app.simulation.iterations.max_iter,
+                            app.simulation.verbose,
+                        )
+                        .unwrap(),
+                        initial_state,
+                        &rates,
+                        &reactions,
+                        &app.sampling_at,
+                    )
+                    .unwrap(),
             }
         }
-    };
-
-    println!("{} Starting the simulation", Utc::now());
-    let my_closure = |idx| {
-        app.simulation
-            .run(
-                idx,
-                process.clone(),
-                initial_state.clone(),
-                &rates,
-                &app.sampling_at,
-            )
-            .unwrap();
     };
     std::process::exit({
         match app.parallel {
             Parallel::Debug | Parallel::False => {
-                (0..app.runs).into_iter().for_each(|idx| my_closure(idx))
+                (0..app.runs).into_iter().for_each(my_closure)
             }
             Parallel::True => (0..app.runs)
                 .into_par_iter()
                 .progress_count(app.runs as u64)
-                .for_each(|idx| my_closure(idx)),
+                .for_each(my_closure),
         }
         println!("{} End simulation", Utc::now(),);
         0

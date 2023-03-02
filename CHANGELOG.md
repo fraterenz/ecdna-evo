@@ -141,3 +141,10 @@ Update `ecdna-evo` version in `Cargo.toml`
 
 ## 0.11.0
 **`ssa` version**: 0.4.0
+
+## 0.12.0
+**`ssa` version**: 0.5.0
+
+Refactor: rename `PureBirthNoDynamics` to `PureBirth` and `PureBirth` to `PureBirthNMinusNPlus`. The default process simulated by the `dynamics` is now `PureBirth` not `PureBirthNoDynamics`.
+
+New flag `nplus-nminus` to generate `PureBirthNMinusNPlus`.

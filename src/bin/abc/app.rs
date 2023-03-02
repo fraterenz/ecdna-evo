@@ -1,14 +1,13 @@
 use anyhow::Context;
 use ecdna_evo::abc::{ABCRejection, ABCResult, ABCResultBuilder, Data};
-use ecdna_evo::process::PureBirthNoDynamics;
+use ecdna_evo::process::{EcDNAEvent, PureBirth};
 use ecdna_evo::proliferation::Exponential;
 use ecdna_evo::segregation::BinomialSegregation;
+use ecdna_evo::{simulate, IterationsToSimulate, RandomSampling};
 use rand::SeedableRng;
 use rand_chacha::{self, ChaCha8Rng};
 use serde::{ser::SerializeStruct, Serialize, Serializer};
-use ssa::iteration::CurrentState;
-use ssa::rates::ReactionRates;
-use ssa::{run::Run, NbIndividuals, RandomSampling};
+use ssa::{CurrentState, NbIndividuals, ReactionRates};
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
@@ -45,26 +44,27 @@ impl Serialize for ABCResultFitness {
 pub struct Abc {
     pub seed: u64,
     pub path2dir: PathBuf,
+    pub iterations: IterationsToSimulate,
+    pub max_cells: NbIndividuals,
     pub verbose: u8,
     pub target: Data,
+    pub sample_at: Option<NbIndividuals>,
 }
 
 impl Abc {
     pub fn run(
         &self,
         idx: usize,
-        mut process: PureBirthNoDynamics<Exponential, BinomialSegregation>,
+        mut process: PureBirth<Exponential, BinomialSegregation>,
         data: &Data,
         mut initial_state: CurrentState<2>,
         birth_rates: &ReactionRates<2>,
-        max_cells: NbIndividuals,
-        max_iter: usize,
-        sample_at: Option<NbIndividuals>,
+        reactions: &[EcDNAEvent; 2],
     ) -> anyhow::Result<ABCResultFitness> {
         //! Find the posterior distribution of the fitness coefficient using
         //! ABC on taking `data` as input.
         //!
-        //! We can run abc on PureBirth processes only for now, that is we can
+        //! We can run abc on pure birth processes only for now, that is we can
         //! only infer the fitness coefficient without cell-death, where the
         //! fitness coefficient is the birth-rate of cells with ecDNAs.
         //!
@@ -74,16 +74,14 @@ impl Abc {
         }
         let mut rng = ChaCha8Rng::seed_from_u64(self.seed);
         rng.set_stream(idx as u64);
-        let run = Run::new(idx, max_cells, max_iter, self.verbose);
-        if run.verbosity > 0 {
-            println!("{:#?}", run);
-        }
 
-        let (_, stop_reason) = run.simulate(
-            0,
+        let stop_reason = simulate(
             &mut initial_state,
             birth_rates,
+            reactions,
             &mut process,
+            &self.iterations,
+            self.verbose,
             &mut rng,
         );
 
@@ -91,7 +89,7 @@ impl Abc {
             println!("Stopped simulation because {:#?}", stop_reason);
         }
 
-        if let Some(sample_at) = sample_at {
+        if let Some(sample_at) = self.sample_at {
             process.random_sample(sample_at, &mut rng);
         }
 

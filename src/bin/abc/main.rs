@@ -1,14 +1,16 @@
 use app::Abc;
 use chrono::Utc;
 use ecdna_evo::{
-    distribution::EcDNADistribution, process::PureBirthNoDynamics,
-    proliferation::Exponential, segregation::BinomialSegregation,
+    distribution::EcDNADistribution,
+    process::{EcDNAEvent, PureBirth},
+    proliferation::Exponential,
+    segregation::BinomialSegregation,
 };
 use indicatif::ParallelProgressIterator;
 use rayon::prelude::{
     IndexedParallelIterator, IntoParallelIterator, ParallelIterator,
 };
-use ssa::{iteration::CurrentState, rates::ReactionRates, NbIndividuals};
+use ssa::{CurrentState, ReactionRates};
 
 use crate::{
     app::{save, ABCResultFitness},
@@ -22,9 +24,6 @@ pub struct SimulationOptions {
     simulation: Abc,
     parallel: Parallel,
     /// subsample tumour when it has reached this size
-    subsample: Option<NbIndividuals>,
-    max_cells: NbIndividuals,
-    max_iterations: usize,
     fitness_coefficients: Vec<f32>,
     initial_distribution: EcDNADistribution,
     verbose: u8,
@@ -47,7 +46,7 @@ fn main() {
                             ],
                         };
 
-                        let process = PureBirthNoDynamics::new(
+                        let process = PureBirth::new(
                             cli.initial_distribution.clone(),
                             Exponential {},
                             BinomialSegregation,
@@ -61,9 +60,10 @@ fn main() {
                                 &cli.simulation.target,
                                 initial_state,
                                 &rates,
-                                cli.max_cells,
-                                cli.max_iterations,
-                                cli.subsample,
+                                &[
+                                    EcDNAEvent::ProliferateNMinus,
+                                    EcDNAEvent::ProliferateNPlus,
+                                ],
                             )
                             .unwrap()
                     }
@@ -81,7 +81,7 @@ fn main() {
                         .into_par_iter()
                         .enumerate()
                         .progress_count(runs as u64)
-                        .map(|idx| my_closure(idx))
+                        .map(|(idx, b1)| my_closure((idx, b1)))
                         .collect(),
                 };
 

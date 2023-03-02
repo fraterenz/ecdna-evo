@@ -1,5 +1,7 @@
 use clap::{ArgAction, ArgGroup, Parser, ValueEnum};
-use ecdna_evo::{abc::Data, distribution::EcDNADistribution};
+use ecdna_evo::{
+    abc::Data, distribution::EcDNADistribution, IterationsToSimulate,
+};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Uniform};
@@ -125,14 +127,17 @@ impl Cli {
                 seed: cli.seed,
                 path2dir: cli.path,
                 verbose: cli.verbose,
+                max_cells: cli.cells,
+                iterations: IterationsToSimulate {
+                    max_iter: cli.cells as usize,
+                    init_iter: 0usize,
+                },
+                sample_at: cli.subsample,
                 target: data,
             },
             parallel,
-            max_cells: cli.cells,
-            max_iterations: cli.cells as usize,
             fitness_coefficients,
             initial_distribution: distribution,
-            subsample: cli.subsample,
             verbose: cli.verbose,
         })
     }

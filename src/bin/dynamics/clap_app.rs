@@ -6,7 +6,9 @@ use ecdna_evo::{
         BinomialNoNminus, BinomialNoUneven, BinomialSegregation,
         Deterministic, Segregate,
     },
+    IterationsToSimulate,
 };
+use rand::Rng;
 use ssa::NbIndividuals;
 use std::{collections::HashMap, path::PathBuf};
 
@@ -53,12 +55,16 @@ pub struct Cli {
     /// Seed for reproducibility
     #[arg(long, default_value_t = 26)]
     seed: u64,
-    /// Triggers debug mode: max verbosity and 1 sequential simulation
+    /// Triggers debug mode: max verbosity, 1 sequential simulation and 10 cells
     #[arg(short, long, action = ArgAction::SetTrue, default_value_t = false)]
     debug: bool,
     /// Run sequentially each run instead of using rayon for parallelisation
     #[arg(short, long, action = ArgAction::SetTrue, default_value_t = false, conflicts_with = "debug")]
     sequential: bool,
+    /// Whether to track over simulations the evolution of the cells with and
+    /// without any ecDNAs.
+    #[arg(short, long, action = ArgAction::SetTrue, default_value_t = false)]
+    nplus_nminus: bool,
     /// Whether to track over simulations the evolution of the gillespie
     /// time, that is the waiting time for each reaction.
     #[arg(short, long, action = ArgAction::SetTrue, default_value_t = false)]
@@ -120,10 +126,11 @@ impl Cli {
             None => (false, 0f32),
         };
         let is_birth_death = is_birth_death_d0 | is_birth_death_d1;
+        let cells = if cli.debug { 10 } else { cli.cells };
         let iterations = if is_birth_death {
-            MAX_ITER * cli.cells as usize
+            MAX_ITER * cells as usize
         } else {
-            cli.cells as usize
+            cells as usize
         };
 
         // if no initial distribution, start with 1 cell with 1 ecDNA copy
@@ -141,8 +148,6 @@ impl Cli {
                 iterations,
             ),
         };
-
-        let cells = if cli.debug { 100 } else { cli.cells };
         let verbose = if cli.debug { u8::MAX } else { cli.verbose };
 
         let (parallel, runs) = if cli.debug {
@@ -158,31 +163,86 @@ impl Cli {
                 let samples_str: Vec<String> =
                     samples.iter().map(|ele| ele.to_string()).collect();
                 cli.path.join(format!(
-                    "{}samples{}population",
+                    "{}samples{}population_{}b0_{}b1_{}d0_{}d1",
                     samples_str.join("_"),
-                    cli.cells
+                    cells,
+                    cli.b0.to_string().replace('.', ""),
+                    cli.b1.to_string().replace('.', ""),
+                    d0.to_string().replace('.', ""),
+                    d1.to_string().replace('.', ""),
                 ))
             }
-            None => cli
-                .path
-                .join(format!("{}samples{}population", cli.cells, cli.cells)),
+            None => cli.path.join(format!(
+                "{}samples{}population_{}b0_{}b1_{}d0_{}d1",
+                cells,
+                cells,
+                cli.b0.to_string().replace('.', ""),
+                cli.b1.to_string().replace('.', ""),
+                d0.to_string().replace('.', ""),
+                d1.to_string().replace('.', ""),
+            )),
         };
 
+        let process_type = {
+            match is_birth_death {
+                true => match cli.mean {
+                    true => {
+                        if cli.time {
+                            todo!();
+                        } else {
+                            todo!();
+                        }
+                    }
+                    false => {
+                        if cli.time {
+                            todo!();
+                        } else if cli.nplus_nminus {
+                            ProcessType::BirthDeath(
+                                BirthDeathType::BirthDeathNMinusNPlus,
+                            )
+                        } else {
+                            ProcessType::BirthDeath(BirthDeathType::BirthDeath)
+                        }
+                    }
+                },
+                false => match cli.mean {
+                    true => {
+                        if cli.time {
+                            todo!();
+                        } else {
+                            todo!();
+                        }
+                    }
+                    false => {
+                        if cli.time {
+                            todo!();
+                        } else if cli.nplus_nminus {
+                            ProcessType::PureBirth(
+                                PureBirthType::PureBirthNMinusNPlus,
+                            )
+                        } else {
+                            ProcessType::PureBirth(PureBirthType::PureBirth)
+                        }
+                    }
+                },
+            }
+        };
         SimulationOptions {
             simulation: Dynamics {
                 seed: cli.seed,
                 max_cells: cells,
-                max_iterations: iterations,
+                iterations: IterationsToSimulate {
+                    max_iter: iterations,
+                    init_iter: 0,
+                },
                 path2dir,
                 verbose,
             },
-            is_birth_death,
+            process_type,
             b0: cli.b0,
             b1: cli.b1,
             d0,
             d1,
-            mean: cli.mean,
-            time: cli.time,
             distribution,
             parallel,
             segregation,
@@ -201,7 +261,7 @@ pub enum SegregationOptions {
     BinomialNoNminus,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum Segregation {
     Deterministic(Deterministic),
     BinomialNoUneven(BinomialNoUneven),
@@ -213,7 +273,7 @@ impl Segregate for Segregation {
     fn ecdna_segregation(
         &self,
         copies: ecdna_evo::segregation::DNACopySegregating,
-        rng: &mut rand_chacha::ChaCha8Rng,
+        rng: &mut impl Rng,
         verbosity: u8,
     ) -> (u64, u64, ecdna_evo::segregation::IsUneven) {
         match self {
@@ -278,4 +338,22 @@ impl std::fmt::Display for GrowthOptions {
             .get_name()
             .fmt(f)
     }
+}
+
+#[derive(Clone, Copy)]
+pub enum ProcessType {
+    PureBirth(PureBirthType),
+    BirthDeath(BirthDeathType),
+}
+
+#[derive(Clone, Copy)]
+pub enum PureBirthType {
+    PureBirth,
+    PureBirthNMinusNPlus,
+}
+
+#[derive(Clone, Copy)]
+pub enum BirthDeathType {
+    BirthDeath,
+    BirthDeathNMinusNPlus,
 }

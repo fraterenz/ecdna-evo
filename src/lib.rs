@@ -9,7 +9,86 @@ pub mod proliferation;
 /// EcDNA segregation models.
 pub mod segregation;
 
+use std::path::Path;
+
 pub use ecdna_lib::{abc, distribution, DNACopy};
+use rand::Rng;
+use ssa::{
+    AdvanceStep, CurrentState, NbIndividuals, ReactionRates, SimState,
+    StopReason,
+};
+
+pub struct IterationsToSimulate {
+    pub max_iter: usize,
+    pub init_iter: usize,
+}
+
+/// The main loop running one realisation of a stochastic process with
+/// `NB_REACTIONS` possible `REACTION`s.
+pub fn simulate<P, REACTION, const NB_REACTIONS: usize>(
+    state: &mut CurrentState<NB_REACTIONS>,
+    rates: &ReactionRates<{ NB_REACTIONS }>,
+    possible_reactions: &[REACTION; NB_REACTIONS],
+    bd_process: &mut P,
+    iterations: &IterationsToSimulate,
+    verbosity: u8,
+    rng: &mut impl Rng,
+) -> StopReason
+where
+    P: AdvanceStep<NB_REACTIONS, Reaction = REACTION>,
+    REACTION: std::fmt::Debug,
+{
+    let mut iter = iterations.init_iter;
+    loop {
+        let (sim_state, reaction) = bd_process.next_reaction(
+            state,
+            rates,
+            possible_reactions,
+            iter,
+            iterations.max_iter - 1,
+            rng,
+        );
+
+        if verbosity > 1 {
+            println!("State: {:#?}, reaction: {:#?}", state, reaction);
+        }
+
+        match sim_state {
+            SimState::Continue => {
+                // unwrap is safe since SimState::Continue returns always
+                // something (i.e. not None).
+                let reaction = reaction.unwrap();
+
+                // update the process according to the reaction
+                bd_process.advance_step(reaction, rng);
+
+                // update the state according to the process
+                bd_process.update_state(state);
+                iter += 1;
+            }
+            SimState::Stop(reason) => return reason,
+        }
+        // the absorbing state is when there are no NPlus cells and only NMinus
+        // cells.
+        if state.population[1] == 0 {
+            return StopReason::AbsorbingStateReached;
+        }
+    }
+}
+
+/// Save the results of the simulations.
+pub trait ToFile {
+    fn save(&self, path2dir: &Path, id: usize) -> anyhow::Result<()>;
+}
+
+/// Undersample a process by randomly reducing the number of individuals.
+pub trait RandomSampling {
+    fn random_sample(
+        &mut self,
+        nb_individuals: NbIndividuals,
+        rng: &mut impl Rng,
+    );
+}
 
 #[cfg(test)]
 pub mod test_util {
@@ -18,13 +97,8 @@ pub mod test_util {
         num::{NonZeroU16, NonZeroU8},
     };
 
-    use crate::segregation::RandomSegregation;
-
-    use super::segregation::{
-        BinomialNoNminus, BinomialNoUneven, BinomialSegregation,
-        DNACopySegregating,
-    };
-    use ecdna_lib::DNACopy;
+    use super::segregation::DNACopySegregating;
+    use ecdna_lib::{distribution::EcDNADistribution, DNACopy};
     use quickcheck::{Arbitrary, Gen};
 
     #[derive(Clone, Debug)]
@@ -65,7 +139,7 @@ pub mod test_util {
         fn arbitrary(g: &mut Gen) -> DNACopySegregatingGreatherThanOne {
             let mut copy =
                 DNACopy::new(NonZeroU8::arbitrary(g).get() as u16).unwrap();
-            if copy == DNACopy::new(1).unwrap() {
+            if copy == DNACopy::new(1).unwrap() || copy.get() % 2 == 1 {
                 copy = DNACopy::new(2).unwrap();
             }
             DNACopySegregatingGreatherThanOne(
@@ -74,22 +148,26 @@ pub mod test_util {
         }
     }
 
-    impl Arbitrary for RandomSegregation {
+    #[derive(Debug, Clone)]
+    pub struct TestSegregation(pub SegregationTypes);
+
+    #[derive(Debug, Clone)]
+    pub enum SegregationTypes {
+        Deterministic,
+        BinomialNoUneven,
+        BinomialNoNminus,
+        BinomialSegregation,
+    }
+
+    impl Arbitrary for TestSegregation {
         fn arbitrary(g: &mut Gen) -> Self {
-            let y = g.choose(&[0u8, 1u8, 2u8, 3u8, 4u8]).unwrap();
-            let bin = BinomialSegregation;
-            todo!();
-            if y % 2 == 0 {
-                match y {
-                    0 => return RandomSegregation::BinomialSegregation(bin),
-                    2 => {
-                        return Self::BinomialNoUneven(
-                            BinomialNoUneven(bin).into(),
-                        )
-                    }
-                    4 => return Self::Random(BinomialNoNminus(bin).into()),
-                    _ => unreachable!(),
-                };
+            let t = g.choose(&[0, 1, 2, 3]).unwrap();
+            match t {
+                0 => TestSegregation(SegregationTypes::Deterministic),
+                1 => TestSegregation(SegregationTypes::BinomialNoUneven),
+                2 => TestSegregation(SegregationTypes::BinomialNoNminus),
+                3 => TestSegregation(SegregationTypes::BinomialSegregation),
+                _ => unreachable!(),
             }
         }
     }
