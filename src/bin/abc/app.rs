@@ -1,5 +1,6 @@
 use anyhow::Context;
 use ecdna_evo::abc::{ABCRejection, ABCResult, ABCResultBuilder, Data};
+use ecdna_evo::distribution::SamplingStrategy;
 use ecdna_evo::process::{EcDNAEvent, PureBirth};
 use ecdna_evo::proliferation::Exponential;
 use ecdna_evo::segregation::BinomialSegregation;
@@ -90,7 +91,11 @@ impl Abc {
         }
 
         if let Some(sample_at) = self.sample_at {
-            process.random_sample(sample_at, &mut rng);
+            process.random_sample(
+                &SamplingStrategy::Uniform,
+                sample_at,
+                &mut rng,
+            );
         }
 
         let mut builder = ABCResultBuilder::default();

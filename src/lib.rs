@@ -11,6 +11,7 @@ pub mod segregation;
 
 use std::path::Path;
 
+use ecdna_lib::distribution::SamplingStrategy;
 pub use ecdna_lib::{abc, distribution, DNACopy};
 use rand::Rng;
 use ssa::{
@@ -85,8 +86,9 @@ pub trait ToFile {
 pub trait RandomSampling {
     fn random_sample(
         &mut self,
+        strategy: &SamplingStrategy,
         nb_individuals: NbIndividuals,
-        rng: &mut impl Rng,
+        rng: impl Rng,
     );
 }
 

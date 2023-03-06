@@ -1,7 +1,7 @@
 use anyhow::Context;
 use clap::{ArgAction, Parser, ValueEnum};
 use ecdna_evo::{
-    distribution::EcDNADistribution,
+    distribution::{EcDNADistribution, SamplingStrategy},
     segregation::{
         BinomialNoNminus, BinomialNoUneven, BinomialSegregation,
         Deterministic, Segregate,
@@ -12,7 +12,10 @@ use rand::Rng;
 use ssa::NbIndividuals;
 use std::{collections::HashMap, path::PathBuf};
 
-use crate::{app::Dynamics, SimulationOptions, MAX_ITER};
+use crate::{
+    app::{Dynamics, Sampling},
+    SimulationOptions, MAX_ITER,
+};
 
 pub enum Parallel {
     False,
@@ -74,8 +77,10 @@ pub struct Cli {
     #[arg(short, long, action = ArgAction::SetTrue, default_value_t = false)]
     mean: bool,
     /// The number of cells kept after subsampling.
-    #[arg(long, num_args = 0.., value_name = "CELLS")]
+    #[arg(long, num_args = 0.., requires= "sampling_strategy", value_name = "CELLS")]
     subsample: Option<Vec<NbIndividuals>>,
+    #[arg(long, value_enum, requires = "subsample")]
+    sampling_strategy: Option<SamplingStrategyArg>,
     /// Path to store the results of the simulations
     #[arg(
         value_name = "DIR",
@@ -227,6 +232,23 @@ impl Cli {
                 },
             }
         };
+        let sampling_strategy =
+            cli.sampling_strategy.map(|strategy| match strategy {
+                SamplingStrategyArg::Uniform => SamplingStrategy::Uniform,
+                SamplingStrategyArg::Gaussian => SamplingStrategy::Gaussian,
+            });
+
+        let sampling = if let Some(sampling_at) = cli.subsample {
+            Some(Sampling {
+                at: sampling_at,
+                strategy: sampling_strategy
+                    .expect("Found `samplig_at` without `sampling_strategy`"),
+            })
+        } else {
+            assert!(cli.subsample.is_none());
+            None
+        };
+
         SimulationOptions {
             simulation: Dynamics {
                 seed: cli.seed,
@@ -246,7 +268,7 @@ impl Cli {
             distribution,
             parallel,
             segregation,
-            sampling_at: cli.subsample,
+            sampling,
             growth: cli.growth,
             runs,
         }
@@ -356,4 +378,10 @@ pub enum PureBirthType {
 pub enum BirthDeathType {
     BirthDeath,
     BirthDeathNMinusNPlus,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+enum SamplingStrategyArg {
+    Uniform,
+    Gaussian,
 }

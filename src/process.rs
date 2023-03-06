@@ -1,6 +1,7 @@
 use std::{fs, path::Path};
 
 use anyhow::ensure;
+use ecdna_lib::distribution::SamplingStrategy;
 use rand::Rng;
 use ssa::{
     write2file, AdvanceStep, CurrentState, NbIndividuals, NextReaction,
@@ -72,10 +73,11 @@ where
 {
     fn random_sample(
         &mut self,
+        strategy: &SamplingStrategy,
         nb_individuals: NbIndividuals,
-        rng: &mut impl Rng,
+        mut rng: impl Rng,
     ) {
-        self.distribution.undersample(nb_individuals, rng);
+        self.distribution.sample(nb_individuals, strategy, &mut rng);
     }
 }
 
@@ -193,8 +195,9 @@ where
 {
     fn random_sample(
         &mut self,
+        strategy: &SamplingStrategy,
         nb_individuals: NbIndividuals,
-        rng: &mut impl Rng,
+        mut rng: impl Rng,
     ) {
         if self.verbosity > 0 {
             println!("Subsampling the ecDNA distribution");
@@ -202,7 +205,8 @@ where
         if self.verbosity > 1 {
             println!("Before {:#?}", self.data.distribution);
         }
-        self.data.distribution.undersample(nb_individuals, rng);
+        self.data.distribution.sample(nb_individuals, strategy, &mut rng);
+
         if self.verbosity > 1 {
             println!("After {:#?}", self.data.distribution);
         }
@@ -419,10 +423,11 @@ impl<P: EcDNAProliferation, S: Segregate> ToFile for BirthDeath<P, S> {
 impl<P: EcDNAProliferation, S: Segregate> RandomSampling for BirthDeath<P, S> {
     fn random_sample(
         &mut self,
+        strategy: &SamplingStrategy,
         nb_individuals: NbIndividuals,
-        rng: &mut impl Rng,
+        mut rng: impl Rng,
     ) {
-        self.distribution.undersample(nb_individuals, rng);
+        self.distribution.sample(nb_individuals, strategy, &mut rng)
     }
 }
 
@@ -462,10 +467,11 @@ where
 {
     fn random_sample(
         &mut self,
-        nb_individuals: NbIndividuals,
-        rng: &mut impl Rng,
+        _strategy: &SamplingStrategy,
+        _nb_individuals: NbIndividuals,
+        _rng: impl Rng,
     ) {
-        self.data.distribution.undersample(nb_individuals, rng);
+        todo!()
     }
 }
 
@@ -596,6 +602,7 @@ impl<P: EcDNAProliferation, S: Segregate> BirthDeathMeanTime<P, S> {
         })
     }
 }
+
 impl<P, S> RandomSampling for BirthDeathMeanTime<P, S>
 where
     P: EcDNAProliferation,
@@ -603,10 +610,11 @@ where
 {
     fn random_sample(
         &mut self,
-        nb_individuals: NbIndividuals,
-        rng: &mut impl Rng,
+        _strategy: &SamplingStrategy,
+        _nb_individuals: NbIndividuals,
+        _rng: impl Rng,
     ) {
-        self.data.ecdna_dynamics.distribution.undersample(nb_individuals, rng);
+        todo!()
     }
 }
 

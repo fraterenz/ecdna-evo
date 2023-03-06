@@ -241,8 +241,7 @@ mod tests {
 
     #[quickcheck]
     fn try_from_dna_copy_test(copy: DNACopySegregatingGreatherThanOne) {
-        let copy_segregating: DNACopy =
-            DNACopySegregating::try_from(copy.0).unwrap().try_into().unwrap();
+        let copy_segregating: DNACopy = (copy.0).try_into().unwrap();
 
         assert_eq!(u16::try_from(copy.0).unwrap(), copy_segregating.get());
     }

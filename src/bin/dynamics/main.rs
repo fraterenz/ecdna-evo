@@ -11,10 +11,11 @@ use ecdna_evo::{
 };
 use indicatif::ParallelProgressIterator;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use ssa::{CurrentState, NbIndividuals, ReactionRates};
+use ssa::{CurrentState, ReactionRates};
 
-use crate::clap_app::{
-    BirthDeathType, Cli, Parallel, ProcessType, PureBirthType,
+use crate::{
+    app::Sampling,
+    clap_app::{BirthDeathType, Cli, Parallel, ProcessType, PureBirthType},
 };
 
 mod app;
@@ -30,7 +31,7 @@ const NB_RESTARTS: u64 = 30;
 pub struct SimulationOptions {
     simulation: Dynamics,
     parallel: Parallel,
-    sampling_at: Option<Vec<NbIndividuals>>,
+    sampling: Option<Sampling>,
     process_type: ProcessType,
     b0: f32,
     b1: f32,
@@ -77,7 +78,7 @@ fn main() {
                         initial_state,
                         &rates,
                         &reactions,
-                        &app.sampling_at,
+                        &app.sampling,
                     )
                     .unwrap(),
                 PureBirthType::PureBirth => app
@@ -94,7 +95,7 @@ fn main() {
                         initial_state,
                         &rates,
                         &reactions,
-                        &app.sampling_at,
+                        &app.sampling,
                     )
                     .unwrap(),
             };
@@ -131,7 +132,7 @@ fn main() {
                         initial_state,
                         &rates,
                         &reactions,
-                        &app.sampling_at,
+                        &app.sampling,
                     )
                     .unwrap(),
                 BirthDeathType::BirthDeathNMinusNPlus => app
@@ -149,7 +150,7 @@ fn main() {
                         initial_state,
                         &rates,
                         &reactions,
-                        &app.sampling_at,
+                        &app.sampling,
                     )
                     .unwrap(),
             }
