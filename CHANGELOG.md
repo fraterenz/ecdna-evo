@@ -154,3 +154,7 @@ New flag `nplus-nminus` to generate `PureBirthNMinusNPlus`.
 
 New clap arg `sampling_strategy` and update `ecdna-lib` version to sample the ecDNA distributions according to different sampling strategies.
 
+## 0.13.1
+**`ecdna_lib` version**: 0.3.2
+
+When `subsample` arg of clap is 0, take the full ecDNA distribution as a sample, which makes sense only if `--sampling-strategy` is *not* `uniform`.

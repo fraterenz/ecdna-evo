@@ -327,7 +327,7 @@ dependencies = [
 
 [[package]]
 name = "ecdna-evo"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -348,8 +348,8 @@ dependencies = [
 
 [[package]]
 name = "ecdna-lib"
-version = "0.3.0"
-source = "git+https://github.com/fraterenz/ecdna-lib#9821379aa928879c59db365c1152fe6f391308f7"
+version = "0.3.2"
+source = "git+https://github.com/fraterenz/ecdna-lib#e2c8e150299d6cbf19804239d7ea5c45451148e6"
 dependencies = [
  "anyhow",
  "csv",

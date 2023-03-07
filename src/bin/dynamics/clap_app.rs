@@ -77,6 +77,10 @@ pub struct Cli {
     #[arg(short, long, action = ArgAction::SetTrue, default_value_t = false)]
     mean: bool,
     /// The number of cells kept after subsampling.
+    ///
+    /// To take the full distribution pass 0 as argument, e.g. when we want to
+    /// sample with a custom strategy the full ecDNA distribution (see
+    /// `--sampling-strategy`)
     #[arg(long, num_args = 0.., requires= "sampling_strategy", value_name = "CELLS")]
     subsample: Option<Vec<NbIndividuals>>,
     #[arg(long, value_enum, requires = "subsample")]
@@ -239,11 +243,22 @@ impl Cli {
             });
 
         let sampling = if let Some(sampling_at) = cli.subsample {
-            Some(Sampling {
-                at: sampling_at,
-                strategy: sampling_strategy
-                    .expect("Found `samplig_at` without `sampling_strategy`"),
-            })
+            let (at, strategy) = {
+                let strategy = sampling_strategy.unwrap();
+                // 0 means take the full ecDNA distribution which does not make
+                // sense with a uniform distribution
+                if sampling_at.len() == 1 && sampling_at[0] == 0 {
+                    assert_ne!(
+                        strategy,
+                        SamplingStrategy::Uniform,
+                        "It doesn't make sense to take the full ecDNA distribution as sample with an uniform sampling strategy"
+                        );
+                    (vec![cells], strategy)
+                } else {
+                    (sampling_at, strategy)
+                }
+            };
+            Some(Sampling { at, strategy })
         } else {
             assert!(cli.subsample.is_none());
             None
