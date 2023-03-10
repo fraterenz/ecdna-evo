@@ -199,7 +199,9 @@ impl Cli {
                         if cli.time {
                             todo!();
                         } else {
-                            todo!();
+                            ProcessType::BirthDeath(
+                                BirthDeathType::BirthDeathMean,
+                            )
                         }
                     }
                     false => {
@@ -394,6 +396,7 @@ pub enum PureBirthType {
 pub enum BirthDeathType {
     BirthDeath,
     BirthDeathNMinusNPlus,
+    BirthDeathMean,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
