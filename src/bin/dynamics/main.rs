@@ -23,7 +23,7 @@ mod clap_app;
 
 /// The number of max iterations that we max simulate compared to the cells.
 /// The max number of iterations will be MAX_ITER * cells.
-pub const MAX_ITER: usize = 3;
+pub const MAX_ITER: usize = 10;
 /// The number of time a run restarts when there are no individuals left because
 /// of the high cell death
 const NB_RESTARTS: u64 = 30;

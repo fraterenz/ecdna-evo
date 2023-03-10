@@ -327,7 +327,7 @@ dependencies = [
 
 [[package]]
 name = "ecdna-evo"
-version = "0.13.1"
+version = "0.13.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -349,7 +349,7 @@ dependencies = [
 [[package]]
 name = "ecdna-lib"
 version = "0.3.2"
-source = "git+https://github.com/fraterenz/ecdna-lib#e2c8e150299d6cbf19804239d7ea5c45451148e6"
+source = "git+https://github.com/fraterenz/ecdna-lib?tag=v0.3.2#e2c8e150299d6cbf19804239d7ea5c45451148e6"
 dependencies = [
  "anyhow",
  "csv",
@@ -863,7 +863,7 @@ dependencies = [
 [[package]]
 name = "ssa"
 version = "0.5.0"
-source = "git+https://github.com/fraterenz/ssa#e00074937749e316752565cd8d0258ad0a7d9957"
+source = "git+https://github.com/fraterenz/ssa?tag=v0.5.0#e00074937749e316752565cd8d0258ad0a7d9957"
 dependencies = [
  "anyhow",
  "rand",

@@ -271,6 +271,7 @@ impl Cli {
                 iterations: IterationsToSimulate {
                     max_iter: iterations,
                     init_iter: 0,
+                    max_cells: cells,
                 },
                 path2dir,
                 verbose,

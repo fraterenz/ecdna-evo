@@ -22,6 +22,7 @@ use ssa::{
 pub struct IterationsToSimulate {
     pub max_iter: usize,
     pub init_iter: usize,
+    pub max_cells: NbIndividuals,
 }
 
 /// The main loop running one realisation of a stochastic process with
@@ -41,6 +42,10 @@ where
 {
     let mut iter = iterations.init_iter;
     loop {
+        if state.population[0] + state.population[1] >= iterations.max_cells {
+            return StopReason::MaxIndividualsReached;
+        }
+
         let (sim_state, reaction) = bd_process.next_reaction(
             state,
             rates,
