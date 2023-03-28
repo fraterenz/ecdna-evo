@@ -1,15 +1,13 @@
 use anyhow::Context;
 use clap::{ArgAction, Parser, ValueEnum};
 use ecdna_evo::{
-    distribution::{EcDNADistribution, SamplingStrategy},
+    distribution::{EcDNADistribution, SamplingStrategy, Sigma},
     segregation::{
-        BinomialNoNminus, BinomialNoUneven, BinomialSegregation,
-        Deterministic, Segregate,
+        Binomial, BinomialNoNminus, BinomialNoUneven, Deterministic, Segregate,
     },
-    IterationsToSimulate,
 };
 use rand::Rng;
-use ssa::NbIndividuals;
+use ssa::{NbIndividuals, Options};
 use std::{collections::HashMap, path::PathBuf};
 
 use crate::{
@@ -26,12 +24,13 @@ pub enum Parallel {
 #[derive(Debug, Parser)] // requires `derive` feature
 #[command(name = "Dynamics")]
 #[command(
+    version,
     about = "Mathematical modelling of the ecDNA dynamics",  // TODO
     long_about = "Study the effect of the random segregation on the ecDNA dynamics using a stochastic simulation algorithm (SSA) aka Gillespie algorithm"
 )]
 pub struct Cli {
     /// The ecDNA segregation type
-    #[arg(long, default_value_t = SegregationOptions::BinomialSegregation )]
+    #[arg(long, default_value_t = SegregationOptions::Binomial)]
     segregation: SegregationOptions,
     /// The tumour growth model
     #[arg(long, default_value_t = GrowthOptions::Exponential )]
@@ -199,9 +198,7 @@ impl Cli {
                         if cli.time {
                             todo!();
                         } else {
-                            ProcessType::BirthDeath(
-                                BirthDeathType::BirthDeathMean,
-                            )
+                            ProcessType::BirthDeath(BirthDeathType::Mean)
                         }
                     }
                     false => {
@@ -209,7 +206,7 @@ impl Cli {
                             todo!();
                         } else if cli.nplus_nminus {
                             ProcessType::BirthDeath(
-                                BirthDeathType::BirthDeathNMinusNPlus,
+                                BirthDeathType::NMinusNPlus,
                             )
                         } else {
                             ProcessType::BirthDeath(BirthDeathType::BirthDeath)
@@ -221,16 +218,14 @@ impl Cli {
                         if cli.time {
                             todo!();
                         } else {
-                            todo!();
+                            ProcessType::PureBirth(PureBirthType::Mean)
                         }
                     }
                     false => {
                         if cli.time {
                             todo!();
                         } else if cli.nplus_nminus {
-                            ProcessType::PureBirth(
-                                PureBirthType::PureBirthNMinusNPlus,
-                            )
+                            ProcessType::PureBirth(PureBirthType::NMinusNPlus)
                         } else {
                             ProcessType::PureBirth(PureBirthType::PureBirth)
                         }
@@ -241,7 +236,9 @@ impl Cli {
         let sampling_strategy =
             cli.sampling_strategy.map(|strategy| match strategy {
                 SamplingStrategyArg::Uniform => SamplingStrategy::Uniform,
-                SamplingStrategyArg::Gaussian => SamplingStrategy::Gaussian,
+                SamplingStrategyArg::Gaussian => {
+                    SamplingStrategy::Gaussian(Sigma::new(1.))
+                }
             });
 
         let sampling = if let Some(sampling_at) = cli.subsample {
@@ -270,13 +267,13 @@ impl Cli {
             simulation: Dynamics {
                 seed: cli.seed,
                 max_cells: cells,
-                iterations: IterationsToSimulate {
+                options: Options {
                     max_iter: iterations,
                     init_iter: 0,
                     max_cells: cells,
+                    verbosity: verbose,
                 },
                 path2dir,
-                verbose,
             },
             process_type,
             b0: cli.b0,
@@ -297,7 +294,7 @@ impl Cli {
 pub enum SegregationOptions {
     Deterministic,
     BinomialNoUneven,
-    BinomialSegregation,
+    Binomial,
     BinomialNoNminus,
 }
 
@@ -306,7 +303,7 @@ pub enum Segregation {
     Deterministic(Deterministic),
     BinomialNoUneven(BinomialNoUneven),
     BinomialNoNminus(BinomialNoNminus),
-    BinomialSegregation(BinomialSegregation),
+    Binomial(Binomial),
 }
 
 impl Segregate for Segregation {
@@ -326,9 +323,7 @@ impl Segregate for Segregation {
             Self::BinomialNoNminus(s) => {
                 s.ecdna_segregation(copies, rng, verbosity)
             }
-            Self::BinomialSegregation(s) => {
-                s.ecdna_segregation(copies, rng, verbosity)
-            }
+            Self::Binomial(s) => s.ecdna_segregation(copies, rng, verbosity),
         }
     }
 }
@@ -355,18 +350,12 @@ impl From<SegregationOptions> for Segregation {
                 Segregation::Deterministic(Deterministic)
             }
             SegregationOptions::BinomialNoUneven => {
-                Segregation::BinomialNoUneven(BinomialNoUneven(
-                    BinomialSegregation,
-                ))
+                Segregation::BinomialNoUneven(BinomialNoUneven(Binomial))
             }
             SegregationOptions::BinomialNoNminus => {
-                Segregation::BinomialNoNminus(BinomialNoNminus(
-                    BinomialSegregation,
-                ))
+                Segregation::BinomialNoNminus(BinomialNoNminus(Binomial))
             }
-            SegregationOptions::BinomialSegregation => {
-                Segregation::BinomialSegregation(BinomialSegregation)
-            }
+            SegregationOptions::Binomial => Segregation::Binomial(Binomial),
         }
     }
 }
@@ -389,14 +378,15 @@ pub enum ProcessType {
 #[derive(Clone, Copy)]
 pub enum PureBirthType {
     PureBirth,
-    PureBirthNMinusNPlus,
+    NMinusNPlus,
+    Mean,
 }
 
 #[derive(Clone, Copy)]
 pub enum BirthDeathType {
     BirthDeath,
-    BirthDeathNMinusNPlus,
-    BirthDeathMean,
+    NMinusNPlus,
+    Mean,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]

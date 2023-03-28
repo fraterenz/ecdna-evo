@@ -1,12 +1,10 @@
 use anyhow::Context;
-use ecdna_evo::{
-    distribution::SamplingStrategy, simulate, IterationsToSimulate,
-    RandomSampling, ToFile,
-};
+use ecdna_evo::{distribution::SamplingStrategy, RandomSampling, ToFile};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use ssa::{
-    AdvanceStep, CurrentState, NbIndividuals, ReactionRates, StopReason,
+    simulate, AdvanceStep, CurrentState, NbIndividuals, Options,
+    ReactionRates, StopReason,
 };
 use std::{
     fmt::Debug,
@@ -19,8 +17,7 @@ pub struct Dynamics {
     pub seed: u64,
     pub path2dir: PathBuf,
     pub max_cells: NbIndividuals,
-    pub iterations: IterationsToSimulate,
-    pub verbose: u8,
+    pub options: Options,
 }
 
 pub struct Sampling {
@@ -63,8 +60,7 @@ impl Dynamics {
                     rates,
                     possible_reactions,
                     &mut process_copy,
-                    &self.iterations,
-                    self.verbose,
+                    &self.options,
                     &mut rng,
                 );
 
@@ -76,7 +72,7 @@ impl Dynamics {
                     // restart process as well
                     process_copy = process.clone();
                     let stream = idx as u64 * NB_RESTARTS + self.seed + j;
-                    if self.verbose > 1 {
+                    if self.options.verbosity > 1 {
                         println!(
                             "Restarting with stream {} because {:#?}",
                             stream, stop
@@ -90,14 +86,13 @@ impl Dynamics {
                         rates,
                         possible_reactions,
                         &mut process_copy,
-                        &self.iterations,
-                        self.verbose,
+                        &self.options,
                         &mut rng,
                     );
                     j += 1;
                 }
 
-                if self.verbose > 0 {
+                if self.options.verbosity > 0 {
                     println!("{} restarts", j);
                 }
 
@@ -111,23 +106,19 @@ impl Dynamics {
                             )
                         })
                         .unwrap();
-                    process_copy.random_sample(
-                        &sampling.1,
-                        sampling.0,
-                        &mut rng,
-                    );
+                    process_copy.random_sample(&sampling.1, sampling.0, rng);
                 }
                 process_copy
             };
 
         if let Some(sampling) = sampling {
-            if self.verbose > 0 {
+            if self.options.verbosity > 0 {
                 println!("Subsampling");
             }
             let path2dir =
                 &self.path2dir.join((sampling.at.len() - 1).to_string());
             for (i, sample_at) in sampling.at.iter().enumerate() {
-                if self.verbose > 1 {
+                if self.options.verbosity > 1 {
                     println!("{}-th subsample with {} cells", i, sample_at);
                 }
                 // save only at last sample
@@ -149,7 +140,7 @@ impl Dynamics {
                 }
             }
         } else {
-            if self.verbose > 1 {
+            if self.options.verbosity > 1 {
                 println!("Nosubsampling");
             }
             let process = run_helper(None, &self.path2dir);

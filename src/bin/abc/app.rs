@@ -3,12 +3,12 @@ use ecdna_evo::abc::{ABCRejection, ABCResult, ABCResultBuilder, Data};
 use ecdna_evo::distribution::SamplingStrategy;
 use ecdna_evo::process::{EcDNAEvent, PureBirth};
 use ecdna_evo::proliferation::Exponential;
-use ecdna_evo::segregation::BinomialSegregation;
-use ecdna_evo::{simulate, IterationsToSimulate, RandomSampling};
+use ecdna_evo::segregation::Binomial;
+use ecdna_evo::RandomSampling;
 use rand::SeedableRng;
 use rand_chacha::{self, ChaCha8Rng};
 use serde::{ser::SerializeStruct, Serialize, Serializer};
-use ssa::{CurrentState, NbIndividuals, ReactionRates};
+use ssa::{simulate, CurrentState, NbIndividuals, Options, ReactionRates};
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
@@ -45,9 +45,7 @@ impl Serialize for ABCResultFitness {
 pub struct Abc {
     pub seed: u64,
     pub path2dir: PathBuf,
-    pub iterations: IterationsToSimulate,
-    pub max_cells: NbIndividuals,
-    pub verbose: u8,
+    pub options: Options,
     pub target: Data,
     pub sample_at: Option<NbIndividuals>,
 }
@@ -56,7 +54,7 @@ impl Abc {
     pub fn run(
         &self,
         idx: usize,
-        mut process: PureBirth<Exponential, BinomialSegregation>,
+        mut process: PureBirth<Exponential, Binomial>,
         data: &Data,
         mut initial_state: CurrentState<2>,
         birth_rates: &ReactionRates<2>,
@@ -70,7 +68,7 @@ impl Abc {
         //! fitness coefficient is the birth-rate of cells with ecDNAs.
         //!
         //! Perform subsampling when `sample_at` is some.
-        if self.verbose > 0 {
+        if self.options.verbosity > 0 {
             println!("Stream: {:#?}", idx);
         }
         let mut rng = ChaCha8Rng::seed_from_u64(self.seed);
@@ -81,21 +79,16 @@ impl Abc {
             birth_rates,
             reactions,
             &mut process,
-            &self.iterations,
-            self.verbose,
+            &self.options,
             &mut rng,
         );
 
-        if self.verbose > 1 {
+        if self.options.verbosity > 1 {
             println!("Stopped simulation because {:#?}", stop_reason);
         }
 
         if let Some(sample_at) = self.sample_at {
-            process.random_sample(
-                &SamplingStrategy::Uniform,
-                sample_at,
-                &mut rng,
-            );
+            process.random_sample(&SamplingStrategy::Uniform, sample_at, rng);
         }
 
         let mut builder = ABCResultBuilder::default();
@@ -106,7 +99,7 @@ impl Abc {
                 builder,
                 process.get_ecdna_distribution(),
                 data,
-                self.verbose,
+                self.options.verbosity,
             ),
             b0: birth_rates.0[0],
             b1: birth_rates.0[1],

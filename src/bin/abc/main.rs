@@ -4,7 +4,7 @@ use ecdna_evo::{
     distribution::EcDNADistribution,
     process::{EcDNAEvent, PureBirth},
     proliferation::Exponential,
-    segregation::BinomialSegregation,
+    segregation::Binomial,
 };
 use indicatif::ParallelProgressIterator;
 use rayon::prelude::{
@@ -49,7 +49,7 @@ fn main() {
                         let process = PureBirth::new(
                             cli.initial_distribution.clone(),
                             Exponential {},
-                            BinomialSegregation,
+                            Binomial,
                             cli.verbose,
                         )
                         .expect("Cannot create the process");
@@ -88,7 +88,7 @@ fn main() {
                 if let Err(err) = save(
                     results,
                     &cli.simulation.path2dir,
-                    cli.simulation.verbose,
+                    cli.simulation.options.verbosity,
                 ) {
                     eprintln!(
                         "{} Error while saving the results into {:#?}, {}",

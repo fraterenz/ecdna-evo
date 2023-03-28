@@ -139,8 +139,7 @@ impl EcDNADeath {
 mod tests {
     use crate::{
         segregation::{
-            BinomialNoNminus, BinomialNoUneven, BinomialSegregation,
-            Deterministic,
+            Binomial, BinomialNoNminus, BinomialNoUneven, Deterministic,
         },
         test_util::{
             NonEmptyDistribtionWithNPlusCells, SegregationTypes,
@@ -189,7 +188,7 @@ mod tests {
                 let is_uneven = ecdna
                     .increase_nplus(
                         &mut distribution,
-                        &BinomialNoUneven(BinomialSegregation),
+                        &BinomialNoUneven(Binomial),
                         &mut rng,
                         0,
                     )
@@ -200,7 +199,7 @@ mod tests {
             SegregationTypes::BinomialNoNminus => {
                 let is_uneven = ecdna.increase_nplus(
                     &mut distribution,
-                    &BinomialNoNminus(BinomialSegregation),
+                    &BinomialNoNminus(Binomial),
                     &mut rng,
                     0,
                 );
@@ -209,7 +208,7 @@ mod tests {
             SegregationTypes::BinomialSegregation => {
                 let is_uneven = ecdna.increase_nplus(
                     &mut distribution,
-                    &BinomialSegregation,
+                    &Binomial,
                     &mut rng,
                     0,
                 );

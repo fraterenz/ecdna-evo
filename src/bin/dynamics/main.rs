@@ -5,7 +5,7 @@ use ecdna_evo::{
     distribution::EcDNADistribution,
     process::{
         BirthDeath, BirthDeathMean, BirthDeathNMinusNPlus, EcDNAEvent,
-        PureBirth, PureBirthNMinusNPlus,
+        PureBirth, PureBirthMean, PureBirthNMinusNPlus,
     },
     proliferation::{EcDNADeath, Exponential},
 };
@@ -63,7 +63,7 @@ fn main() {
             let reactions =
                 [EcDNAEvent::ProliferateNMinus, EcDNAEvent::ProliferateNPlus];
             match p_type {
-                PureBirthType::PureBirthNMinusNPlus => app
+                PureBirthType::NMinusNPlus => app
                     .simulation
                     .run(
                         idx,
@@ -71,8 +71,8 @@ fn main() {
                             proliferation,
                             app.segregation,
                             app.distribution.clone(),
-                            app.simulation.iterations.max_iter,
-                            app.simulation.verbose,
+                            app.simulation.options.max_iter,
+                            app.simulation.options.verbosity,
                         )
                         .unwrap(),
                         initial_state,
@@ -89,7 +89,25 @@ fn main() {
                             app.distribution.clone(),
                             proliferation,
                             app.segregation,
-                            app.simulation.verbose,
+                            app.simulation.options.verbosity,
+                        )
+                        .unwrap(),
+                        initial_state,
+                        &rates,
+                        &reactions,
+                        &app.sampling,
+                    )
+                    .unwrap(),
+                PureBirthType::Mean => app
+                    .simulation
+                    .run(
+                        idx,
+                        PureBirthMean::new(
+                            proliferation,
+                            app.segregation,
+                            app.distribution.clone(),
+                            app.simulation.options.max_iter,
+                            app.simulation.options.verbosity,
                         )
                         .unwrap(),
                         initial_state,
@@ -126,7 +144,7 @@ fn main() {
                             proliferation,
                             app.segregation,
                             EcDNADeath,
-                            app.simulation.verbose,
+                            app.simulation.options.verbosity,
                         )
                         .unwrap(),
                         initial_state,
@@ -135,7 +153,7 @@ fn main() {
                         &app.sampling,
                     )
                     .unwrap(),
-                BirthDeathType::BirthDeathNMinusNPlus => app
+                BirthDeathType::NMinusNPlus => app
                     .simulation
                     .run(
                         idx,
@@ -143,8 +161,8 @@ fn main() {
                             proliferation,
                             app.segregation,
                             app.distribution.clone(),
-                            app.simulation.iterations.max_iter,
-                            app.simulation.verbose,
+                            app.simulation.options.max_iter,
+                            app.simulation.options.verbosity,
                         )
                         .unwrap(),
                         initial_state,
@@ -153,7 +171,7 @@ fn main() {
                         &app.sampling,
                     )
                     .unwrap(),
-                BirthDeathType::BirthDeathMean => app
+                BirthDeathType::Mean => app
                     .simulation
                     .run(
                         idx,
@@ -161,8 +179,8 @@ fn main() {
                             proliferation,
                             app.segregation,
                             app.distribution.clone(),
-                            app.simulation.iterations.max_iter,
-                            app.simulation.verbose,
+                            app.simulation.options.max_iter,
+                            app.simulation.options.verbosity,
                         )
                         .unwrap(),
                         initial_state,

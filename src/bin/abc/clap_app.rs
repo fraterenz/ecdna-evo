@@ -1,11 +1,9 @@
 use clap::{ArgAction, ArgGroup, Parser, ValueEnum};
-use ecdna_evo::{
-    abc::Data, distribution::EcDNADistribution, IterationsToSimulate,
-};
+use ecdna_evo::{abc::Data, distribution::EcDNADistribution};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Uniform};
-use ssa::NbIndividuals;
+use ssa::{NbIndividuals, Options};
 use std::{collections::HashMap, path::PathBuf};
 
 use crate::{app::Abc, SimulationOptions};
@@ -19,6 +17,7 @@ pub enum Parallel {
 #[derive(Debug, Parser)] // requires `derive` feature
 #[command(name = "Abc")]
 #[command(
+    version,
     about = "Infer the birth-rate (fitness coefficient) from the data",
     group(ArgGroup::new("input")
         .required(true)
@@ -126,11 +125,11 @@ impl Cli {
             simulation: Abc {
                 seed: cli.seed,
                 path2dir: cli.path,
-                verbose: cli.verbose,
-                max_cells: cli.cells,
-                iterations: IterationsToSimulate {
+                options: Options {
+                    max_cells: cli.cells,
                     max_iter: cli.cells as usize,
                     init_iter: 0usize,
+                    verbosity: cli.verbose,
                 },
                 sample_at: cli.subsample,
                 target: data,

@@ -160,3 +160,11 @@ New clap arg `sampling_strategy` and update `ecdna-lib` version to sample the ec
 When `subsample` arg of clap is 0, take the full ecDNA distribution as a sample, which makes sense only if `--sampling-strategy` is *not* `uniform`.
 ## 0.13.2
 Using git `tag` attribute in `Cargo.toml`.
+
+## 0.13.3
+Remove `simulate`.
+
+**`ecdna_lib` version**: 0.5.3
+
+**`ssa` version**: 0.6.0
+

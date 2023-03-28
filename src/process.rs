@@ -75,7 +75,7 @@ where
         &mut self,
         strategy: &SamplingStrategy,
         nb_individuals: NbIndividuals,
-        mut rng: impl Rng,
+        mut rng: impl Rng + std::clone::Clone,
     ) {
         self.distribution.sample(nb_individuals, strategy, &mut rng);
     }
@@ -197,7 +197,7 @@ where
         &mut self,
         strategy: &SamplingStrategy,
         nb_individuals: NbIndividuals,
-        mut rng: impl Rng,
+        mut rng: impl Rng + std::clone::Clone,
     ) {
         if self.verbosity > 0 {
             println!("Subsampling the ecDNA distribution");
@@ -304,6 +304,129 @@ impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<2>
                 state.population
             );
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PureBirthMean<P: EcDNAProliferation, S: Segregate> {
+    distribution: EcDNADistribution,
+    mean: Vec<f32>,
+    proliferation: P,
+    segregation: S,
+    verbosity: u8,
+}
+
+impl<P: EcDNAProliferation, S: Segregate> PureBirthMean<P, S> {
+    pub fn new(
+        proliferation: P,
+        segregation: S,
+        distribution: EcDNADistribution,
+        max_iter: usize,
+        verbosity: u8,
+    ) -> anyhow::Result<Self> {
+        ensure!(!distribution.is_empty());
+        let mut mean = Vec::with_capacity(max_iter);
+        mean.push(distribution.compute_mean());
+        Ok(Self { distribution, mean, proliferation, segregation, verbosity })
+    }
+}
+
+impl<P, S> RandomSampling for PureBirthMean<P, S>
+where
+    P: EcDNAProliferation,
+    S: Segregate,
+{
+    fn random_sample(
+        &mut self,
+        _strategy: &SamplingStrategy,
+        _nb_individuals: NbIndividuals,
+        _rng: impl Rng,
+    ) {
+        todo!()
+    }
+}
+
+impl<P, S> ToFile for PureBirthMean<P, S>
+where
+    P: EcDNAProliferation,
+    S: Segregate,
+{
+    fn save(&self, path2dir: &Path, id: usize) -> anyhow::Result<()> {
+        fs::create_dir_all(path2dir).expect("Cannot create dir");
+
+        let filename = id.to_string();
+        if self.verbosity > 1 {
+            println!("Saving data in {:#?}", path2dir)
+        }
+
+        self.distribution.save(
+            &path2dir.join("ecdna").join(&filename).with_extension("json"),
+            self.verbosity,
+        )?;
+
+        let mut mean = path2dir.join("mean").join(filename);
+        mean.set_extension("csv");
+        if self.verbosity > 1 {
+            println!("Mean data in {:#?}", path2dir)
+        }
+        write2file(&self.mean, &mean, None, false)?;
+        Ok(())
+    }
+}
+
+impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<2>
+    for PureBirthMean<P, S>
+{
+    type Reaction = EcDNAEvent;
+
+    fn advance_step(
+        &mut self,
+        reaction: NextReaction<Self::Reaction>,
+        rng: &mut impl Rng,
+    ) {
+        match reaction.event {
+            EcDNAEvent::ProliferateNPlus => {
+                if let Ok(is_uneven) = self.proliferation.increase_nplus(
+                    &mut self.distribution,
+                    &self.segregation,
+                    rng,
+                    self.verbosity,
+                ) {
+                    match is_uneven {
+                        IsUneven::False => {
+                            if self.verbosity > 1 {
+                                println!("IsUneven is false");
+                            }
+                        }
+                        IsUneven::True => {
+                            if self.verbosity > 1 {
+                                println!("IsUneven is true");
+                            }
+                        }
+                        IsUneven::TrueWithoutNMinusIncrease => {
+                            if self.verbosity > 1 {
+                                println!(
+                                    "IsUneven is true but w/o nminus increase"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            EcDNAEvent::ProliferateNMinus => {
+                self.proliferation.increase_nminus(&mut self.distribution);
+            }
+            _ => unreachable!(),
+        };
+        if self.verbosity > 1 {
+            println!("Distribution {:#?}", self.distribution);
+        }
+        self.mean.push(self.distribution.compute_mean());
+    }
+
+    fn update_state(&self, state: &mut CurrentState<2>) {
+        state.population[0] = *self.distribution.get_nminus();
+        state.population[1] = self.distribution.compute_nplus();
     }
 }
 
@@ -425,7 +548,7 @@ impl<P: EcDNAProliferation, S: Segregate> RandomSampling for BirthDeath<P, S> {
         &mut self,
         strategy: &SamplingStrategy,
         nb_individuals: NbIndividuals,
-        mut rng: impl Rng,
+        mut rng: impl Rng + std::clone::Clone,
     ) {
         self.distribution.sample(nb_individuals, strategy, &mut rng)
     }
@@ -635,7 +758,7 @@ where
             self.verbosity,
         )?;
 
-        let mut mean = path2dir.join("mean").join(filename.clone());
+        let mut mean = path2dir.join("mean").join(filename);
         mean.set_extension("csv");
         if self.verbosity > 1 {
             println!("Mean data in {:#?}", path2dir)

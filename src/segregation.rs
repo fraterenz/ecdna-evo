@@ -2,7 +2,7 @@
 //! ecDNAs.
 use crate::DNACopy;
 use rand::Rng;
-use rand_distr::{Binomial, Distribution};
+use rand_distr::Distribution;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU16;
 
@@ -91,7 +91,7 @@ pub struct Deterministic;
 /// indipendent [Bernoulli](https://en.wikipedia.org/wiki/Bernoulli_trial)
 /// trials with probability of 1/2.
 #[derive(Clone, Debug, Copy, Serialize, Deserialize)]
-pub struct BinomialSegregation;
+pub struct Binomial;
 /// The Binomial segregation model without the possibility to generate a
 /// complete uneven segregation.
 ///
@@ -99,16 +99,16 @@ pub struct BinomialSegregation;
 /// [`BinomialSegregation`] but without the option `k1=0` and `k2=2k` or
 /// viceversa.
 #[derive(Clone, Debug, Copy, Serialize, Deserialize)]
-pub struct BinomialNoUneven(pub BinomialSegregation);
+pub struct BinomialNoUneven(pub Binomial);
 /// The Binomial segregation model which does not increase the number of cells
 /// without ecDNAs upon complete uneven segregation.
 ///
 /// Every time a complete uneven segregation is simulated, we do not increase
 /// the number of cells without ecDNAs.
 #[derive(Clone, Debug, Copy, Serialize, Deserialize)]
-pub struct BinomialNoNminus(pub BinomialSegregation);
+pub struct BinomialNoNminus(pub Binomial);
 
-impl Segregate for BinomialSegregation {
+impl Segregate for Binomial {
     fn ecdna_segregation(
         &self,
         copies: DNACopySegregating,
@@ -120,7 +120,8 @@ impl Segregate for BinomialSegregation {
         // downcast u64 to u16 will never fail because `copies` is u16
         let copies = u16::from(copies) as u64;
 
-        let k1: u64 = Binomial::new(copies, 0.5).unwrap().sample(rng);
+        let k1: u64 =
+            rand_distr::Binomial::new(copies, 0.5).unwrap().sample(rng);
         let k2 = copies - k1;
 
         // uneven_segregation happens if there is at least one zero
@@ -281,7 +282,7 @@ mod tests {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let ecdna_copies = u16::from(DNACopy::from(copies.0));
         let (k1, k2, is_uneven) =
-            BinomialSegregation.ecdna_segregation(copies.0, &mut rng, 0);
+            Binomial.ecdna_segregation(copies.0, &mut rng, 0);
         assert_eq!(k1 + k2, ecdna_copies as u64);
         match is_uneven {
             IsUneven::True | IsUneven::TrueWithoutNMinusIncrease => {
@@ -298,7 +299,7 @@ mod tests {
     ) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let ecdna_copies = copies.0;
-        let (k1, k2, is_uneven) = BinomialNoUneven(BinomialSegregation)
+        let (k1, k2, is_uneven) = BinomialNoUneven(Binomial)
             .ecdna_segregation(ecdna_copies, &mut rng, 0);
         assert_eq!(k1 + k2, u16::from(DNACopy::from(ecdna_copies)) as u64);
         assert_eq!(is_uneven, IsUneven::False);

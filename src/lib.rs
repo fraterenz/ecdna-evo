@@ -14,73 +14,7 @@ use std::path::Path;
 use ecdna_lib::distribution::SamplingStrategy;
 pub use ecdna_lib::{abc, distribution, DNACopy};
 use rand::Rng;
-use ssa::{
-    AdvanceStep, CurrentState, NbIndividuals, ReactionRates, SimState,
-    StopReason,
-};
-
-pub struct IterationsToSimulate {
-    pub max_iter: usize,
-    pub init_iter: usize,
-    pub max_cells: NbIndividuals,
-}
-
-/// The main loop running one realisation of a stochastic process with
-/// `NB_REACTIONS` possible `REACTION`s.
-pub fn simulate<P, REACTION, const NB_REACTIONS: usize>(
-    state: &mut CurrentState<NB_REACTIONS>,
-    rates: &ReactionRates<{ NB_REACTIONS }>,
-    possible_reactions: &[REACTION; NB_REACTIONS],
-    bd_process: &mut P,
-    iterations: &IterationsToSimulate,
-    verbosity: u8,
-    rng: &mut impl Rng,
-) -> StopReason
-where
-    P: AdvanceStep<NB_REACTIONS, Reaction = REACTION>,
-    REACTION: std::fmt::Debug,
-{
-    let mut iter = iterations.init_iter;
-    loop {
-        if state.population[0] + state.population[1] >= iterations.max_cells {
-            return StopReason::MaxIndividualsReached;
-        }
-
-        let (sim_state, reaction) = bd_process.next_reaction(
-            state,
-            rates,
-            possible_reactions,
-            iter,
-            iterations.max_iter - 1,
-            rng,
-        );
-
-        if verbosity > 1 {
-            println!("State: {:#?}, reaction: {:#?}", state, reaction);
-        }
-
-        match sim_state {
-            SimState::Continue => {
-                // unwrap is safe since SimState::Continue returns always
-                // something (i.e. not None).
-                let reaction = reaction.unwrap();
-
-                // update the process according to the reaction
-                bd_process.advance_step(reaction, rng);
-
-                // update the state according to the process
-                bd_process.update_state(state);
-                iter += 1;
-            }
-            SimState::Stop(reason) => return reason,
-        }
-        // the absorbing state is when there are no NPlus cells and only NMinus
-        // cells.
-        if state.population[1] == 0 {
-            return StopReason::AbsorbingStateReached;
-        }
-    }
-}
+use ssa::NbIndividuals;
 
 /// Save the results of the simulations.
 pub trait ToFile {
@@ -93,7 +27,7 @@ pub trait RandomSampling {
         &mut self,
         strategy: &SamplingStrategy,
         nb_individuals: NbIndividuals,
-        rng: impl Rng,
+        rng: impl Rng + std::clone::Clone,
     );
 }
 
