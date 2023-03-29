@@ -168,3 +168,5 @@ Remove `simulate`.
 
 **`ssa` version**: 0.6.0
 
+## 0.13.4
+The birth-death process with time and mean.

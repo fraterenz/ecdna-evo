@@ -4,8 +4,8 @@ use clap_app::{GrowthOptions, Segregation};
 use ecdna_evo::{
     distribution::EcDNADistribution,
     process::{
-        BirthDeath, BirthDeathMean, BirthDeathNMinusNPlus, EcDNAEvent,
-        PureBirth, PureBirthMean, PureBirthNMinusNPlus,
+        BirthDeath, BirthDeathMean, BirthDeathMeanTime, BirthDeathNMinusNPlus,
+        EcDNAEvent, PureBirth, PureBirthMean, PureBirthNMinusNPlus,
     },
     proliferation::{EcDNADeath, Exponential},
 };
@@ -176,6 +176,25 @@ fn main() {
                     .run(
                         idx,
                         BirthDeathMean::new(
+                            proliferation,
+                            app.segregation,
+                            app.distribution.clone(),
+                            app.simulation.options.max_iter,
+                            app.simulation.options.verbosity,
+                        )
+                        .unwrap(),
+                        initial_state,
+                        &rates,
+                        &reactions,
+                        &app.sampling,
+                    )
+                    .unwrap(),
+                BirthDeathType::MeanTime => app
+                    .simulation
+                    .run(
+                        idx,
+                        BirthDeathMeanTime::new(
+                            0.,
                             proliferation,
                             app.segregation,
                             app.distribution.clone(),

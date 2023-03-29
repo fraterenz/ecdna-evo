@@ -196,7 +196,7 @@ impl Cli {
                 true => match cli.mean {
                     true => {
                         if cli.time {
-                            todo!();
+                            ProcessType::BirthDeath(BirthDeathType::MeanTime)
                         } else {
                             ProcessType::BirthDeath(BirthDeathType::Mean)
                         }
@@ -387,6 +387,7 @@ pub enum BirthDeathType {
     BirthDeath,
     NMinusNPlus,
     Mean,
+    MeanTime,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
