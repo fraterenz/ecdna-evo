@@ -214,7 +214,7 @@ fn main() {
     std::process::exit({
         match app.parallel {
             Parallel::Debug | Parallel::False => {
-                (0..app.runs).into_iter().for_each(my_closure)
+                (0..app.runs).for_each(my_closure)
             }
             Parallel::True => (0..app.runs)
                 .into_par_iter()

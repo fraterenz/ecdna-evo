@@ -96,8 +96,7 @@ pub struct Binomial;
 /// complete uneven segregation.
 ///
 /// Segregates ecDNA copies according to a Binomial segregation as in
-/// [`BinomialSegregation`] but without the option `k1=0` and `k2=2k` or
-/// viceversa.
+/// [`Binomial`] but without the option `k1=0` and `k2=2k` or viceversa.
 #[derive(Clone, Debug, Copy, Serialize, Deserialize)]
 pub struct BinomialNoUneven(pub Binomial);
 /// The Binomial segregation model which does not increase the number of cells
@@ -200,7 +199,7 @@ pub struct ParseSegregationError;
 /// The ecDNA random segregation rule applied upon cell division.
 #[derive(Clone, Debug, Copy, Serialize, Deserialize)]
 pub enum RandomSegregation {
-    /// Perform the random segregation using a [`BinomialSegregation`] model.
+    /// Perform the random segregation using a [`Binomial`] model.
     BinomialSegregation,
     /// Perform the random segregation using a Binomial segregation model but
     /// without the possibility of generating a complete uneven segregation,
