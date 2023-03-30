@@ -13,7 +13,7 @@ chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
 csv = "1.1"
 indicatif = { version = "*", features = ["rayon"] }
-serde = { version = "1.0.136", features = ["derive"] }
+serde = { version = "1.0.156", features = ["derive"] }
 serde_json = "1.0"
 ssa = { git = "https://github.com/fraterenz/ssa", tag = "v0.6.0" }
 ecdna-lib = { git = "https://github.com/fraterenz/ecdna-lib", tag = "v0.5.4"}
