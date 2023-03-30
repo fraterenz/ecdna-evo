@@ -75,6 +75,10 @@ pub struct Cli {
     /// copies in the tumour population
     #[arg(short, long, action = ArgAction::SetTrue, default_value_t = false)]
     mean: bool,
+    /// Whether to track over simulations the evolution of the variance ecDNA
+    /// copies in the tumour population
+    #[arg(long, action = ArgAction::SetTrue, default_value_t = false)]
+    variance: bool,
     /// The number of cells kept after subsampling.
     ///
     /// To take the full distribution pass 0 as argument, e.g. when we want to
@@ -196,7 +200,15 @@ impl Cli {
                 true => match cli.mean {
                     true => {
                         if cli.time {
-                            ProcessType::BirthDeath(BirthDeathType::MeanTime)
+                            if cli.variance {
+                                ProcessType::BirthDeath(
+                                    BirthDeathType::MeanTimeVariance,
+                                )
+                            } else {
+                                ProcessType::BirthDeath(
+                                    BirthDeathType::MeanTime,
+                                )
+                            }
                         } else {
                             ProcessType::BirthDeath(BirthDeathType::Mean)
                         }
@@ -388,6 +400,7 @@ pub enum BirthDeathType {
     NMinusNPlus,
     Mean,
     MeanTime,
+    MeanTimeVariance,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]

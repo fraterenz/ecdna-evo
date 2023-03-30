@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.5
+The birth-death process with time, mean and variance.
+
+**`ecdna_lib` version**: 0.5.4
+
 ## 0.13.4
 The birth-death process with time and mean.
 
