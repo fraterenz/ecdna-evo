@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.13.6
+### Fixed
+Saving `times` only once.
+
 ## 0.13.5
 The birth-death process with time, mean and variance.
 

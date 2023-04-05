@@ -897,18 +897,20 @@ where
 
         self.data.save(path2dir, &filename, self.verbosity)?;
 
+        let filename = id.to_string();
+        if self.verbosity > 1 {
+            println!("Saving data in {:#?}", path2dir)
+        }
+
+        self.data.save(path2dir, &filename, self.verbosity)?;
+
         let mut mean = path2dir.join("mean").join(filename.clone());
         mean.set_extension("csv");
         if self.verbosity > 1 {
             println!("Mean data in {:#?}", path2dir)
         }
         write2file(&self.mean, &mean, None, false)?;
-        let mut time = path2dir.join("time").join(filename);
-        time.set_extension("csv");
-        if self.verbosity > 1 {
-            println!("Time data in {:#?}", path2dir)
-        }
-        write2file(&self.data.time, &time, None, false)?;
+
         Ok(())
     }
 }
@@ -1062,12 +1064,7 @@ where
             println!("Mean data in {:#?}", path2dir)
         }
         write2file(&self.mean, &mean, None, false)?;
-        let mut time = path2dir.join("time").join(filename.clone());
-        time.set_extension("csv");
-        if self.verbosity > 1 {
-            println!("Time data in {:#?}", path2dir)
-        }
-        write2file(&self.data.time, &time, None, false)?;
+
         let mut variance = path2dir.join("variance").join(filename);
         variance.set_extension("csv");
         if self.verbosity > 1 {
