@@ -827,6 +827,7 @@ impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<4>
             .ecdna_dynamics
             .nminus
             .push(*self.data.ecdna_dynamics.distribution.get_nminus());
+        self.data.time.push(reaction.time);
     }
 
     fn update_state(&self, state: &mut CurrentState<4>) {
