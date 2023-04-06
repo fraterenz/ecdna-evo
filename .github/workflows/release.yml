@@ -137,7 +137,7 @@ jobs:
         bin: abc,dynamics
         ref: refs/tags/${{ needs.release-please.outputs.tag }}
         include: README.md
-        archive: $bin-$tag-$target
+        archive: $tag-$target
         target: ${{ matrix.target }}
         token: ${{ secrets.GITHUB_TOKEN }}
       env:

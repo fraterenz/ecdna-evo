@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.13.7
+The birth-death process with time, nplus and nminus cells.
+
 ## 0.13.6
 ### Fixed
 Saving `times` only once.

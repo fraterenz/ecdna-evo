@@ -215,7 +215,9 @@ impl Cli {
                     }
                     false => {
                         if cli.time {
-                            todo!();
+                            ProcessType::BirthDeath(
+                                BirthDeathType::NMinusNPlusTime,
+                            )
                         } else if cli.nplus_nminus {
                             ProcessType::BirthDeath(
                                 BirthDeathType::NMinusNPlus,
@@ -398,6 +400,7 @@ pub enum PureBirthType {
 pub enum BirthDeathType {
     BirthDeath,
     NMinusNPlus,
+    NMinusNPlusTime,
     Mean,
     MeanTime,
     MeanTimeVariance,
