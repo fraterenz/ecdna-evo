@@ -67,7 +67,7 @@ There are two main usages: TODO.
 #### Example
 When prebuilt binaries are used, replace in the example
 `./target/release/ecdna` by `/path/to/ecdna`, where `/path/to/ecdna` is the
-path to the ecdna binaries.
+path to the ecdna binaries. TODO.
 
 1. Simulate 10 tumour growths (10000 cells each) with $\rho_1$ equals to 1
    (neutral case) using the code compiled from source (see
