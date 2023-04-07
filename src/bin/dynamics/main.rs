@@ -7,7 +7,7 @@ use ecdna_evo::{
         BirthDeath, BirthDeathMean, BirthDeathMeanTime,
         BirthDeathMeanTimeVariance, BirthDeathNMinusNPlus,
         BirthDeathNMinusNPlusTime, EcDNAEvent, PureBirth, PureBirthMean,
-        PureBirthNMinusNPlus,
+        PureBirthNMinusNPlus, PureBirthNMinusNPlusTime,
     },
     proliferation::{EcDNADeath, Exponential},
 };
@@ -73,6 +73,25 @@ fn main() {
                             proliferation,
                             app.segregation,
                             app.distribution.clone(),
+                            app.simulation.options.max_iter,
+                            app.simulation.options.verbosity,
+                        )
+                        .unwrap(),
+                        initial_state,
+                        &rates,
+                        &reactions,
+                        &app.sampling,
+                    )
+                    .unwrap(),
+                PureBirthType::NMinusNPlusTime => app
+                    .simulation
+                    .run(
+                        idx,
+                        PureBirthNMinusNPlusTime::with_distribution(
+                            proliferation,
+                            app.segregation,
+                            app.distribution.clone(),
+                            0.,
                             app.simulation.options.max_iter,
                             app.simulation.options.verbosity,
                         )

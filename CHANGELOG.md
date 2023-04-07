@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.13.9
+The pure-birth process with time, nplus and nminus cells.
+
 ## 0.13.8
 ### Fixed
 Fix the birth-death process with time, nplus and nminus cells.

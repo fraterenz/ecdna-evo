@@ -237,7 +237,9 @@ impl Cli {
                     }
                     false => {
                         if cli.time {
-                            todo!();
+                            ProcessType::PureBirth(
+                                PureBirthType::NMinusNPlusTime,
+                            )
                         } else if cli.nplus_nminus {
                             ProcessType::PureBirth(PureBirthType::NMinusNPlus)
                         } else {
@@ -393,6 +395,7 @@ pub enum ProcessType {
 pub enum PureBirthType {
     PureBirth,
     NMinusNPlus,
+    NMinusNPlusTime,
     Mean,
 }
 
