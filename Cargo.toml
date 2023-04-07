@@ -2,6 +2,9 @@
 name = "ecdna-evo"
 version = "0.13.9"
 edition = "2021"
+repository = "https://github.com/fraterenz/ecdna-evo"
+description = "Evolutionary models of extra-chromosomal DNA (ecDNA)"
+license = "Apache-2.0 OR MIT"
 
 [profile.release]
 lto = "thin"
