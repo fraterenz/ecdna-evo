@@ -3,7 +3,7 @@ use ecdna_evo::{abc::Data, distribution::EcDNADistribution};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, Uniform};
-use ssa::{NbIndividuals, Options};
+use sosa::{NbIndividuals, Options};
 use std::{collections::HashMap, path::PathBuf};
 
 use crate::{app::Abc, SimulationOptions};

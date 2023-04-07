@@ -10,7 +10,7 @@ use indicatif::ParallelProgressIterator;
 use rayon::prelude::{
     IndexedParallelIterator, IntoParallelIterator, ParallelIterator,
 };
-use ssa::{CurrentState, ReactionRates};
+use sosa::{CurrentState, ReactionRates};
 
 use crate::{
     app::{save, ABCResultFitness},

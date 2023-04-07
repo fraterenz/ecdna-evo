@@ -14,7 +14,7 @@ use std::path::Path;
 use ecdna_lib::distribution::SamplingStrategy;
 pub use ecdna_lib::{abc, distribution, DNACopy};
 use rand::Rng;
-use ssa::NbIndividuals;
+use sosa::NbIndividuals;
 
 /// Save the results of the simulations.
 pub trait ToFile {

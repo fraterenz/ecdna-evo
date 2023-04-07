@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 use anyhow::ensure;
 use ecdna_lib::distribution::SamplingStrategy;
 use rand::Rng;
-use ssa::{
+use sosa::{
     write2file, AdvanceStep, CurrentState, NbIndividuals, NextReaction,
 };
 
@@ -75,9 +75,9 @@ where
         &mut self,
         strategy: &SamplingStrategy,
         nb_individuals: NbIndividuals,
-        mut rng: impl Rng + std::clone::Clone,
+        rng: impl Rng + std::clone::Clone,
     ) {
-        self.distribution.sample(nb_individuals, strategy, &mut rng);
+        self.distribution.sample(nb_individuals, strategy, rng);
     }
 }
 
@@ -197,7 +197,7 @@ where
         &mut self,
         strategy: &SamplingStrategy,
         nb_individuals: NbIndividuals,
-        mut rng: impl Rng + std::clone::Clone,
+        rng: impl Rng + std::clone::Clone,
     ) {
         if self.verbosity > 0 {
             println!("Subsampling the ecDNA distribution");
@@ -205,7 +205,7 @@ where
         if self.verbosity > 1 {
             println!("Before {:#?}", self.data.distribution);
         }
-        self.data.distribution.sample(nb_individuals, strategy, &mut rng);
+        self.data.distribution.sample(nb_individuals, strategy, rng);
 
         if self.verbosity > 1 {
             println!("After {:#?}", self.data.distribution);
@@ -687,9 +687,9 @@ impl<P: EcDNAProliferation, S: Segregate> RandomSampling for BirthDeath<P, S> {
         &mut self,
         strategy: &SamplingStrategy,
         nb_individuals: NbIndividuals,
-        mut rng: impl Rng + std::clone::Clone,
+        rng: impl Rng + std::clone::Clone,
     ) {
-        self.distribution.sample(nb_individuals, strategy, &mut rng)
+        self.distribution.sample(nb_individuals, strategy, rng)
     }
 }
 

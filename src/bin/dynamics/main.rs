@@ -13,7 +13,7 @@ use ecdna_evo::{
 };
 use indicatif::ParallelProgressIterator;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use ssa::{CurrentState, ReactionRates};
+use sosa::{CurrentState, ReactionRates};
 
 use crate::{
     app::Sampling,

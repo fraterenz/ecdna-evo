@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::distribution::EcDNADistribution;
 use anyhow::Context;
-use ssa::{write2file, NbIndividuals};
+use sosa::{write2file, NbIndividuals};
 
 /// Some summary statistics for the [`EcDNADistribution`].
 #[derive(Debug, Clone)]

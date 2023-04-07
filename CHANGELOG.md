@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.13.10
+**`ecdna_lib` version**: 1.0.0
+**`ssa` version**: 1.0.0
+
 ## 0.13.9
 The pure-birth process with time, nplus and nminus cells.
 

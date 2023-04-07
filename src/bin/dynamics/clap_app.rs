@@ -7,7 +7,7 @@ use ecdna_evo::{
     },
 };
 use rand::Rng;
-use ssa::{NbIndividuals, Options};
+use sosa::{NbIndividuals, Options};
 use std::{collections::HashMap, path::PathBuf};
 
 use crate::{

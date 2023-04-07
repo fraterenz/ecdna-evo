@@ -8,7 +8,7 @@ use ecdna_evo::RandomSampling;
 use rand::SeedableRng;
 use rand_chacha::{self, ChaCha8Rng};
 use serde::{ser::SerializeStruct, Serialize, Serializer};
-use ssa::{simulate, CurrentState, NbIndividuals, Options, ReactionRates};
+use sosa::{simulate, CurrentState, NbIndividuals, Options, ReactionRates};
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;

@@ -2,7 +2,7 @@ use anyhow::Context;
 use ecdna_evo::{distribution::SamplingStrategy, RandomSampling, ToFile};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
-use ssa::{
+use sosa::{
     simulate, AdvanceStep, CurrentState, NbIndividuals, Options,
     ReactionRates, StopReason,
 };
