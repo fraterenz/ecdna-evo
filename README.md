@@ -11,25 +11,25 @@
 
 ## Introduction
 Extrachromosomal DNA (ecDNA) seems to play an important role in fostering
-cancer progression. Recently, [Lange et al. 2021](https://www.biorxiv.org/content/10.1101/2021.06.11.447968v1)
-showed indirect arguments in favor of strong selection on ecDNA in both cell
-lines and cancer patients: cells with ecDNA seem to be selected and thus to
-have a proliferative advantage compared to cells without any ecDNA copy.
-
-The goal of this project is to two-fold:
-
-1. to study the evolution of ecDNA dynamics in cancer
-2. to infer the proliferative advantage (i.e. selection strength) present in
-   tumours with ecDNA.
+cancer progression.
+We expand the mathematical and computational model developed in
+[Lange et al. 2022](https://www.nature.com/articles/s41588-022-01177-x)
+to study the ecDNA dynamics during tumour progression.
 
 To study the impact of the ecDNAs in tumour progression we use agent-based
 stochastic simulations. We use a Gillespie algorithm to simulate the
 proliferation and death of cancer cells at each time step proportional to
 pre-defined proliferation and death rates.
 
+The goal of this project is to two-fold:
+
+1. to study the evolution of ecDNA dynamics in cancer using a computational
+model based stochastic simulations
+2. to fit this model to patient's data by inferring the proliferative advantage
+(i.e. selection strength) present in tumours with ecDNAs.
+
 ## Code organization
-The most important package is the binary `ecnda` implementing a command line
-interface used to configure the simulations.
+We implemented a command line interface used to configure the simulations.
 
 ## Installation
 The simulations can be ran in Linux, Windows and macOS.
@@ -55,7 +55,7 @@ When building from source, the `/path/to/ecdna` (see [usage](#Usage)) will be
 `/path/to/ecdna-evo/target/release/ecdna`.
 
 ## Usage
-There are two main usages:
+There are two main usages: TODO.
 
 1. study the dynamics of ecDNA by simulating an exponentially growing tumor
    population carrying ecDNA copies: `/path/to/ecdna simulate --help`, see also
