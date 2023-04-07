@@ -29,7 +29,7 @@ model based stochastic simulations
 (i.e. selection strength) present in tumours with ecDNAs.
 
 ## Code organization
-We implemented a command line interface used to configure the simulations.
+We implemented a command line interface used to configure and run the simulations.
 
 ## Installation
 The simulations can be ran in Linux, Windows and macOS.
