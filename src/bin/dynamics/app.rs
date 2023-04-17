@@ -3,8 +3,7 @@ use ecdna_evo::{distribution::SamplingStrategy, RandomSampling, ToFile};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use sosa::{
-    simulate, AdvanceStep, CurrentState, NbIndividuals, Options,
-    ReactionRates, StopReason,
+    simulate, AdvanceStep, CurrentState, NbIndividuals, Options, ReactionRates,
 };
 use std::{
     fmt::Debug,
@@ -50,12 +49,12 @@ impl Dynamics {
                 let mut process_copy = process.clone();
 
                 let stream = idx as u64 * NB_RESTARTS;
-                let mut j = 1;
+                let j = 0u16;
                 let mut rng = ChaCha8Rng::seed_from_u64(self.seed);
                 rng.set_stream(stream);
 
                 // clone the initial state in case we restart
-                let mut stop = simulate(
+                let stop_reason = simulate(
                     &mut initial_state.clone(),
                     rates,
                     possible_reactions,
@@ -65,35 +64,39 @@ impl Dynamics {
                 );
 
                 // restart, this can happen when high death rates
-                while (stop == StopReason::NoIndividualsLeft
-                    || stop == StopReason::AbsorbingStateReached)
-                    && j <= NB_RESTARTS
-                {
-                    // restart process as well
-                    process_copy = process.clone();
-                    let stream = idx as u64 * NB_RESTARTS + self.seed + j;
-                    if self.options.verbosity > 1 {
-                        println!(
-                            "Restarting with stream {} because {:#?}",
-                            stream, stop
-                        );
-                    }
-                    rng.set_stream(stream);
+                // TODO: bug, see issue #104
+                // while (stop == StopReason::NoIndividualsLeft
+                //     || stop == StopReason::AbsorbingStateReached)
+                //     && j <= NB_RESTARTS
+                // {
+                //     // restart process as well
+                //     process_copy = process.clone();
+                //     let stream = idx as u64 * NB_RESTARTS + self.seed + j;
+                //     if self.options.verbosity > 1 {
+                //         println!(
+                //             "Restarting with stream {} because {:#?}",
+                //             stream, stop
+                //         );
+                //     }
+                //     rng.set_stream(stream);
 
-                    // clone the initial state in case we restart
-                    stop = simulate(
-                        &mut initial_state.clone(),
-                        rates,
-                        possible_reactions,
-                        &mut process_copy,
-                        &self.options,
-                        &mut rng,
+                //     // clone the initial state in case we restart
+                //     stop = simulate(
+                //         &mut initial_state.clone(),
+                //         rates,
+                //         possible_reactions,
+                //         &mut process_copy,
+                //         &self.options,
+                //         &mut rng,
+                //     );
+                //     j += 1;
+                // }
+
+                if self.options.verbosity > 1 {
+                    println!(
+                        "{} restarts with stop reason: {:#?}",
+                        j, stop_reason
                     );
-                    j += 1;
-                }
-
-                if self.options.verbosity > 0 {
-                    println!("{} restarts", j);
                 }
 
                 if let Some(sampling) = sampling {

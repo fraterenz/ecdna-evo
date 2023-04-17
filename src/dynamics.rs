@@ -35,10 +35,6 @@ impl EcDNADynamics {
         Self { nplus, nminus, distribution }
     }
 
-    pub fn dir2compress(&self) -> &[&str] {
-        &["nplus", "nminus", "ecdna"]
-    }
-
     pub fn save(
         &self,
         path2dir: &Path,
@@ -87,10 +83,6 @@ impl EcDNADynamicsTime {
         times.push(time);
 
         Self { ecdna_dynamics, time: times }
-    }
-
-    pub fn dir2compress(&self) -> &[&str] {
-        &["nplus", "nminus", "time", "ecdna"]
     }
 
     pub fn save(

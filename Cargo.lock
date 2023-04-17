@@ -373,7 +373,7 @@ dependencies = [
 
 [[package]]
 name = "ecdna-evo"
-version = "0.13.12"
+version = "0.14.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -865,15 +865,16 @@ dependencies = [
 
 [[package]]
 name = "sosa"
-version = "1.0.1"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8bbecd1ae138b0a8e4a4706e8b667fe54953d3bb321d0fa1f995a282c8af0fa"
+checksum = "bf505cb5c17fadbdf3303e046049c6c03a89f7fb956696fd852f554b6a4fe6df"
 dependencies = [
  "anyhow",
  "rand",
  "rand_distr",
  "serde",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -911,6 +912,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be55cf8942feac5c765c2c993422806843c9a9a45d4d5c407ad6dd2ea95eb9b6"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "thiserror"
+version = "1.0.40"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "978c9a314bd8dc99be594bc3c175faaa9794be04a5a5e153caba6915336cebac"
+dependencies = [
+ "thiserror-impl",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "1.0.40"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9456a42c5b0d803c8cd86e73dd7cc9edd429499f37a3550d286d5e86720569f"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.13",
 ]
 
 [[package]]

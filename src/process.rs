@@ -1191,13 +1191,6 @@ where
 
         self.data.save(path2dir, &filename, self.verbosity)?;
 
-        let filename = id.to_string();
-        if self.verbosity > 1 {
-            println!("Saving data in {:#?}", path2dir)
-        }
-
-        self.data.save(path2dir, &filename, self.verbosity)?;
-
         let mut mean = path2dir.join("mean").join(filename);
         mean.set_extension("csv");
         if self.verbosity > 1 {
@@ -1219,6 +1212,10 @@ impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<4>
         reaction: NextReaction<Self::Reaction>,
         rng: &mut impl Rng,
     ) {
+        if self.verbosity > 1 {
+            println!("dynamics {:#?}", self.data);
+        }
+
         match reaction.event {
             EcDNAEvent::ProliferateNPlus => {
                 if let Ok(is_uneven) = self.proliferation.increase_nplus(
@@ -1271,6 +1268,17 @@ impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<4>
         }
         self.data.time.push(reaction.time);
         self.mean.push(self.data.ecdna_dynamics.distribution.compute_mean());
+        self.data
+            .ecdna_dynamics
+            .nplus
+            .push(self.data.ecdna_dynamics.distribution.compute_nplus());
+        self.data
+            .ecdna_dynamics
+            .nminus
+            .push(*self.data.ecdna_dynamics.distribution.get_nminus());
+        if self.verbosity > 1 {
+            println!("updated dynamics {:#?}", self.data);
+        }
     }
 
     fn update_state(&self, state: &mut CurrentState<4>) {
@@ -1433,6 +1441,14 @@ impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<4>
         self.mean.push(self.data.ecdna_dynamics.distribution.compute_mean());
         self.variance
             .push(self.data.ecdna_dynamics.distribution.compute_variance());
+        self.data
+            .ecdna_dynamics
+            .nplus
+            .push(self.data.ecdna_dynamics.distribution.compute_nplus());
+        self.data
+            .ecdna_dynamics
+            .nminus
+            .push(*self.data.ecdna_dynamics.distribution.get_nminus());
     }
 
     fn update_state(&self, state: &mut CurrentState<4>) {
@@ -1444,5 +1460,41 @@ impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<4>
             *self.data.ecdna_dynamics.distribution.get_nminus();
         state.population[3] =
             self.data.ecdna_dynamics.distribution.compute_nplus();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        proliferation::Exponential, segregation::Binomial,
+        test_util::NonEmptyDistribtionWithNPlusCells,
+    };
+    use quickcheck_macros::quickcheck;
+
+    #[quickcheck]
+    fn create_process_nplus_nminus_mean_time_test(
+        distr: NonEmptyDistribtionWithNPlusCells,
+        max_iter: u8,
+        verbosity: u8,
+        time: u8,
+    ) -> bool {
+        let time = time as f32 / 10.;
+        let nplus = distr.0.compute_nplus();
+        let nminus = *distr.0.get_nminus();
+        let mean = distr.0.compute_mean();
+        let p = BirthDeathMeanTime::new(
+            time,
+            Exponential {},
+            Binomial,
+            distr.0,
+            max_iter as usize,
+            verbosity,
+        )
+        .unwrap();
+        p.data.ecdna_dynamics.distribution.compute_nplus() == nplus
+            && p.data.ecdna_dynamics.distribution.get_nminus() == &nminus
+            && p.data.time[0] == time
+            && p.data.ecdna_dynamics.distribution.compute_mean() == mean
     }
 }

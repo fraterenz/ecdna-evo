@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.14.0
+### Fixed
+- saving twice the dynamics in some processes
+- not storing the NPlus and NMinus cells in processes `BirthDeathMeanTimeVariance` and `BirthDeathMeanTime`
+
+### Added
+Remove restarting when cell-death, see issue #104.
+
 ## 0.13.12
 Update readme.
 
