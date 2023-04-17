@@ -18,7 +18,7 @@ csv = "1.1"
 indicatif = { version = "*", features = ["rayon"] }
 serde = { version = "1.0.136", features = ["derive"] }
 serde_json = "1.0"
-sosa = "1"
+sosa = "2"
 ecdna-lib = "1"
 rand = { version = "0.8.0", features = ["small_rng"] }
 rand_chacha = "0.3.1"
