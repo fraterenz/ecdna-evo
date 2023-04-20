@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.14.1
+### Added
+ABC with cell-death assuming same rates for both cells with and without ecDNAs.
+
 ## 0.14.0
 ### Fixed
 - saving twice the dynamics in some processes

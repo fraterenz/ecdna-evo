@@ -1,14 +1,16 @@
 use anyhow::Context;
-use ecdna_evo::abc::{ABCRejection, ABCResult, ABCResultBuilder, Data};
+use ecdna_evo::abc::{ABCResult, Data};
 use ecdna_evo::distribution::SamplingStrategy;
-use ecdna_evo::process::{EcDNAEvent, PureBirth};
-use ecdna_evo::proliferation::Exponential;
-use ecdna_evo::segregation::Binomial;
-use ecdna_evo::RandomSampling;
+use ecdna_evo::proliferation::EcDNAProliferation;
+use ecdna_evo::segregation::Segregate;
+use ecdna_evo::{RandomSampling, ToFile};
 use rand::SeedableRng;
 use rand_chacha::{self, ChaCha8Rng};
 use serde::{ser::SerializeStruct, Serialize, Serializer};
-use sosa::{simulate, CurrentState, NbIndividuals, Options, ReactionRates};
+use sosa::{
+    simulate, AdvanceStep, CurrentState, NbIndividuals, Options, ReactionRates,
+};
+use std::fmt::Debug;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
@@ -16,8 +18,7 @@ use std::path::PathBuf;
 #[derive(Debug)]
 pub struct ABCResultFitness {
     pub result: ABCResult,
-    pub b0: f32,
-    pub b1: f32,
+    pub rates: Vec<f32>,
 }
 
 impl Serialize for ABCResultFitness {
@@ -36,8 +37,19 @@ impl Serialize for ABCResultFitness {
         state.serialize_field("entropy_stat", &self.result.entropy_stat)?;
         state.serialize_field("ecdna_stat", &self.result.ecdna_stat)?;
         state.serialize_field("pop_size", &self.result.pop_size)?;
-        state.serialize_field("b0", &self.b0)?;
-        state.serialize_field("b1", &self.b1)?;
+        state.serialize_field("b0", &self.rates[0])?;
+        state.serialize_field("b1", &self.rates[1])?;
+        if self.rates.len() > 2 {
+            state.serialize_field("d0", &self.rates[2])?;
+            state.serialize_field("d1", &self.rates[3])?;
+            if self.rates.len() > 4 {
+                unreachable!()
+            }
+        } else {
+            state.serialize_field("d0", &0f32)?;
+            state.serialize_field("d1", &0f32)?;
+        }
+
         state.end()
     }
 }
@@ -51,23 +63,33 @@ pub struct Abc {
 }
 
 impl Abc {
-    pub fn run(
+    pub fn run<P, REACTION, const NB_REACTIONS: usize, Proliferation, S>(
         &self,
         idx: usize,
-        mut process: PureBirth<Exponential, Binomial>,
-        data: &Data,
-        mut initial_state: CurrentState<2>,
-        birth_rates: &ReactionRates<2>,
-        reactions: &[EcDNAEvent; 2],
-    ) -> anyhow::Result<ABCResultFitness> {
-        //! Find the posterior distribution of the fitness coefficient using
-        //! ABC on taking `data` as input.
+        mut process: P,
+        mut initial_state: CurrentState<NB_REACTIONS>,
+        rates: &ReactionRates<NB_REACTIONS>,
+        possible_reactions: &[REACTION; NB_REACTIONS],
+    ) -> anyhow::Result<P>
+    where
+        P: AdvanceStep<NB_REACTIONS, Reaction = REACTION>
+            + Clone
+            + Debug
+            + ToFile
+            + RandomSampling,
+        Proliferation: EcDNAProliferation,
+        S: Segregate,
+        REACTION: std::fmt::Debug,
+    {
+        //! Find the posterior distribution of the fitness coefficient and
+        //! optionally the posterior of the death-rate using ABC on `data`.
         //!
-        //! We can run abc on pure birth processes only for now, that is we can
-        //! only infer the fitness coefficient without cell-death, where the
-        //! fitness coefficient is the birth-rate of cells with ecDNAs.
+        //! We can run abc on both pure-birth or birth-death process, for the
+        //! latter we assume that cells with and without ecDNAs have the same
+        //! death-rate.
         //!
-        //! Perform subsampling when `sample_at` is some.
+        //! Perform subsampling when `sample_at` is some and then run abc on
+        //! this subsample.
         if self.options.verbosity > 0 {
             println!("Stream: {:#?}", idx);
         }
@@ -76,8 +98,8 @@ impl Abc {
 
         let stop_reason = simulate(
             &mut initial_state,
-            birth_rates,
-            reactions,
+            rates,
+            possible_reactions,
             &mut process,
             &self.options,
             &mut rng,
@@ -89,21 +111,9 @@ impl Abc {
 
         if let Some(sample_at) = self.sample_at {
             process.random_sample(&SamplingStrategy::Uniform, sample_at, rng);
-        }
+        };
 
-        let mut builder = ABCResultBuilder::default();
-        builder.idx(idx);
-
-        Ok(ABCResultFitness {
-            result: ABCRejection::run(
-                builder,
-                process.get_ecdna_distribution(),
-                data,
-                self.options.verbosity,
-            ),
-            b0: birth_rates.0[0],
-            b1: birth_rates.0[1],
-        })
+        Ok(process)
     }
 }
 

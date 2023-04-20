@@ -1,9 +1,10 @@
 use app::Abc;
 use chrono::Utc;
 use ecdna_evo::{
+    abc::{ABCRejection, ABCResultBuilder},
     distribution::EcDNADistribution,
-    process::{EcDNAEvent, PureBirth},
-    proliferation::Exponential,
+    process::{BirthDeath, EcDNAEvent, PureBirth},
+    proliferation::{EcDNADeath, Exponential},
     segregation::Binomial,
 };
 use indicatif::ParallelProgressIterator;
@@ -23,8 +24,7 @@ mod clap_app;
 pub struct SimulationOptions {
     simulation: Abc,
     parallel: Parallel,
-    /// subsample tumour when it has reached this size
-    fitness_coefficients: Vec<f32>,
+    rates: Vec<(f32, Option<f32>)>,
     initial_distribution: EcDNADistribution,
     verbose: u8,
 }
@@ -34,54 +34,124 @@ fn main() {
     println!("{} Starting the simulation", Utc::now());
     match simulation {
         Ok(cli) => {
-            let runs = cli.fitness_coefficients.len();
+            let runs = cli.rates.len();
             std::process::exit({
-                let my_closure = |(idx, b1)| -> ABCResultFitness {
+                let my_closure = |(idx, b1, d)| -> ABCResultFitness {
                     {
-                        let rates = ReactionRates([1f32, b1]);
-                        let initial_state = CurrentState {
-                            population: [
-                                *cli.initial_distribution.get_nminus(),
-                                cli.initial_distribution.compute_nplus(),
-                            ],
-                        };
-
-                        let process = PureBirth::new(
-                            cli.initial_distribution.clone(),
-                            Exponential {},
-                            Binomial,
-                            cli.verbose,
-                        )
-                        .expect("Cannot create the process");
-                        cli.simulation
-                            .run(
-                                idx,
-                                process,
-                                &cli.simulation.target,
-                                initial_state,
-                                &rates,
-                                &[
-                                    EcDNAEvent::ProliferateNMinus,
-                                    EcDNAEvent::ProliferateNPlus,
+                        if let Some(d) = d {
+                            let rates = ReactionRates([1f32, b1, d, d]);
+                            let initial_state = CurrentState {
+                                population: [
+                                    *cli.initial_distribution.get_nminus(),
+                                    cli.initial_distribution.compute_nplus(),
+                                    *cli.initial_distribution.get_nminus(),
+                                    cli.initial_distribution.compute_nplus(),
                                 ],
+                            };
+
+                            let process = BirthDeath::new(
+                                cli.initial_distribution.clone(),
+                                Exponential {},
+                                Binomial,
+                                EcDNADeath,
+                                cli.verbose,
                             )
-                            .unwrap()
+                            .expect("Cannot create the process");
+
+                            let process: BirthDeath<Exponential, Binomial> =
+                                cli.simulation
+                                    .run::<BirthDeath<
+                                        ecdna_evo::proliferation::Exponential,
+                                        ecdna_evo::segregation::Binomial,
+                                    >, EcDNAEvent, 4, Exponential, Binomial>(
+                                        idx,
+                                        process,
+                                        initial_state,
+                                        &rates,
+                                        &[
+                                            EcDNAEvent::ProliferateNMinus,
+                                            EcDNAEvent::ProliferateNPlus,
+                                            EcDNAEvent::DeathNMinus,
+                                            EcDNAEvent::DeathNPlus,
+                                        ],
+                                    )
+                                    .unwrap();
+
+                            let mut builder = ABCResultBuilder::default();
+                            builder.idx(idx);
+
+                            ABCResultFitness {
+                                result: ABCRejection::run(
+                                    builder,
+                                    process.get_ecdna_distribution(),
+                                    &cli.simulation.target,
+                                    cli.verbose,
+                                ),
+                                rates: rates.0.to_vec(),
+                            }
+                        } else {
+                            let rates = ReactionRates([1f32, b1]);
+                            let initial_state = CurrentState {
+                                population: [
+                                    *cli.initial_distribution.get_nminus(),
+                                    cli.initial_distribution.compute_nplus(),
+                                ],
+                            };
+
+                            let process = PureBirth::new(
+                                cli.initial_distribution.clone(),
+                                Exponential {},
+                                Binomial,
+                                cli.verbose,
+                            )
+                            .expect("Cannot create the process");
+
+                            let process = cli
+                                .simulation
+                                .run::<PureBirth<
+                                    ecdna_evo::proliferation::Exponential,
+                                    ecdna_evo::segregation::Binomial,
+                                >, EcDNAEvent, 2, Exponential, Binomial>(
+                                    idx,
+                                    process,
+                                    initial_state,
+                                    &rates,
+                                    &[
+                                        EcDNAEvent::ProliferateNMinus,
+                                        EcDNAEvent::ProliferateNPlus,
+                                    ],
+                                )
+                                .unwrap();
+
+                            let mut builder = ABCResultBuilder::default();
+                            builder.idx(idx);
+
+                            ABCResultFitness {
+                                result: ABCRejection::run(
+                                    builder,
+                                    process.get_ecdna_distribution(),
+                                    &cli.simulation.target,
+                                    cli.verbose,
+                                ),
+                                rates: rates.0.to_vec(),
+                            }
+                        }
                     }
                 };
 
                 let results: Vec<ABCResultFitness> = match cli.parallel {
                     Parallel::Debug | Parallel::False => cli
-                        .fitness_coefficients
+                        .rates
                         .into_iter()
                         .enumerate()
-                        .map(|(idx, b1)| my_closure((idx, b1)))
+                        .map(|(idx, (b1, d))| my_closure((idx, b1, d)))
                         .collect(),
                     Parallel::True => cli
-                        .fitness_coefficients
+                        .rates
                         .into_par_iter()
                         .enumerate()
                         .progress_count(runs as u64)
-                        .map(|(idx, b1)| my_closure((idx, b1)))
+                        .map(|(idx, (b1, d))| my_closure((idx, b1, d)))
                         .collect(),
                 };
 

@@ -18,7 +18,17 @@ pub enum Parallel {
 #[command(name = "Abc")]
 #[command(
     version,
-    about = "Infer the birth-rate (fitness coefficient) from the data",
+    about = "Infer the birth-rate (fitness coefficient) and optionaly the
+    death-rate using a two-population model stochastic process",
+    long_about = "Infer the fitness coefficient (birth-rate of cells with
+    ecDNAs) and the death-rate in a birth-death or pure-birth stochastic
+    process with two populations: cells with and without ecDNAs.
+
+    When inferring the birth-rate only, we run a pure-birth stochastic process.
+    When inferring the birth-rate along with the death-rate, we assume cells
+    with and without ecDNAs have the same death-rate, hence only two parameters
+    will be inferred in this case.
+    ",
     group(ArgGroup::new("input")
         .required(true)
         .args(["mean", "data", "frequency", "entropy"])
@@ -26,18 +36,19 @@ pub enum Parallel {
         )
 ]
 pub struct Cli {
-    /// Infer the fitness coefficient (birth-rate of cells with ecDNAs) in a
-    /// pure-birth stochastic process.
     /// Proliferation rate of the cells without ecDNAs (wild-type)
     #[arg(long, value_name = "RATE", default_value_t = 1.)]
     b0: f32,
-    /// proliferation rate of the cells with ecdnas.
-    /// when a range is specified, abc samples a rate randomly from this range
+    /// Range of proliferation rates of the cells with ecdnas from which abc
+    /// samples from
     #[arg(long, required = true, value_name = "rate", num_args = 2)]
     b1: Vec<f32>,
+    /// Range of death-rates of the cells with and without ecdnas from which
+    /// abc samples from (we assume both populations have the same rates).
+    #[arg(long, value_name = "rate", num_args = 2)]
+    d: Option<Vec<f32>>,
     #[arg(short, long, default_value_t = 100)]
-    /// number of independent runs used to recover the posterior distribution
-    /// of the fitness coefficient
+    /// number of independent runs used to recover the posterior distributions
     runs: usize,
     /// number of cells to simulate
     #[arg(long, short, default_value_t = 100000)]
@@ -51,7 +62,7 @@ pub struct Cli {
     /// triggers debug mode: max verbosity and 1 sequential simulation
     #[arg(short, long, action = ArgAction::SetTrue, default_value_t = false)]
     debug: bool,
-    #[arg(value_name = "DIR", value_parser = |path: &str| { let path_b = PathBuf::from(path); if path_b.is_dir() { Ok(path_b) } else { Err("Cannot find dir") }} ) ]
+    #[arg(value_name = "DIR")]
     path: PathBuf,
     /// use the mean to infer the posterior distribution
     #[arg(long, conflicts_with = "data")]
@@ -117,8 +128,14 @@ impl Cli {
             },
         };
         let mut rng = ChaCha8Rng::seed_from_u64(cli.seed);
-        let fitness_coefficients = (0..runs)
-            .map(|_| Uniform::new(cli.b1[0], cli.b1[1]).sample(&mut rng))
+        let rates = (0..runs)
+            .map(|_| {
+                let d = cli.d.as_ref().map(|death_rates| {
+                    Uniform::new(death_rates[0], death_rates[1])
+                        .sample(&mut rng)
+                });
+                (Uniform::new(cli.b1[0], cli.b1[1]).sample(&mut rng), d)
+            })
             .collect();
 
         Ok(SimulationOptions {
@@ -135,7 +152,7 @@ impl Cli {
                 target: data,
             },
             parallel,
-            fitness_coefficients,
+            rates,
             initial_distribution: distribution,
             verbose: cli.verbose,
         })

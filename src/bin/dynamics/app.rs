@@ -64,7 +64,9 @@ impl Dynamics {
                 );
 
                 // restart, this can happen when high death rates
-                // TODO: bug, see issue #104
+                // TODO: bug, see issue #104 and also biases the results since
+                // we are kind of conditionning upon survival
+                //
                 // while (stop == StopReason::NoIndividualsLeft
                 //     || stop == StopReason::AbsorbingStateReached)
                 //     && j <= NB_RESTARTS
