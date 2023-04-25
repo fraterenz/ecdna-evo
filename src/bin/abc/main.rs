@@ -26,6 +26,7 @@ pub struct SimulationOptions {
     parallel: Parallel,
     rates: Vec<(f32, Option<f32>)>,
     initial_distribution: EcDNADistribution,
+    drop_nminus: bool,
     verbose: u8,
 }
 
@@ -58,33 +59,46 @@ fn main() {
                             )
                             .expect("Cannot create the process");
 
-                            let process: BirthDeath<Exponential, Binomial> =
-                                cli.simulation
-                                    .run::<BirthDeath<
-                                        ecdna_evo::proliferation::Exponential,
-                                        ecdna_evo::segregation::Binomial,
-                                    >, EcDNAEvent, 4, Exponential, Binomial>(
-                                        idx,
-                                        process,
-                                        initial_state,
-                                        &rates,
-                                        &[
-                                            EcDNAEvent::ProliferateNMinus,
-                                            EcDNAEvent::ProliferateNPlus,
-                                            EcDNAEvent::DeathNMinus,
-                                            EcDNAEvent::DeathNPlus,
-                                        ],
-                                    )
-                                    .unwrap();
+                            let mut process: BirthDeath<
+                                Exponential,
+                                Binomial,
+                            > = cli
+                                .simulation
+                                .run::<BirthDeath<
+                                    ecdna_evo::proliferation::Exponential,
+                                    ecdna_evo::segregation::Binomial,
+                                >, EcDNAEvent, 4, Exponential, Binomial>(
+                                    idx,
+                                    process,
+                                    initial_state,
+                                    &rates,
+                                    &[
+                                        EcDNAEvent::ProliferateNMinus,
+                                        EcDNAEvent::ProliferateNPlus,
+                                        EcDNAEvent::DeathNMinus,
+                                        EcDNAEvent::DeathNPlus,
+                                    ],
+                                )
+                                .unwrap();
 
                             let mut builder = ABCResultBuilder::default();
                             builder.idx(idx);
+
+                            if cli.drop_nminus {
+                                process
+                                    .get_mut_ecdna_distribution()
+                                    .drop_nminus();
+
+                                // the frequency is the number of cells w/o ecDNAs
+                                builder.frequency_stat(None);
+                            }
 
                             ABCResultFitness {
                                 result: ABCRejection::run(
                                     builder,
                                     process.get_ecdna_distribution(),
                                     &cli.simulation.target,
+                                    cli.drop_nminus,
                                     cli.verbose,
                                 ),
                                 rates: rates.0.to_vec(),
@@ -106,7 +120,7 @@ fn main() {
                             )
                             .expect("Cannot create the process");
 
-                            let process = cli
+                            let mut process = cli
                                 .simulation
                                 .run::<PureBirth<
                                     ecdna_evo::proliferation::Exponential,
@@ -126,11 +140,19 @@ fn main() {
                             let mut builder = ABCResultBuilder::default();
                             builder.idx(idx);
 
+                            if cli.drop_nminus {
+                                process
+                                    .get_mut_ecdna_distribution()
+                                    .drop_nminus();
+                                builder.frequency_stat(None);
+                            }
+
                             ABCResultFitness {
                                 result: ABCRejection::run(
                                     builder,
                                     process.get_ecdna_distribution(),
                                     &cli.simulation.target,
+                                    cli.drop_nminus,
                                     cli.verbose,
                                 ),
                                 rates: rates.0.to_vec(),

@@ -61,6 +61,10 @@ where
         Ok(Self { distribution, proliferation, segregation, verbosity })
     }
 
+    pub fn get_mut_ecdna_distribution(&mut self) -> &mut EcDNADistribution {
+        &mut self.distribution
+    }
+
     pub fn get_ecdna_distribution(&self) -> &EcDNADistribution {
         &self.distribution
     }
@@ -601,6 +605,10 @@ where
     ) -> anyhow::Result<Self> {
         ensure!(!distribution.is_empty());
         Ok(Self { distribution, proliferation, segregation, death, verbosity })
+    }
+
+    pub fn get_mut_ecdna_distribution(&mut self) -> &mut EcDNADistribution {
+        &mut self.distribution
     }
 
     pub fn get_ecdna_distribution(&self) -> &EcDNADistribution {

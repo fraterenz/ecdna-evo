@@ -77,6 +77,9 @@ pub struct Cli {
     /// been taken
     #[arg(long)]
     subsample: Option<NbIndividuals>,
+    /// do not consider cells from both distributions with 0 ecDNA copies for the inference
+    #[arg(long, action = ArgAction::SetTrue, default_value_t = false, conflicts_with = "frequency")]
+    drop_nminus: bool,
     /// the ecdna distribution used to infer the posterior distribution.
     /// when present, abc will compute from this file the mean, the entropy as well as the frequency.
     #[arg(long, value_name = "FILE", value_parser = |path: &str| { let path_b = PathBuf::from(path); if path_b.extension() == Some(std::ffi::OsStr::new("json")) { Ok(path_b) } else { Err("must be json file: extension must be .json)") }} ) ]
@@ -151,6 +154,7 @@ impl Cli {
                 sample_at: cli.subsample,
                 target: data,
             },
+            drop_nminus: cli.drop_nminus,
             parallel,
             rates,
             initial_distribution: distribution,

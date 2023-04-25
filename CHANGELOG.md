@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.15.0
+### Added
+New flag `drop_nminus` for abc and `ABCResult::run` takes `drop_nminus` bool arg.
+
 ## 0.14.1
 ### Added
 ABC with cell-death assuming same rates for both cells with and without ecDNAs.
