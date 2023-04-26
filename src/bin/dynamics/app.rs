@@ -111,15 +111,16 @@ impl Dynamics {
                             )
                         })
                         .unwrap();
+
+                    if self.options.verbosity > 0 {
+                        println!("Subsampling");
+                    }
                     process_copy.random_sample(&sampling.1, sampling.0, rng);
                 }
                 process_copy
             };
 
         if let Some(sampling) = sampling {
-            if self.options.verbosity > 0 {
-                println!("Subsampling");
-            }
             let path2dir =
                 &self.path2dir.join((sampling.at.len() - 1).to_string());
             for (i, sample_at) in sampling.at.iter().enumerate() {

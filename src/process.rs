@@ -697,7 +697,12 @@ impl<P: EcDNAProliferation, S: Segregate> RandomSampling for BirthDeath<P, S> {
         nb_individuals: NbIndividuals,
         rng: impl Rng + std::clone::Clone,
     ) {
-        self.distribution.sample(nb_individuals, strategy, rng)
+        if nb_individuals
+            < self.distribution.get_nminus()
+                + self.distribution.compute_nplus()
+        {
+            self.distribution.sample(nb_individuals, strategy, rng)
+        }
     }
 }
 

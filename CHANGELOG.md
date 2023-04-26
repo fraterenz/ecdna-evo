@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.16.1
+### Fixed
+Do not sample in `BirthDeath` process if there are not enough cells
+
 ## 0.16.0
 **`ecdna_lib` version**: 2.0.0
 
