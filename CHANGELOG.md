@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.16.0
+**`ecdna_lib` version**: 2.0.0
+
+### Added
+New binary `abc-fast` that can be used to avoid running the simulations from the results of a previous abc (from an `abc.csv` output file).
+
 ## 0.15.0
 ### Added
 New flag `drop_nminus` for abc and `ABCResult::run` takes `drop_nminus` bool arg.
