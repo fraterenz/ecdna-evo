@@ -1,7 +1,9 @@
 use app::Abc;
 use chrono::Utc;
 use ecdna_evo::{
-    abc::{ABCRejection, ABCResultBuilder},
+    abc::{
+        ABCRejection, ABCResultBuilder, ABCResultFitness, ABCResultsFitness,
+    },
     distribution::EcDNADistribution,
     process::{BirthDeath, EcDNAEvent, PureBirth},
     proliferation::{EcDNADeath, Exponential},
@@ -13,10 +15,7 @@ use rayon::prelude::{
 };
 use sosa::{CurrentState, ReactionRates};
 
-use crate::{
-    app::{save, ABCResultFitness},
-    clap_app::{Cli, Parallel},
-};
+use crate::clap_app::{Cli, Parallel};
 
 mod app;
 mod clap_app;
@@ -176,9 +175,9 @@ fn main() {
                         .map(|(idx, (b1, d))| my_closure((idx, b1, d)))
                         .collect(),
                 };
+                let results = ABCResultsFitness(results);
 
-                if let Err(err) = save(
-                    results,
+                if let Err(err) = results.save(
                     &cli.simulation.path2dir,
                     cli.simulation.options.verbosity,
                 ) {

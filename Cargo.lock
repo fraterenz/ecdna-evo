@@ -373,7 +373,7 @@ dependencies = [
 
 [[package]]
 name = "ecdna-evo"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -394,9 +394,9 @@ dependencies = [
 
 [[package]]
 name = "ecdna-lib"
-version = "1.0.0"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "369c6d18de99739d5c5c1427b2f26ccfe37e8646d5b59ca8683e9be01529c838"
+checksum = "93692468a7ad7a117fdad17c57b23d6d5e6bd6a12c63fb775d0d736cb5e64329"
 dependencies = [
  "anyhow",
  "csv",

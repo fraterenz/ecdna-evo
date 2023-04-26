@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.16.0
+**`ecdna_lib` version**: 2.0.0
+
 ## 0.15.0
 ### Added
 New flag `drop_nminus` for abc and `ABCResult::run` takes `drop_nminus` bool arg.
