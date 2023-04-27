@@ -227,9 +227,6 @@ where
                 self.data.nminus.last().unwrap()
             );
         }
-        todo!();
-        // self.iteration.population[0] = nplus;
-        // self.iteration.population[1] = nminus;
     }
 }
 
@@ -1350,11 +1347,51 @@ where
 {
     fn random_sample(
         &mut self,
-        _strategy: &SamplingStrategy,
-        _nb_individuals: NbIndividuals,
-        _rng: impl Rng,
+        strategy: &SamplingStrategy,
+        nb_individuals: NbIndividuals,
+        rng: impl Rng + std::clone::Clone,
     ) {
-        todo!()
+        if self.verbosity > 0 {
+            println!(
+                "Subsampling the ecDNA distribution with {} cells",
+                nb_individuals
+            );
+        }
+        if self.verbosity > 1 {
+            println!("Before {:#?}", self.data.ecdna_dynamics.distribution);
+        }
+        if nb_individuals
+            < self.data.ecdna_dynamics.distribution.get_nminus()
+                + self.data.ecdna_dynamics.distribution.compute_nplus()
+        {
+            self.data.ecdna_dynamics.distribution.sample(
+                nb_individuals,
+                strategy,
+                rng,
+            );
+        }
+
+        if self.verbosity > 1 {
+            println!("After {:#?}", self.data.ecdna_dynamics.distribution);
+        }
+        let (nplus, nminus) = (
+            self.data.ecdna_dynamics.distribution.compute_nplus(),
+            *self.data.ecdna_dynamics.distribution.get_nminus(),
+        );
+        self.data.ecdna_dynamics.nplus.push(nplus);
+        self.data.ecdna_dynamics.nminus.push(nminus);
+        self.data.time.push(0f32);
+        self.mean.push(self.data.ecdna_dynamics.distribution.compute_mean());
+        self.variance
+            .push(self.data.ecdna_dynamics.distribution.compute_variance());
+
+        if self.verbosity > 1 {
+            println!(
+                "NPlus/NMinus after subsampling {}, {}",
+                self.data.ecdna_dynamics.nplus.last().unwrap(),
+                self.data.ecdna_dynamics.nminus.last().unwrap()
+            );
+        }
     }
 }
 
