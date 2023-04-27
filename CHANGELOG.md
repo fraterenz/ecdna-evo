@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.16.2
+### Fixed
+- Subsampling in the `dynamics` was incorrect, we now update the state after subsampling.
+- Take a reference of the process and the state instead of cloning it in the `dynamics`
+
+### Added
+Subsampling for `BirthDeathNMinusNPlusTime`.
+
 ## 0.16.1
 ### Fixed
 Do not sample in `BirthDeath` process if there are not enough cells
