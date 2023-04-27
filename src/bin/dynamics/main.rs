@@ -55,7 +55,7 @@ fn main() {
     println!("{} Starting the simulation", Utc::now());
     let my_closure = |idx| match app.process_type {
         ProcessType::PureBirth(p_type) => {
-            let initial_state = CurrentState {
+            let mut initial_state = CurrentState {
                 population: [
                     *app.distribution.get_nminus(),
                     app.distribution.compute_nplus(),
@@ -77,7 +77,7 @@ fn main() {
                             app.simulation.options.verbosity,
                         )
                         .unwrap(),
-                        initial_state,
+                        &mut initial_state,
                         &rates,
                         &reactions,
                         &app.sampling,
@@ -96,7 +96,7 @@ fn main() {
                             app.simulation.options.verbosity,
                         )
                         .unwrap(),
-                        initial_state,
+                        &mut initial_state,
                         &rates,
                         &reactions,
                         &app.sampling,
@@ -113,7 +113,7 @@ fn main() {
                             app.simulation.options.verbosity,
                         )
                         .unwrap(),
-                        initial_state,
+                        &mut initial_state,
                         &rates,
                         &reactions,
                         &app.sampling,
@@ -131,7 +131,7 @@ fn main() {
                             app.simulation.options.verbosity,
                         )
                         .unwrap(),
-                        initial_state,
+                        &mut initial_state,
                         &rates,
                         &reactions,
                         &app.sampling,
@@ -140,7 +140,7 @@ fn main() {
             };
         }
         ProcessType::BirthDeath(p_type) => {
-            let initial_state = CurrentState {
+            let mut initial_state = CurrentState {
                 population: [
                     *app.distribution.get_nminus(),
                     app.distribution.compute_nplus(),
@@ -168,7 +168,7 @@ fn main() {
                             app.simulation.options.verbosity,
                         )
                         .unwrap(),
-                        initial_state,
+                        &mut initial_state,
                         &rates,
                         &reactions,
                         &app.sampling,
@@ -186,7 +186,7 @@ fn main() {
                             app.simulation.options.verbosity,
                         )
                         .unwrap(),
-                        initial_state,
+                        &mut initial_state,
                         &rates,
                         &reactions,
                         &app.sampling,
@@ -205,7 +205,7 @@ fn main() {
                             app.simulation.options.verbosity,
                         )
                         .unwrap(),
-                        initial_state,
+                        &mut initial_state,
                         &rates,
                         &reactions,
                         &app.sampling,
@@ -223,7 +223,7 @@ fn main() {
                             app.simulation.options.verbosity,
                         )
                         .unwrap(),
-                        initial_state,
+                        &mut initial_state,
                         &rates,
                         &reactions,
                         &app.sampling,
@@ -242,7 +242,7 @@ fn main() {
                             app.simulation.options.verbosity,
                         )
                         .unwrap(),
-                        initial_state,
+                        &mut initial_state,
                         &rates,
                         &reactions,
                         &app.sampling,
@@ -261,7 +261,7 @@ fn main() {
                             app.simulation.options.verbosity,
                         )
                         .unwrap(),
-                        initial_state,
+                        &mut initial_state,
                         &rates,
                         &reactions,
                         &app.sampling,

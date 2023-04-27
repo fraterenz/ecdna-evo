@@ -28,8 +28,8 @@ impl Dynamics {
     pub fn run<P, REACTION, const NB_REACTIONS: usize>(
         &self,
         idx: usize,
-        process: P,
-        initial_state: CurrentState<NB_REACTIONS>,
+        mut process: P,
+        initial_state: &mut CurrentState<NB_REACTIONS>,
         rates: &ReactionRates<NB_REACTIONS>,
         possible_reactions: &[REACTION; NB_REACTIONS],
         sampling: &Option<Sampling>,
@@ -44,21 +44,19 @@ impl Dynamics {
     {
         let run_helper =
             |sampling: Option<(NbIndividuals, SamplingStrategy)>,
-             path2dir: &Path|
-             -> P {
-                let mut process_copy = process.clone();
-
+             path2dir: &Path,
+             state: &mut CurrentState<NB_REACTIONS>,
+             process: &mut P| {
                 let stream = idx as u64 * NB_RESTARTS;
-                let j = 0u16;
                 let mut rng = ChaCha8Rng::seed_from_u64(self.seed);
                 rng.set_stream(stream);
 
                 // clone the initial state in case we restart
                 let stop_reason = simulate(
-                    &mut initial_state.clone(),
+                    state,
                     rates,
                     possible_reactions,
-                    &mut process_copy,
+                    process,
                     &self.options,
                     &mut rng,
                 );
@@ -95,14 +93,14 @@ impl Dynamics {
                 // }
 
                 if self.options.verbosity > 1 {
-                    println!(
-                        "{} restarts with stop reason: {:#?}",
-                        j, stop_reason
-                    );
+                    println!("stop reason: {:#?}", stop_reason);
                 }
 
                 if let Some(sampling) = sampling {
-                    process_copy
+                    if self.options.verbosity > 1 {
+                        println!("subsample with {} cells", sampling.0);
+                    }
+                    process
                         .save(&path2dir.join("before_subsampling"), idx)
                         .with_context(|| {
                             format!(
@@ -115,25 +113,28 @@ impl Dynamics {
                     if self.options.verbosity > 0 {
                         println!("Subsampling");
                     }
-                    process_copy.random_sample(&sampling.1, sampling.0, rng);
+                    process.random_sample(&sampling.1, sampling.0, rng);
+                    // after subsampling we need to update the state
+                    process.update_state(state);
                 }
-                process_copy
             };
 
         if let Some(sampling) = sampling {
             let path2dir =
                 &self.path2dir.join((sampling.at.len() - 1).to_string());
             for (i, sample_at) in sampling.at.iter().enumerate() {
-                if self.options.verbosity > 1 {
-                    println!("{}-th subsample with {} cells", i, sample_at);
-                }
                 // save only at last sample
                 let last_sample = i == sampling.at.len() - 1;
-                let process = run_helper(
+                run_helper(
                     Some((*sample_at, sampling.strategy)),
                     path2dir,
+                    initial_state,
+                    &mut process,
                 );
-                if last_sample {
+                // happens with birth-death processes
+                let no_individuals_left =
+                    initial_state.population.iter().sum::<u64>() == 0u64;
+                if last_sample || no_individuals_left {
                     process
                         .save(&path2dir.join("after_subsampling"), idx)
                         .with_context(|| {
@@ -144,12 +145,18 @@ impl Dynamics {
                         })
                         .unwrap();
                 }
+                if no_individuals_left {
+                    if self.options.verbosity > 0 {
+                        println!("do not subsample, early stopping, due to no cells left");
+                    }
+                    break;
+                }
             }
         } else {
             if self.options.verbosity > 1 {
                 println!("Nosubsampling");
             }
-            let process = run_helper(None, &self.path2dir);
+            run_helper(None, &self.path2dir, initial_state, &mut process);
             process
                 .save(&self.path2dir, idx)
                 .with_context(|| format!("Cannot save run {}", idx))
