@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.17.0
+**`ecdna_lib` version**: 2.0.4
+
 ## 0.16.2
 ### Fixed
 - Subsampling in the `dynamics` was incorrect, we now update the state after subsampling.
