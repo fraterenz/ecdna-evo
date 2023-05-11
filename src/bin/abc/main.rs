@@ -66,7 +66,7 @@ fn main() {
                                 .run::<BirthDeath<
                                     ecdna_evo::proliferation::Exponential,
                                     ecdna_evo::segregation::Binomial,
-                                >, EcDNAEvent, 4, Exponential, Binomial>(
+                                >, EcDNAEvent, 4>(
                                     idx,
                                     process,
                                     initial_state,
@@ -124,7 +124,7 @@ fn main() {
                                 .run::<PureBirth<
                                     ecdna_evo::proliferation::Exponential,
                                     ecdna_evo::segregation::Binomial,
-                                >, EcDNAEvent, 2, Exponential, Binomial>(
+                                >, EcDNAEvent, 2>(
                                     idx,
                                     process,
                                     initial_state,

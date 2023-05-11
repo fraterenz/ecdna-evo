@@ -1,7 +1,5 @@
 use ecdna_evo::abc::Data;
 use ecdna_evo::distribution::SamplingStrategy;
-use ecdna_evo::proliferation::EcDNAProliferation;
-use ecdna_evo::segregation::Segregate;
 use ecdna_evo::{RandomSampling, ToFile};
 use rand::SeedableRng;
 use rand_chacha::{self, ChaCha8Rng};
@@ -20,7 +18,7 @@ pub struct Abc {
 }
 
 impl Abc {
-    pub fn run<P, REACTION, const NB_REACTIONS: usize, Proliferation, S>(
+    pub fn run<P, REACTION, const NB_REACTIONS: usize>(
         &self,
         idx: usize,
         mut process: P,
@@ -34,8 +32,6 @@ impl Abc {
             + Debug
             + ToFile
             + RandomSampling,
-        Proliferation: EcDNAProliferation,
-        S: Segregate,
         REACTION: std::fmt::Debug,
     {
         //! Find the posterior distribution of the fitness coefficient and
