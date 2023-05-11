@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.17.2
+**`ecdna_lib` version**: 2.0.6
+
 ## 0.17.1
 **`ecdna_lib` version**: 2.0.5
 
