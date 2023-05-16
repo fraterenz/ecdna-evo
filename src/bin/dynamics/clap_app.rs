@@ -79,6 +79,10 @@ pub struct Cli {
     /// copies in the tumour population
     #[arg(long, action = ArgAction::SetTrue, default_value_t = false)]
     variance: bool,
+    /// Whether to track over simulations the evolution of the entropy ecDNA
+    /// copies in the tumour population
+    #[arg(long, action = ArgAction::SetTrue, default_value_t = false)]
+    entropy: bool,
     /// The number of cells kept after subsampling.
     ///
     /// To take the full distribution pass 0 as argument, e.g. when we want to
@@ -201,9 +205,15 @@ impl Cli {
                     true => {
                         if cli.time {
                             if cli.variance {
-                                ProcessType::BirthDeath(
-                                    BirthDeathType::MeanTimeVariance,
+                                if cli.entropy {
+                                    ProcessType::BirthDeath(
+                                    BirthDeathType::MeanTimeVarianceEntropy,
                                 )
+                                } else {
+                                    ProcessType::BirthDeath(
+                                        BirthDeathType::MeanTimeVariance,
+                                    )
+                                }
                             } else {
                                 ProcessType::BirthDeath(
                                     BirthDeathType::MeanTime,
@@ -407,6 +417,7 @@ pub enum BirthDeathType {
     Mean,
     MeanTime,
     MeanTimeVariance,
+    MeanTimeVarianceEntropy,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]

@@ -119,6 +119,9 @@ impl Dynamics {
                 }
             };
 
+        if self.options.verbosity > 1 {
+            println!("{:#?}", process);
+        }
         if let Some(sampling) = sampling {
             let path2dir =
                 &self.path2dir.join((sampling.at.len() - 1).to_string());

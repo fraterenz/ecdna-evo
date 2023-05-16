@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.17.3
+### Added
+Process `BirthDeathMeanTimeVarianceEntropy`.
+
 ## 0.17.2
 **`ecdna_lib` version**: 2.0.6
 
