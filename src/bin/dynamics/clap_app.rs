@@ -240,7 +240,7 @@ impl Cli {
                 false => match cli.mean {
                     true => {
                         if cli.time {
-                            todo!();
+                            ProcessType::PureBirth(PureBirthType::MeanTime)
                         } else {
                             ProcessType::PureBirth(PureBirthType::Mean)
                         }
@@ -407,6 +407,7 @@ pub enum PureBirthType {
     NMinusNPlus,
     NMinusNPlusTime,
     Mean,
+    MeanTime,
 }
 
 #[derive(Clone, Copy)]

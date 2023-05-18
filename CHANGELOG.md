@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.17.4
+### Added
+Process `PureBirthMeanTime`.
+
 ## 0.17.3
 ### Added
 Process `BirthDeathMeanTimeVarianceEntropy`.
