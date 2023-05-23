@@ -4,11 +4,9 @@ use clap_app::{GrowthOptions, Segregation};
 use ecdna_evo::{
     distribution::EcDNADistribution,
     process::{
-        BirthDeath, BirthDeathMean, BirthDeathMeanTime,
-        BirthDeathMeanTimeVariance, BirthDeathMeanTimeVarianceEntropy,
-        BirthDeathNMinusNPlus, BirthDeathNMinusNPlusTime, EcDNAEvent,
-        PureBirth, PureBirthMean, PureBirthMeanTime, PureBirthNMinusNPlus,
-        PureBirthNMinusNPlusTime,
+        BirthDeath, BirthDeathMean, BirthDeathMeanVariance,
+        BirthDeathMeanVarianceEntropy, BirthDeathNMinusNPlus, EcDNAEvent,
+        PureBirth, PureBirthMean, PureBirthNMinusNPlus,
     },
     proliferation::{EcDNADeath, Exponential},
 };
@@ -54,6 +52,8 @@ fn main() {
     };
 
     println!("{} Starting the simulation", Utc::now());
+    let timepoints: [f32; 100] = std::array::from_fn(|i| i as f32 * 0.1 + 0.1);
+
     let my_closure = |idx| match app.process_type {
         ProcessType::PureBirth(p_type) => {
             let mut initial_state = CurrentState {
@@ -75,25 +75,8 @@ fn main() {
                             app.segregation,
                             app.distribution.clone(),
                             app.simulation.options.max_iter,
-                            app.simulation.options.verbosity,
-                        )
-                        .unwrap(),
-                        &mut initial_state,
-                        &rates,
-                        &reactions,
-                        &app.sampling,
-                    )
-                    .unwrap(),
-                PureBirthType::NMinusNPlusTime => app
-                    .simulation
-                    .run(
-                        idx,
-                        PureBirthNMinusNPlusTime::with_distribution(
-                            proliferation,
-                            app.segregation,
-                            app.distribution.clone(),
+                            &timepoints,
                             0.,
-                            app.simulation.options.max_iter,
                             app.simulation.options.verbosity,
                         )
                         .unwrap(),
@@ -129,25 +112,8 @@ fn main() {
                             app.segregation,
                             app.distribution.clone(),
                             app.simulation.options.max_iter,
-                            app.simulation.options.verbosity,
-                        )
-                        .unwrap(),
-                        &mut initial_state,
-                        &rates,
-                        &reactions,
-                        &app.sampling,
-                    )
-                    .unwrap(),
-                PureBirthType::MeanTime => app
-                    .simulation
-                    .run(
-                        idx,
-                        PureBirthMeanTime::new(
+                            &timepoints,
                             0.,
-                            proliferation,
-                            app.segregation,
-                            app.distribution.clone(),
-                            app.simulation.options.max_iter,
                             app.simulation.options.verbosity,
                         )
                         .unwrap(),
@@ -203,25 +169,8 @@ fn main() {
                             app.segregation,
                             app.distribution.clone(),
                             app.simulation.options.max_iter,
-                            app.simulation.options.verbosity,
-                        )
-                        .unwrap(),
-                        &mut initial_state,
-                        &rates,
-                        &reactions,
-                        &app.sampling,
-                    )
-                    .unwrap(),
-                BirthDeathType::NMinusNPlusTime => app
-                    .simulation
-                    .run(
-                        idx,
-                        BirthDeathNMinusNPlusTime::with_distribution(
-                            proliferation,
-                            app.segregation,
-                            app.distribution.clone(),
                             0.,
-                            app.simulation.options.max_iter,
+                            &timepoints,
                             app.simulation.options.verbosity,
                         )
                         .unwrap(),
@@ -240,6 +189,8 @@ fn main() {
                             app.segregation,
                             app.distribution.clone(),
                             app.simulation.options.max_iter,
+                            &timepoints,
+                            0.,
                             app.simulation.options.verbosity,
                         )
                         .unwrap(),
@@ -249,16 +200,17 @@ fn main() {
                         &app.sampling,
                     )
                     .unwrap(),
-                BirthDeathType::MeanTime => app
+                BirthDeathType::MeanVariance => app
                     .simulation
                     .run(
                         idx,
-                        BirthDeathMeanTime::new(
+                        BirthDeathMeanVariance::new(
                             0.,
                             proliferation,
                             app.segregation,
                             app.distribution.clone(),
                             app.simulation.options.max_iter,
+                            &timepoints,
                             app.simulation.options.verbosity,
                         )
                         .unwrap(),
@@ -268,35 +220,17 @@ fn main() {
                         &app.sampling,
                     )
                     .unwrap(),
-                BirthDeathType::MeanTimeVariance => app
+                BirthDeathType::MeanVarianceEntropy => app
                     .simulation
                     .run(
                         idx,
-                        BirthDeathMeanTimeVariance::new(
+                        BirthDeathMeanVarianceEntropy::new(
                             0.,
                             proliferation,
                             app.segregation,
                             app.distribution.clone(),
                             app.simulation.options.max_iter,
-                            app.simulation.options.verbosity,
-                        )
-                        .unwrap(),
-                        &mut initial_state,
-                        &rates,
-                        &reactions,
-                        &app.sampling,
-                    )
-                    .unwrap(),
-                BirthDeathType::MeanTimeVarianceEntropy => app
-                    .simulation
-                    .run(
-                        idx,
-                        BirthDeathMeanTimeVarianceEntropy::new(
-                            0.,
-                            proliferation,
-                            app.segregation,
-                            app.distribution.clone(),
-                            app.simulation.options.max_iter,
+                            &timepoints,
                             app.simulation.options.verbosity,
                         )
                         .unwrap(),

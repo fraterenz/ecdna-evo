@@ -67,10 +67,6 @@ pub struct Cli {
     /// without any ecDNAs.
     #[arg(short, long, action = ArgAction::SetTrue, default_value_t = false)]
     nplus_nminus: bool,
-    /// Whether to track over simulations the evolution of the gillespie
-    /// time, that is the waiting time for each reaction.
-    #[arg(short, long, action = ArgAction::SetTrue, default_value_t = false)]
-    time: bool,
     /// Whether to track over simulations the evolution of the mean ecDNA
     /// copies in the tumour population
     #[arg(short, long, action = ArgAction::SetTrue, default_value_t = false)]
@@ -203,20 +199,14 @@ impl Cli {
             match is_birth_death {
                 true => match cli.mean {
                     true => {
-                        if cli.time {
-                            if cli.variance {
-                                if cli.entropy {
-                                    ProcessType::BirthDeath(
-                                    BirthDeathType::MeanTimeVarianceEntropy,
+                        if cli.variance {
+                            if cli.entropy {
+                                ProcessType::BirthDeath(
+                                    BirthDeathType::MeanVarianceEntropy,
                                 )
-                                } else {
-                                    ProcessType::BirthDeath(
-                                        BirthDeathType::MeanTimeVariance,
-                                    )
-                                }
                             } else {
                                 ProcessType::BirthDeath(
-                                    BirthDeathType::MeanTime,
+                                    BirthDeathType::MeanVariance,
                                 )
                             }
                         } else {
@@ -224,11 +214,7 @@ impl Cli {
                         }
                     }
                     false => {
-                        if cli.time {
-                            ProcessType::BirthDeath(
-                                BirthDeathType::NMinusNPlusTime,
-                            )
-                        } else if cli.nplus_nminus {
+                        if cli.nplus_nminus {
                             ProcessType::BirthDeath(
                                 BirthDeathType::NMinusNPlus,
                             )
@@ -238,19 +224,9 @@ impl Cli {
                     }
                 },
                 false => match cli.mean {
-                    true => {
-                        if cli.time {
-                            ProcessType::PureBirth(PureBirthType::MeanTime)
-                        } else {
-                            ProcessType::PureBirth(PureBirthType::Mean)
-                        }
-                    }
+                    true => ProcessType::PureBirth(PureBirthType::Mean),
                     false => {
-                        if cli.time {
-                            ProcessType::PureBirth(
-                                PureBirthType::NMinusNPlusTime,
-                            )
-                        } else if cli.nplus_nminus {
+                        if cli.nplus_nminus {
                             ProcessType::PureBirth(PureBirthType::NMinusNPlus)
                         } else {
                             ProcessType::PureBirth(PureBirthType::PureBirth)
@@ -405,20 +381,16 @@ pub enum ProcessType {
 pub enum PureBirthType {
     PureBirth,
     NMinusNPlus,
-    NMinusNPlusTime,
     Mean,
-    MeanTime,
 }
 
 #[derive(Clone, Copy)]
 pub enum BirthDeathType {
     BirthDeath,
     NMinusNPlus,
-    NMinusNPlusTime,
     Mean,
-    MeanTime,
-    MeanTimeVariance,
-    MeanTimeVarianceEntropy,
+    MeanVariance,
+    MeanVarianceEntropy,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.18.0
+### BugFix
+Fix the dynamics as plotting a subset of them over time by binning gillespie time using fixed sized bins of time for all simulations
+
 ## 0.17.4
 ### Added
 Process `PureBirthMeanTime`.
