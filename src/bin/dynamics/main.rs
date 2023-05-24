@@ -52,7 +52,7 @@ fn main() {
     };
 
     println!("{} Starting the simulation", Utc::now());
-    let timepoints: [f32; 100] = std::array::from_fn(|i| i as f32 * 0.1 + 0.1);
+    let timepoints: [f32; 300] = std::array::from_fn(|i| i as f32 * 0.1 + 0.1);
 
     let my_closure = |idx| match app.process_type {
         ProcessType::PureBirth(p_type) => {
