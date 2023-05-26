@@ -1,5 +1,10 @@
 # Changelog
 
+
+## 0.18.1
+Save the absolute gillespie time at the last iteration.
+Takes 300 timepoints, that is save the dynamics max until time is equal to 30.
+
 ## 0.18.0
 ### BugFix
 Fix the dynamics as plotting a subset of them over time by binning gillespie time using fixed sized bins of time for all simulations

@@ -185,6 +185,14 @@ impl EcDNADynamics {
         write2file(&self.timepoints2save, &times, None, false)
             .with_context(|| "Cannot save times".to_string())?;
 
+        // the absolute gillespie time at the last iteration
+        let mut gillespie_time = path2dir.join("gillespie_time").join(id);
+        gillespie_time.set_extension("csv");
+        if verbosity > 1 {
+            println!("Saving gillespie time to {:#?}", gillespie_time);
+        }
+        write2file(&[self.time], &gillespie_time, None, false)
+            .with_context(|| "Cannot save times".to_string())?;
         Ok(())
     }
 }
