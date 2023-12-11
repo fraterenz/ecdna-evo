@@ -1,6 +1,10 @@
 # Changelog
 
 
+## 0.20.0
+change files and dir names after saving the data.
+Now: `{SAMPLE}samples{CELLS}population/{MEASUREMENT}/{B0}b0_{B1}b1_{D0}d0_{D1}d1_0idx.json`.
+
 ## 0.19.0
 remove bin `abc`.
 

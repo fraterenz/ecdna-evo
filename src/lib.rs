@@ -14,11 +14,16 @@ use std::path::Path;
 use ecdna_lib::distribution::SamplingStrategy;
 pub use ecdna_lib::{abc, distribution, DNACopy};
 use rand::Rng;
-use sosa::NbIndividuals;
+use sosa::{NbIndividuals, ReactionRates};
 
 /// Save the results of the simulations.
-pub trait ToFile {
-    fn save(&self, path2dir: &Path, id: usize) -> anyhow::Result<()>;
+pub trait ToFile<const NB_REACTIONS: usize> {
+    fn save(
+        &self,
+        path2dir: &Path,
+        rates: &ReactionRates<NB_REACTIONS>,
+        id: usize,
+    ) -> anyhow::Result<()>;
 }
 
 /// Undersample a process by randomly reducing the number of individuals.

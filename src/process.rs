@@ -5,6 +5,7 @@ use ecdna_lib::distribution::SamplingStrategy;
 use rand::Rng;
 use sosa::{
     write2file, AdvanceStep, CurrentState, NbIndividuals, NextReaction,
+    ReactionRates,
 };
 
 use crate::{
@@ -17,6 +18,26 @@ use super::{
     proliferation::{EcDNADeath, EcDNAProliferation},
     segregation::IsUneven,
 };
+
+fn create_filename_birth_death(rates: &[f32; 4], id: usize) -> String {
+    format!(
+        "{}b0_{}b1_{}d0_{}d1_{}idx",
+        rates[0].to_string().replace('.', ""),
+        rates[1].to_string().replace('.', ""),
+        rates[2].to_string().replace('.', ""),
+        rates[3].to_string().replace('.', ""),
+        id,
+    )
+}
+
+fn create_filename_pure_birth(rates: &[f32; 2], id: usize) -> String {
+    format!(
+        "{}b0_{}b1_0d0_0d1_{}idx",
+        rates[0].to_string().replace('.', "dot"),
+        rates[1].to_string().replace('.', "dot"),
+        id,
+    )
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum EcDNAEvent {
@@ -85,16 +106,22 @@ where
     }
 }
 
-impl<P, S> ToFile for PureBirth<P, S>
+impl<P, S> ToFile<2> for PureBirth<P, S>
 where
     P: EcDNAProliferation,
     S: Segregate,
 {
-    fn save(&self, path2dir: &Path, id: usize) -> anyhow::Result<()> {
+    fn save(
+        &self,
+        path2dir: &Path,
+        rates: &ReactionRates<2>,
+        id: usize,
+    ) -> anyhow::Result<()> {
         //! Save the ecDNA distribution
         let path2ecdna = path2dir.join("ecdna");
         fs::create_dir_all(&path2ecdna).expect("Cannot create dir");
-        let path2file = path2ecdna.join(id.to_string()).with_extension("json");
+        let filename = create_filename_pure_birth(&rates.0, id);
+        let path2file = path2ecdna.join(filename).with_extension("json");
         self.distribution.save(&path2file, self.verbosity)?;
         Ok(())
     }
@@ -238,14 +265,19 @@ where
     }
 }
 
-impl<P, S> ToFile for PureBirthNMinusNPlus<P, S>
+impl<P, S> ToFile<2> for PureBirthNMinusNPlus<P, S>
 where
     P: EcDNAProliferation,
     S: Segregate,
 {
-    fn save(&self, path2dir: &Path, id: usize) -> anyhow::Result<()> {
+    fn save(
+        &self,
+        path2dir: &Path,
+        rates: &ReactionRates<2>,
+        id: usize,
+    ) -> anyhow::Result<()> {
         fs::create_dir_all(path2dir).expect("Cannot create dir");
-        let filename = id.to_string();
+        let filename = create_filename_pure_birth(&rates.0, id);
         self.data.save(path2dir, &filename, self.verbosity)?;
         Ok(())
     }
@@ -386,15 +418,20 @@ where
     }
 }
 
-impl<P, S> ToFile for PureBirthMean<P, S>
+impl<P, S> ToFile<2> for PureBirthMean<P, S>
 where
     P: EcDNAProliferation,
     S: Segregate,
 {
-    fn save(&self, path2dir: &Path, id: usize) -> anyhow::Result<()> {
+    fn save(
+        &self,
+        path2dir: &Path,
+        rates: &ReactionRates<2>,
+        id: usize,
+    ) -> anyhow::Result<()> {
         fs::create_dir_all(path2dir).expect("Cannot create dir");
 
-        let filename = id.to_string();
+        let filename = create_filename_pure_birth(&rates.0, id);
         if self.verbosity > 1 {
             println!("Saving data in {:#?}", path2dir)
         }
@@ -597,12 +634,18 @@ impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<4> for BirthDeath<P, S> {
     }
 }
 
-impl<P: EcDNAProliferation, S: Segregate> ToFile for BirthDeath<P, S> {
-    fn save(&self, path2dir: &Path, id: usize) -> anyhow::Result<()> {
+impl<P: EcDNAProliferation, S: Segregate> ToFile<4> for BirthDeath<P, S> {
+    fn save(
+        &self,
+        path2dir: &Path,
+        rates: &ReactionRates<4>,
+        id: usize,
+    ) -> anyhow::Result<()> {
         //! Save the ecDNA distribution
         let path2ecdna = path2dir.join("ecdna");
+        let filename = create_filename_birth_death(&rates.0, id);
         fs::create_dir_all(&path2ecdna).expect("Cannot create dir");
-        let path2file = path2ecdna.join(id.to_string()).with_extension("json");
+        let path2file = path2ecdna.join(filename).with_extension("json");
         self.distribution.save(&path2file, self.verbosity)?;
         Ok(())
     }
@@ -675,15 +718,20 @@ where
     }
 }
 
-impl<P, S> ToFile for BirthDeathNMinusNPlus<P, S>
+impl<P, S> ToFile<4> for BirthDeathNMinusNPlus<P, S>
 where
     P: EcDNAProliferation,
     S: Segregate,
 {
-    fn save(&self, path2dir: &Path, id: usize) -> anyhow::Result<()> {
+    fn save(
+        &self,
+        path2dir: &Path,
+        rates: &ReactionRates<4>,
+        id: usize,
+    ) -> anyhow::Result<()> {
         fs::create_dir_all(path2dir).expect("Cannot create dir");
 
-        let filename = id.to_string();
+        let filename = create_filename_birth_death(&rates.0, id);
         if self.verbosity > 1 {
             println!("Saving data in {:#?}", path2dir)
         }
@@ -842,15 +890,20 @@ where
     }
 }
 
-impl<P, S> ToFile for BirthDeathMean<P, S>
+impl<P, S> ToFile<4> for BirthDeathMean<P, S>
 where
     P: EcDNAProliferation,
     S: Segregate,
 {
-    fn save(&self, path2dir: &Path, id: usize) -> anyhow::Result<()> {
+    fn save(
+        &self,
+        path2dir: &Path,
+        rates: &ReactionRates<4>,
+        id: usize,
+    ) -> anyhow::Result<()> {
         fs::create_dir_all(path2dir).expect("Cannot create dir");
 
-        let filename = id.to_string();
+        let filename = create_filename_birth_death(&rates.0, id);
         if self.verbosity > 1 {
             println!("Saving data in {:#?}", path2dir)
         }
@@ -1046,15 +1099,20 @@ where
     }
 }
 
-impl<P, S> ToFile for BirthDeathMeanVariance<P, S>
+impl<P, S> ToFile<4> for BirthDeathMeanVariance<P, S>
 where
     P: EcDNAProliferation,
     S: Segregate,
 {
-    fn save(&self, path2dir: &Path, id: usize) -> anyhow::Result<()> {
+    fn save(
+        &self,
+        path2dir: &Path,
+        rates: &ReactionRates<4>,
+        id: usize,
+    ) -> anyhow::Result<()> {
         fs::create_dir_all(path2dir).expect("Cannot create dir");
 
-        let filename = id.to_string();
+        let filename = create_filename_birth_death(&rates.0, id);
         if self.verbosity > 1 {
             println!("Saving data in {:#?}", path2dir)
         }
@@ -1265,15 +1323,20 @@ where
     }
 }
 
-impl<P, S> ToFile for BirthDeathMeanVarianceEntropy<P, S>
+impl<P, S> ToFile<4> for BirthDeathMeanVarianceEntropy<P, S>
 where
     P: EcDNAProliferation,
     S: Segregate,
 {
-    fn save(&self, path2dir: &Path, id: usize) -> anyhow::Result<()> {
+    fn save(
+        &self,
+        path2dir: &Path,
+        rates: &ReactionRates<4>,
+        id: usize,
+    ) -> anyhow::Result<()> {
         fs::create_dir_all(path2dir).expect("Cannot create dir");
 
-        let filename = id.to_string();
+        let filename = create_filename_birth_death(&rates.0, id);
         if self.verbosity > 1 {
             println!("Saving data in {:#?}", path2dir)
         }

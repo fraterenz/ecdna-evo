@@ -400,7 +400,7 @@ dependencies = [
 
 [[package]]
 name = "ecdna-evo"
-version = "0.18.1"
+version = "0.20.0"
 dependencies = [
  "anyhow",
  "chrono",

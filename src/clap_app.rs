@@ -175,24 +175,14 @@ impl Cli {
                 let samples_str: Vec<String> =
                     samples.iter().map(|ele| ele.to_string()).collect();
                 cli.path.join(format!(
-                    "{}samples{}population_{}b0_{}b1_{}d0_{}d1",
+                    "{}samples{}population",
                     samples_str.join("_"),
                     cells,
-                    cli.b0.to_string().replace('.', ""),
-                    cli.b1.to_string().replace('.', ""),
-                    d0.to_string().replace('.', ""),
-                    d1.to_string().replace('.', ""),
                 ))
             }
-            None => cli.path.join(format!(
-                "{}samples{}population_{}b0_{}b1_{}d0_{}d1",
-                cells,
-                cells,
-                cli.b0.to_string().replace('.', ""),
-                cli.b1.to_string().replace('.', ""),
-                d0.to_string().replace('.', ""),
-                d1.to_string().replace('.', ""),
-            )),
+            None => {
+                cli.path.join(format!("{}samples{}population", cells, cells,))
+            }
         };
 
         let process_type = {

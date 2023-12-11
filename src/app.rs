@@ -38,7 +38,7 @@ impl Dynamics {
         P: AdvanceStep<NB_REACTIONS, Reaction = REACTION>
             + Clone
             + Debug
-            + ToFile
+            + ToFile<NB_REACTIONS>
             + RandomSampling,
         REACTION: std::fmt::Debug,
     {
@@ -101,7 +101,7 @@ impl Dynamics {
                         println!("subsample with {} cells", sampling.0);
                     }
                     process
-                        .save(&path2dir.join("before_subsampling"), idx)
+                        .save(&path2dir.join("before_subsampling"), rates, idx)
                         .with_context(|| {
                             format!(
                                 "Cannot save run {} before subsampling",
@@ -139,7 +139,7 @@ impl Dynamics {
                     initial_state.population.iter().sum::<u64>() == 0u64;
                 if last_sample || no_individuals_left {
                     process
-                        .save(&path2dir.join("after_subsampling"), idx)
+                        .save(&path2dir.join("after_subsampling"), rates, idx)
                         .with_context(|| {
                             format!(
                                 "Cannot save run {} for timepoint {}",
@@ -161,7 +161,7 @@ impl Dynamics {
             }
             run_helper(None, &self.path2dir, initial_state, &mut process);
             process
-                .save(&self.path2dir, idx)
+                .save(&self.path2dir, rates, idx)
                 .with_context(|| format!("Cannot save run {}", idx))
                 .unwrap();
         };
