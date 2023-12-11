@@ -1,6 +1,9 @@
 # Changelog
 
 
+## 0.19.0
+remove bin `abc`.
+
 ## 0.18.1
 Save the absolute gillespie time at the last iteration.
 Takes 300 timepoints, that is save the dynamics max until time is equal to 30.
