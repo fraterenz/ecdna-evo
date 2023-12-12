@@ -22,10 +22,10 @@ use super::{
 fn create_filename_birth_death(rates: &[f32; 4], id: usize) -> String {
     format!(
         "{}b0_{}b1_{}d0_{}d1_{}idx",
-        rates[0].to_string().replace('.', ""),
-        rates[1].to_string().replace('.', ""),
-        rates[2].to_string().replace('.', ""),
-        rates[3].to_string().replace('.', ""),
+        rates[0].to_string().replace('.', "dot"),
+        rates[1].to_string().replace('.', "dot"),
+        rates[2].to_string().replace('.', "dot"),
+        rates[3].to_string().replace('.', "dot"),
         id,
     )
 }

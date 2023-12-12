@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.1
+Fix saving names: replace `.` by `dot` in the birth-death case.
 
 ## 0.20.0
 change files and dir names after saving the data.
