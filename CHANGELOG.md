@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.21.0
+Assign idx such that it corresponds to the seed used.
+
 ## 0.20.1
 Fix saving names: replace `.` by `dot` in the birth-death case.
 

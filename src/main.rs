@@ -244,16 +244,19 @@ fn main() {
         }
     };
     std::process::exit({
+        // start from seed for the array job
+        let start = (app.simulation.seed * 10) as usize;
+        let start_end = start..app.runs + start;
         match app.parallel {
             Parallel::Debug | Parallel::False => {
-                (0..app.runs).for_each(my_closure)
+                (start_end).for_each(my_closure)
             }
-            Parallel::True => (0..app.runs)
+            Parallel::True => (start_end)
                 .into_par_iter()
                 .progress_count(app.runs as u64)
                 .for_each(my_closure),
         }
-        println!("{} End simulation", Utc::now(),);
+        println!("{} End simulation", Utc::now());
         0
     });
 }

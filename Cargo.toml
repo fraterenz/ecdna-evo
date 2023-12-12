@@ -1,6 +1,6 @@
 [package]
 name = "ecdna-evo"
-version = "0.20.1"
+version = "0.21.0"
 edition = "2021"
 repository = "https://github.com/fraterenz/ecdna-evo"
 description = "Evolutionary models of extra-chromosomal DNA (ecDNA)"
