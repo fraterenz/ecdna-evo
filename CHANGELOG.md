@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.22.0
+change the way we save the data at the end of the simulations to simplify subsampling.
+
 ## 0.21.0
 Assign idx such that it corresponds to the seed used.
 

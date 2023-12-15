@@ -11,7 +11,7 @@ pub mod segregation;
 
 use std::path::Path;
 
-use ecdna_lib::distribution::SamplingStrategy;
+use ecdna_lib::distribution::EcDNADistribution;
 pub use ecdna_lib::{abc, distribution, DNACopy};
 use rand::Rng;
 use sosa::{NbIndividuals, ReactionRates};
@@ -29,11 +29,10 @@ pub trait ToFile<const NB_REACTIONS: usize> {
 /// Undersample a process by randomly reducing the number of individuals.
 pub trait RandomSampling {
     fn random_sample(
-        &mut self,
-        strategy: &SamplingStrategy,
+        &self,
         nb_individuals: NbIndividuals,
-        rng: impl Rng + std::clone::Clone,
-    );
+        rng: &mut impl Rng,
+    ) -> anyhow::Result<EcDNADistribution>;
 }
 
 #[cfg(test)]

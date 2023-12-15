@@ -79,24 +79,26 @@ pub struct Cli {
     /// copies in the tumour population
     #[arg(long, action = ArgAction::SetTrue, default_value_t = false)]
     entropy: bool,
+    /// Save the data also just before subsampling
+    #[arg(long, action = ArgAction::SetTrue, default_value_t = false, requires = "sample")]
+    sample_save_before: bool,
     /// The number of cells kept after subsampling.
     ///
     /// To take the full distribution pass 0 as argument, e.g. when we want to
     /// sample with a custom strategy the full ecDNA distribution (see
     /// `--sampling-strategy`)
-    #[arg(long, num_args = 0.., requires= "sampling_strategy", value_name = "CELLS")]
-    subsample: Option<Vec<NbIndividuals>>,
-    #[arg(long, value_enum, requires = "subsample")]
-    sampling_strategy: Option<SamplingStrategyArg>,
-    /// Path to store the results of the simulations
+    #[arg(long, num_args = 0.., value_name = "CELLS")]
+    sample: Option<Vec<NbIndividuals>>,
     #[arg(
-        value_name = "DIR",
-        // value_parser = |path: &str| {
-        //     let path_b = PathBuf::from(path);
-        //     if path_b.is_dir() { Ok(path_b) } else { Err("Cannot find dir") }
-        // }
-        )
-    ]
+        long,
+        value_enum,
+        requires = "sample",
+        required = false,
+        default_value_t
+    )]
+    sample_strategy: SamplingStrategyArg,
+    /// Path to store the results of the simulations
+    #[arg(value_name = "DIR")]
     path: PathBuf,
     /// The JSON file used as an initial starting distribution
     #[arg(
@@ -170,21 +172,6 @@ impl Cli {
             (Parallel::True, cli.runs)
         };
 
-        let path2dir = match cli.subsample.as_ref() {
-            Some(samples) => {
-                let samples_str: Vec<String> =
-                    samples.iter().map(|ele| ele.to_string()).collect();
-                cli.path.join(format!(
-                    "{}samples{}population",
-                    samples_str.join("_"),
-                    cells,
-                ))
-            }
-            None => {
-                cli.path.join(format!("{}samples{}population", cells, cells,))
-            }
-        };
-
         let process_type = {
             match is_birth_death {
                 true => match cli.mean {
@@ -225,17 +212,16 @@ impl Cli {
                 },
             }
         };
-        let sampling_strategy =
-            cli.sampling_strategy.map(|strategy| match strategy {
+
+        let sampling = if let Some(sampling_at) = cli.sample {
+            let sampling_strategy = match cli.sample_strategy {
                 SamplingStrategyArg::Uniform => SamplingStrategy::Uniform,
                 SamplingStrategyArg::Gaussian => {
                     SamplingStrategy::Gaussian(Sigma::new(1.))
                 }
-            });
-
-        let sampling = if let Some(sampling_at) = cli.subsample {
+            };
             let (at, strategy) = {
-                let strategy = sampling_strategy.unwrap();
+                let strategy = sampling_strategy;
                 // 0 means take the full ecDNA distribution which does not make
                 // sense with a uniform distribution
                 if sampling_at.len() == 1 && sampling_at[0] == 0 {
@@ -251,7 +237,7 @@ impl Cli {
             };
             Some(Sampling { at, strategy })
         } else {
-            assert!(cli.subsample.is_none());
+            assert!(cli.sample.is_none());
             None
         };
 
@@ -265,7 +251,8 @@ impl Cli {
                     max_cells: cells,
                     verbosity: verbose,
                 },
-                path2dir,
+                path2dir: cli.path,
+                save_before_subsampling: cli.sample_save_before,
             },
             process_type,
             b0: cli.b0,
@@ -383,8 +370,11 @@ pub enum BirthDeathType {
     MeanVarianceEntropy,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+#[derive(
+    Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, ValueEnum,
+)]
 enum SamplingStrategyArg {
+    #[default]
     Uniform,
     Gaussian,
 }

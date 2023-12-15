@@ -1,7 +1,6 @@
 use std::{fs, path::Path};
 
 use anyhow::ensure;
-use ecdna_lib::distribution::SamplingStrategy;
 use rand::Rng;
 use sosa::{
     write2file, AdvanceStep, CurrentState, NbIndividuals, NextReaction,
@@ -97,12 +96,16 @@ where
     S: Segregate,
 {
     fn random_sample(
-        &mut self,
-        strategy: &SamplingStrategy,
+        &self,
         nb_individuals: NbIndividuals,
-        rng: impl Rng + std::clone::Clone,
-    ) {
-        self.distribution.sample(nb_individuals, strategy, rng);
+        rng: &mut impl Rng,
+    ) -> anyhow::Result<EcDNADistribution> {
+        ensure!(
+            nb_individuals
+                < self.distribution.get_nminus()
+                    + self.distribution.compute_nplus()
+        );
+        Ok(self.distribution.into_subsampled(nb_individuals, rng))
     }
 }
 
@@ -232,22 +235,10 @@ where
     S: Segregate,
 {
     fn random_sample(
-        &mut self,
-        strategy: &SamplingStrategy,
-        nb_individuals: NbIndividuals,
-        rng: impl Rng + std::clone::Clone,
-    ) {
-        if self.verbosity > 0 {
-            println!("Subsampling the ecDNA distribution");
-        }
-        if self.verbosity > 1 {
-            println!("Before {:#?}", self.data.distribution);
-        }
-        self.data.distribution.sample(nb_individuals, strategy, rng);
-
-        if self.verbosity > 1 {
-            println!("After {:#?}", self.data.distribution);
-        }
+        &self,
+        _nb_individuals: NbIndividuals,
+        _rng: &mut impl Rng,
+    ) -> anyhow::Result<EcDNADistribution> {
         todo!();
         // let (nplus, nminus) = (
         //     self.data.distribution.compute_nplus(),
@@ -409,11 +400,10 @@ where
     S: Segregate,
 {
     fn random_sample(
-        &mut self,
-        _strategy: &SamplingStrategy,
+        &self,
         _nb_individuals: NbIndividuals,
-        _rng: impl Rng,
-    ) {
+        _rng: &mut impl Rng,
+    ) -> anyhow::Result<EcDNADistribution> {
         todo!()
     }
 }
@@ -653,17 +643,16 @@ impl<P: EcDNAProliferation, S: Segregate> ToFile<4> for BirthDeath<P, S> {
 
 impl<P: EcDNAProliferation, S: Segregate> RandomSampling for BirthDeath<P, S> {
     fn random_sample(
-        &mut self,
-        strategy: &SamplingStrategy,
+        &self,
         nb_individuals: NbIndividuals,
-        rng: impl Rng + std::clone::Clone,
-    ) {
-        if nb_individuals
-            < self.distribution.get_nminus()
-                + self.distribution.compute_nplus()
-        {
-            self.distribution.sample(nb_individuals, strategy, rng)
-        }
+        rng: &mut impl Rng,
+    ) -> anyhow::Result<EcDNADistribution> {
+        ensure!(
+            nb_individuals
+                < self.distribution.get_nminus()
+                    + self.distribution.compute_nplus()
+        );
+        Ok(self.distribution.into_subsampled(nb_individuals, rng))
     }
 }
 
@@ -709,11 +698,10 @@ where
     S: Segregate,
 {
     fn random_sample(
-        &mut self,
-        _strategy: &SamplingStrategy,
+        &self,
         _nb_individuals: NbIndividuals,
-        _rng: impl Rng,
-    ) {
+        _rng: &mut impl Rng,
+    ) -> anyhow::Result<EcDNADistribution> {
         todo!()
     }
 }
@@ -881,11 +869,10 @@ where
     S: Segregate,
 {
     fn random_sample(
-        &mut self,
-        _strategy: &SamplingStrategy,
+        &self,
         _nb_individuals: NbIndividuals,
-        _rng: impl Rng,
-    ) {
+        _rng: &mut impl Rng,
+    ) -> anyhow::Result<EcDNADistribution> {
         todo!()
     }
 }
@@ -1054,30 +1041,10 @@ where
     S: Segregate,
 {
     fn random_sample(
-        &mut self,
-        strategy: &SamplingStrategy,
-        nb_individuals: NbIndividuals,
-        rng: impl Rng + std::clone::Clone,
-    ) {
-        if self.verbosity > 0 {
-            println!(
-                "Subsampling the ecDNA distribution with {} cells",
-                nb_individuals
-            );
-        }
-        if self.verbosity > 1 {
-            println!("Before {:#?}", self.data.distribution);
-        }
-        if nb_individuals
-            < self.data.distribution.get_nminus()
-                + self.data.distribution.compute_nplus()
-        {
-            self.data.distribution.sample(nb_individuals, strategy, rng);
-        }
-
-        if self.verbosity > 1 {
-            println!("After {:#?}", self.data.distribution);
-        }
+        &self,
+        _nb_individuals: NbIndividuals,
+        _rng: &mut impl Rng,
+    ) -> anyhow::Result<EcDNADistribution> {
         todo!();
         // let (nplus, nminus) = (
         //     self.data.distribution.compute_nplus(),
@@ -1277,30 +1244,10 @@ where
     S: Segregate,
 {
     fn random_sample(
-        &mut self,
-        strategy: &SamplingStrategy,
-        nb_individuals: NbIndividuals,
-        rng: impl Rng + std::clone::Clone,
-    ) {
-        if self.verbosity > 0 {
-            println!(
-                "Subsampling the ecDNA distribution with {} cells",
-                nb_individuals
-            );
-        }
-        if self.verbosity > 1 {
-            println!("Before {:#?}", self.data.distribution);
-        }
-        if nb_individuals
-            < self.data.distribution.get_nminus()
-                + self.data.distribution.compute_nplus()
-        {
-            self.data.distribution.sample(nb_individuals, strategy, rng);
-        }
-
-        if self.verbosity > 1 {
-            println!("After {:#?}", self.data.distribution);
-        }
+        &self,
+        _nb_individuals: NbIndividuals,
+        _rng: &mut impl Rng,
+    ) -> anyhow::Result<EcDNADistribution> {
         todo!();
         // let (nplus, nminus) = (
         //     self.data.distribution.compute_nplus(),
