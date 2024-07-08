@@ -1,42 +1,21 @@
-use std::{fs, path::Path};
-
 use anyhow::ensure;
 use rand::Rng;
-use sosa::{
-    write2file, AdvanceStep, CurrentState, NbIndividuals, NextReaction,
-    ReactionRates,
+use sosa::{AdvanceStep, CurrentState, NextReaction};
+use std::{
+    collections::VecDeque,
+    fs,
+    path::{Path, PathBuf},
 };
 
 use crate::{
-    distribution::EcDNADistribution, dynamics::SaveDynamic,
-    segregation::Segregate, RandomSampling, ToFile,
+    distribution::EcDNADistribution, segregation::Segregate, SavingOptions,
+    Snapshot,
 };
 
 use super::{
-    dynamics::EcDNADynamics,
-    proliferation::{EcDNADeath, EcDNAProliferation},
+    proliferation::{CellDeath, EcDNAProliferation},
     segregation::IsUneven,
 };
-
-fn create_filename_birth_death(rates: &[f32; 4], id: usize) -> String {
-    format!(
-        "{}b0_{}b1_{}d0_{}d1_{}idx",
-        rates[0].to_string().replace('.', "dot"),
-        rates[1].to_string().replace('.', "dot"),
-        rates[2].to_string().replace('.', "dot"),
-        rates[3].to_string().replace('.', "dot"),
-        id,
-    )
-}
-
-fn create_filename_pure_birth(rates: &[f32; 2], id: usize) -> String {
-    format!(
-        "{}b0_{}b1_0d0_0d1_{}idx",
-        rates[0].to_string().replace('.', "dot"),
-        rates[1].to_string().replace('.', "dot"),
-        id,
-    )
-}
 
 #[derive(Debug, Clone, Copy)]
 pub enum EcDNAEvent {
@@ -49,11 +28,34 @@ pub enum EcDNAEvent {
     SymmetricDifferentiation,
 }
 
+fn save(
+    path2dir: &Path,
+    filename: &str,
+    time: f32,
+    distribution: &EcDNADistribution,
+    verbosity: u8,
+) -> anyhow::Result<()> {
+    //! Helper fn to save the ecDNA distribution
+    let cells = distribution.compute_nplus() + *distribution.get_nminus();
+    let path2file = &path2dir.join(format!("{}cells/ecdna/", cells));
+    let mut timepoint = format!("{:.1}", time).replace('.', "dot");
+    timepoint.push_str("years");
+    let mut path2file = path2file.join(timepoint).join(filename);
+    path2file = path2file.with_extension("json");
+    fs::create_dir_all(path2file.parent().unwrap())
+        .expect("Cannot create dir");
+    if verbosity > 0 {
+        println!(
+            "saving state at time {} with {} cells in {:#?}",
+            time, cells, path2file
+        );
+    }
+    distribution.save(&path2file, verbosity)?;
+    Ok(())
+}
+
 /// The simulation of the [`EcDNADistribution`] according to a pure-birth
 /// stochastic process.
-///
-/// The distribution can be saved during or at the end of the simulation using
-/// [`Self::save`].
 #[derive(Debug, Clone)]
 pub struct PureBirth<P, S>
 where
@@ -63,6 +65,10 @@ where
     distribution: EcDNADistribution,
     proliferation: P,
     segregation: S,
+    time: f32,
+    snapshots: VecDeque<Snapshot>,
+    path2dir: PathBuf,
+    filename: String,
     verbosity: u8,
 }
 
@@ -75,10 +81,21 @@ where
         distribution: EcDNADistribution,
         proliferation: P,
         segregation: S,
+        time: f32,
+        saving_options: SavingOptions,
         verbosity: u8,
     ) -> anyhow::Result<Self> {
         ensure!(!distribution.is_empty());
-        Ok(Self { distribution, proliferation, segregation, verbosity })
+        Ok(Self {
+            distribution,
+            proliferation,
+            segregation,
+            time,
+            path2dir: saving_options.path2dir,
+            filename: saving_options.filename,
+            snapshots: saving_options.snapshots,
+            verbosity,
+        })
     }
 
     pub fn get_mut_ecdna_distribution(&mut self) -> &mut EcDNADistribution {
@@ -90,46 +107,6 @@ where
     }
 }
 
-impl<P, S> RandomSampling for PureBirth<P, S>
-where
-    P: EcDNAProliferation,
-    S: Segregate,
-{
-    fn random_sample(
-        &self,
-        nb_individuals: NbIndividuals,
-        rng: &mut impl Rng,
-    ) -> anyhow::Result<EcDNADistribution> {
-        ensure!(
-            nb_individuals
-                < self.distribution.get_nminus()
-                    + self.distribution.compute_nplus()
-        );
-        Ok(self.distribution.into_subsampled(nb_individuals, rng))
-    }
-}
-
-impl<P, S> ToFile<2> for PureBirth<P, S>
-where
-    P: EcDNAProliferation,
-    S: Segregate,
-{
-    fn save(
-        &self,
-        path2dir: &Path,
-        rates: &ReactionRates<2>,
-        id: usize,
-    ) -> anyhow::Result<()> {
-        //! Save the ecDNA distribution
-        let path2ecdna = path2dir.join("ecdna");
-        fs::create_dir_all(&path2ecdna).expect("Cannot create dir");
-        let filename = create_filename_pure_birth(&rates.0, id);
-        let path2file = path2ecdna.join(filename).with_extension("json");
-        self.distribution.save(&path2file, self.verbosity)?;
-        Ok(())
-    }
-}
-
 impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<2> for PureBirth<P, S> {
     type Reaction = EcDNAEvent;
 
@@ -138,6 +115,44 @@ impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<2> for PureBirth<P, S> {
         reaction: NextReaction<Self::Reaction>,
         rng: &mut impl Rng,
     ) {
+        while !self.snapshots.is_empty()
+            && self.snapshots.iter().any(|s| self.time >= s.time)
+        {
+            let snapshot = self.snapshots.pop_front().unwrap();
+            if self.verbosity > 0 {
+                println!(
+                    "saving state for timepoint at time {:#?} at simulation's time {} with {} cells",
+                    snapshot.time, self.time, snapshot.cells2sample
+                );
+            }
+            let cells = (*self.distribution.get_nminus()
+                + self.distribution.compute_nplus())
+                as usize;
+
+            if snapshot.cells2sample == cells || cells < snapshot.cells2sample
+            {
+                save(
+                    &self.path2dir,
+                    &self.filename,
+                    snapshot.time,
+                    &self.distribution,
+                    self.verbosity,
+                )
+                .expect("cannot save snapshot");
+            } else {
+                save(
+                    &self.path2dir,
+                    &self.filename,
+                    snapshot.time,
+                    &self
+                        .distribution
+                        .into_subsampled(snapshot.cells2sample as u64, rng),
+                    self.verbosity,
+                )
+                .expect("cannot save snapshot");
+            }
+        }
+
         match reaction.event {
             EcDNAEvent::ProliferateNPlus => {
                 if let Ok(is_uneven) = self.proliferation.increase_nplus(
@@ -175,6 +190,7 @@ impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<2> for PureBirth<P, S> {
         if self.verbosity > 1 {
             println!("Distribution {:#?}", self.distribution);
         }
+        self.time += reaction.time;
     }
 
     fn update_state(&self, state: &mut CurrentState<2>) {
@@ -189,340 +205,8 @@ impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<2> for PureBirth<P, S> {
     }
 }
 
-/// A pure-birth stochastic process tracking the evolution of the
-/// [`EcDNADynamics`] over time.
-#[derive(Debug, Clone)]
-pub struct PureBirthNMinusNPlus<P: EcDNAProliferation, S: Segregate> {
-    data: EcDNADynamics,
-    proliferation: P,
-    segregation: S,
-    verbosity: u8,
-}
-
-impl<P: EcDNAProliferation, S: Segregate> PureBirthNMinusNPlus<P, S> {
-    pub fn with_distribution(
-        proliferation: P,
-        segregation: S,
-        distribution: EcDNADistribution,
-        max_iter: usize,
-        timepoints: &[f32],
-        initial_time: f32,
-        verbosity: u8,
-    ) -> anyhow::Result<Self> {
-        //! Create a pure-birth process from a non-empty `distribution`
-        //! tracking the nminus and nplus cells over time.
-        //!
-        //! ## Error
-        //! Returns error when the distribution is empty.
-        ensure!(!distribution.is_empty());
-        Ok(Self {
-            data: EcDNADynamics::new(
-                distribution,
-                max_iter,
-                timepoints,
-                initial_time,
-            ),
-            proliferation,
-            segregation,
-            verbosity,
-        })
-    }
-}
-
-impl<P, S> RandomSampling for PureBirthNMinusNPlus<P, S>
-where
-    P: EcDNAProliferation,
-    S: Segregate,
-{
-    fn random_sample(
-        &self,
-        _nb_individuals: NbIndividuals,
-        _rng: &mut impl Rng,
-    ) -> anyhow::Result<EcDNADistribution> {
-        todo!();
-        // let (nplus, nminus) = (
-        //     self.data.distribution.compute_nplus(),
-        //     *self.data.distribution.get_nminus(),
-        // );
-        // self.data.nplus.push(nplus);
-        // self.data.nminus.push(nminus);
-        // if self.verbosity > 1 {
-        //     println!(
-        //         "NPlus/NMinus after subsampling {}, {}",
-        //         self.data.nplus.last().unwrap(),
-        //         self.data.nminus.last().unwrap()
-        //     );
-        // }
-    }
-}
-
-impl<P, S> ToFile<2> for PureBirthNMinusNPlus<P, S>
-where
-    P: EcDNAProliferation,
-    S: Segregate,
-{
-    fn save(
-        &self,
-        path2dir: &Path,
-        rates: &ReactionRates<2>,
-        id: usize,
-    ) -> anyhow::Result<()> {
-        fs::create_dir_all(path2dir).expect("Cannot create dir");
-        let filename = create_filename_pure_birth(&rates.0, id);
-        self.data.save(path2dir, &filename, self.verbosity)?;
-        Ok(())
-    }
-}
-
-impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<2>
-    for PureBirthNMinusNPlus<P, S>
-{
-    type Reaction = EcDNAEvent;
-
-    fn advance_step(
-        &mut self,
-        reaction: NextReaction<Self::Reaction>,
-        rng: &mut impl Rng,
-    ) {
-        match reaction.event {
-            EcDNAEvent::ProliferateNPlus => {
-                if let Ok(is_uneven) = self.proliferation.increase_nplus(
-                    &mut self.data.distribution,
-                    &self.segregation,
-                    rng,
-                    self.verbosity,
-                ) {
-                    match is_uneven {
-                        IsUneven::False => {
-                            if self.verbosity > 1 {
-                                println!("IsUneven is false");
-                            }
-                        }
-                        IsUneven::True => {
-                            if self.verbosity > 1 {
-                                println!("IsUneven is true");
-                            }
-                        }
-                        IsUneven::TrueWithoutNMinusIncrease => {
-                            if self.verbosity > 1 {
-                                println!(
-                                    "IsUneven is true but w/o nminus increase"
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-            EcDNAEvent::ProliferateNMinus => {
-                self.proliferation
-                    .increase_nminus(&mut self.data.distribution);
-            }
-            _ => unreachable!(),
-        };
-        if self.verbosity > 1 {
-            println!("Distribution {:#?}", self.data.distribution);
-        }
-
-        // store absolute time
-        self.data.time += reaction.time;
-
-        match self.data.is_time_to_save(self.data.time, self.verbosity) {
-            SaveDynamic::DoNotSave => {}
-            SaveDynamic::SaveNewOne => {
-                self.data.update_nplus_nminus(
-                    self.data.distribution.compute_nplus(),
-                    *self.data.distribution.get_nminus(),
-                );
-            }
-            SaveDynamic::SavePreviousOne { times } => {
-                for _ in 0..times {
-                    self.data.update_nplus_nminus(
-                        self.data.distribution.compute_nplus(),
-                        *self.data.distribution.get_nminus(),
-                    );
-                }
-            }
-        };
-    }
-
-    fn update_state(&self, state: &mut CurrentState<2>) {
-        state.population[0] = *self.data.distribution.get_nminus();
-        state.population[1] = self.data.distribution.compute_nplus();
-        if self.verbosity > 1 {
-            println!(
-                "Update iteration after process update, population: {:#?}",
-                state.population
-            );
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct PureBirthMean<P: EcDNAProliferation, S: Segregate> {
-    data: EcDNADynamics,
-    mean: Vec<f32>,
-    proliferation: P,
-    segregation: S,
-    verbosity: u8,
-}
-
-impl<P: EcDNAProliferation, S: Segregate> PureBirthMean<P, S> {
-    pub fn new(
-        proliferation: P,
-        segregation: S,
-        distribution: EcDNADistribution,
-        max_iter: usize,
-        timepoints: &[f32],
-        initial_time: f32,
-        verbosity: u8,
-    ) -> anyhow::Result<Self> {
-        ensure!(!distribution.is_empty());
-        let mut mean = Vec::with_capacity(max_iter);
-        mean.push(distribution.compute_mean());
-        Ok(Self {
-            data: EcDNADynamics::new(
-                distribution,
-                max_iter,
-                timepoints,
-                initial_time,
-            ),
-            mean,
-            proliferation,
-            segregation,
-            verbosity,
-        })
-    }
-}
-
-impl<P, S> RandomSampling for PureBirthMean<P, S>
-where
-    P: EcDNAProliferation,
-    S: Segregate,
-{
-    fn random_sample(
-        &self,
-        _nb_individuals: NbIndividuals,
-        _rng: &mut impl Rng,
-    ) -> anyhow::Result<EcDNADistribution> {
-        todo!()
-    }
-}
-
-impl<P, S> ToFile<2> for PureBirthMean<P, S>
-where
-    P: EcDNAProliferation,
-    S: Segregate,
-{
-    fn save(
-        &self,
-        path2dir: &Path,
-        rates: &ReactionRates<2>,
-        id: usize,
-    ) -> anyhow::Result<()> {
-        fs::create_dir_all(path2dir).expect("Cannot create dir");
-
-        let filename = create_filename_pure_birth(&rates.0, id);
-        if self.verbosity > 1 {
-            println!("Saving data in {:#?}", path2dir)
-        }
-
-        self.data.save(path2dir, &filename, self.verbosity)?;
-
-        let mut mean = path2dir.join("mean").join(filename);
-        mean.set_extension("csv");
-        if self.verbosity > 1 {
-            println!("Mean data in {:#?}", mean)
-        }
-        write2file(&self.mean, &mean, None, false)?;
-        Ok(())
-    }
-}
-
-impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<2>
-    for PureBirthMean<P, S>
-{
-    type Reaction = EcDNAEvent;
-
-    fn advance_step(
-        &mut self,
-        reaction: NextReaction<Self::Reaction>,
-        rng: &mut impl Rng,
-    ) {
-        match reaction.event {
-            EcDNAEvent::ProliferateNPlus => {
-                if let Ok(is_uneven) = self.proliferation.increase_nplus(
-                    &mut self.data.distribution,
-                    &self.segregation,
-                    rng,
-                    self.verbosity,
-                ) {
-                    match is_uneven {
-                        IsUneven::False => {
-                            if self.verbosity > 1 {
-                                println!("IsUneven is false");
-                            }
-                        }
-                        IsUneven::True => {
-                            if self.verbosity > 1 {
-                                println!("IsUneven is true");
-                            }
-                        }
-                        IsUneven::TrueWithoutNMinusIncrease => {
-                            if self.verbosity > 1 {
-                                println!(
-                                    "IsUneven is true but w/o nminus increase"
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-            EcDNAEvent::ProliferateNMinus => {
-                self.proliferation
-                    .increase_nminus(&mut self.data.distribution);
-            }
-            _ => unreachable!(),
-        };
-        if self.verbosity > 1 {
-            println!("Distribution {:#?}", self.data.distribution);
-        }
-
-        // store absolute time
-        self.data.time += reaction.time;
-
-        match self.data.is_time_to_save(self.data.time, self.verbosity) {
-            SaveDynamic::DoNotSave => {}
-            SaveDynamic::SaveNewOne => {
-                self.mean.push(self.data.distribution.compute_mean());
-                self.data.update_nplus_nminus(
-                    self.data.distribution.compute_nplus(),
-                    *self.data.distribution.get_nminus(),
-                );
-            }
-            SaveDynamic::SavePreviousOne { times } => {
-                let mean = self.data.distribution.compute_mean();
-                for _ in 0..times {
-                    self.mean.push(mean);
-                    self.data.update_nplus_nminus(
-                        self.data.distribution.compute_nplus(),
-                        *self.data.distribution.get_nminus(),
-                    );
-                }
-            }
-        };
-    }
-
-    fn update_state(&self, state: &mut CurrentState<2>) {
-        state.population[0] = *self.data.distribution.get_nminus();
-        state.population[1] = self.data.distribution.compute_nplus();
-    }
-}
-
 /// The simulation of the [`EcDNADistribution`] according to a birth-death
 /// stochastic process.
-///
-/// The distribution can be saved during or at the end of the simulation using
-/// [`Self::save`].
 #[derive(Debug, Clone)]
 pub struct BirthDeath<P, S>
 where
@@ -532,7 +216,11 @@ where
     distribution: EcDNADistribution,
     proliferation: P,
     segregation: S,
-    death: EcDNADeath,
+    death: CellDeath,
+    time: f32,
+    snapshots: VecDeque<Snapshot>,
+    path2dir: PathBuf,
+    filename: String,
     verbosity: u8,
 }
 
@@ -545,11 +233,23 @@ where
         distribution: EcDNADistribution,
         proliferation: P,
         segregation: S,
-        death: EcDNADeath,
+        death: CellDeath,
+        time: f32,
+        saving_options: SavingOptions,
         verbosity: u8,
     ) -> anyhow::Result<Self> {
         ensure!(!distribution.is_empty());
-        Ok(Self { distribution, proliferation, segregation, death, verbosity })
+        Ok(Self {
+            distribution,
+            proliferation,
+            segregation,
+            death,
+            time,
+            path2dir: saving_options.path2dir,
+            filename: saving_options.filename,
+            snapshots: saving_options.snapshots,
+            verbosity,
+        })
     }
 
     pub fn get_mut_ecdna_distribution(&mut self) -> &mut EcDNADistribution {
@@ -569,6 +269,42 @@ impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<4> for BirthDeath<P, S> {
         reaction: NextReaction<Self::Reaction>,
         rng: &mut impl Rng,
     ) {
+        while !self.snapshots.is_empty()
+            && self.snapshots.iter().any(|s| self.time >= s.time)
+        {
+            let snapshot = self.snapshots.pop_front().unwrap();
+            if self.verbosity > 0 {
+                println!(
+                    "saving state for timepoint at time {:#?} at simulation's time {} with {} cells",
+                    snapshot.time, self.time, snapshot.cells2sample
+                );
+            }
+            let cells = (*self.distribution.get_nminus()
+                + self.distribution.compute_nplus())
+                as usize;
+
+            if snapshot.cells2sample == cells {
+                save(
+                    &self.path2dir,
+                    &self.filename,
+                    snapshot.time,
+                    &self.distribution,
+                    self.verbosity,
+                )
+                .expect("cannot save snapshot");
+            } else {
+                save(
+                    &self.path2dir,
+                    &self.filename,
+                    snapshot.time,
+                    &self
+                        .distribution
+                        .into_subsampled(snapshot.cells2sample as u64, rng),
+                    self.verbosity,
+                )
+                .expect("cannot save snapshot");
+            }
+        }
         match reaction.event {
             EcDNAEvent::ProliferateNPlus => {
                 if let Ok(is_uneven) = self.proliferation.increase_nplus(
@@ -614,6 +350,7 @@ impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<4> for BirthDeath<P, S> {
         if self.verbosity > 1 {
             println!("Distribution {:#?}", self.distribution);
         }
+        self.time += reaction.time;
     }
 
     fn update_state(&self, state: &mut CurrentState<4>) {
@@ -621,792 +358,6 @@ impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<4> for BirthDeath<P, S> {
         state.population[1] = self.distribution.compute_nplus();
         state.population[2] = *self.distribution.get_nminus();
         state.population[3] = self.distribution.compute_nplus();
-    }
-}
-
-impl<P: EcDNAProliferation, S: Segregate> ToFile<4> for BirthDeath<P, S> {
-    fn save(
-        &self,
-        path2dir: &Path,
-        rates: &ReactionRates<4>,
-        id: usize,
-    ) -> anyhow::Result<()> {
-        //! Save the ecDNA distribution
-        let path2ecdna = path2dir.join("ecdna");
-        let filename = create_filename_birth_death(&rates.0, id);
-        fs::create_dir_all(&path2ecdna).expect("Cannot create dir");
-        let path2file = path2ecdna.join(filename).with_extension("json");
-        self.distribution.save(&path2file, self.verbosity)?;
-        Ok(())
-    }
-}
-
-impl<P: EcDNAProliferation, S: Segregate> RandomSampling for BirthDeath<P, S> {
-    fn random_sample(
-        &self,
-        nb_individuals: NbIndividuals,
-        rng: &mut impl Rng,
-    ) -> anyhow::Result<EcDNADistribution> {
-        ensure!(
-            nb_individuals
-                < self.distribution.get_nminus()
-                    + self.distribution.compute_nplus()
-        );
-        Ok(self.distribution.into_subsampled(nb_individuals, rng))
-    }
-}
-
-/// A birth-death stochastic process tracking the evolution of the
-/// [`EcDNADynamics`] per iterations.
-#[derive(Debug, Clone)]
-pub struct BirthDeathNMinusNPlus<P: EcDNAProliferation, S: Segregate> {
-    data: EcDNADynamics,
-    proliferation: P,
-    segregation: S,
-    death: EcDNADeath,
-    verbosity: u8,
-}
-
-impl<P: EcDNAProliferation, S: Segregate> BirthDeathNMinusNPlus<P, S> {
-    pub fn with_distribution(
-        proliferation: P,
-        segregation: S,
-        distribution: EcDNADistribution,
-        max_iter: usize,
-        initial_time: f32,
-        timepoints: &[f32],
-        verbosity: u8,
-    ) -> anyhow::Result<Self> {
-        ensure!(!distribution.is_empty());
-        Ok(Self {
-            data: EcDNADynamics::new(
-                distribution,
-                max_iter,
-                timepoints,
-                initial_time,
-            ),
-            proliferation,
-            death: EcDNADeath,
-            segregation,
-            verbosity,
-        })
-    }
-}
-impl<P, S> RandomSampling for BirthDeathNMinusNPlus<P, S>
-where
-    P: EcDNAProliferation,
-    S: Segregate,
-{
-    fn random_sample(
-        &self,
-        _nb_individuals: NbIndividuals,
-        _rng: &mut impl Rng,
-    ) -> anyhow::Result<EcDNADistribution> {
-        todo!()
-    }
-}
-
-impl<P, S> ToFile<4> for BirthDeathNMinusNPlus<P, S>
-where
-    P: EcDNAProliferation,
-    S: Segregate,
-{
-    fn save(
-        &self,
-        path2dir: &Path,
-        rates: &ReactionRates<4>,
-        id: usize,
-    ) -> anyhow::Result<()> {
-        fs::create_dir_all(path2dir).expect("Cannot create dir");
-
-        let filename = create_filename_birth_death(&rates.0, id);
-        if self.verbosity > 1 {
-            println!("Saving data in {:#?}", path2dir)
-        }
-
-        self.data.save(path2dir, &filename, self.verbosity)?;
-
-        Ok(())
-    }
-}
-
-impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<4>
-    for BirthDeathNMinusNPlus<P, S>
-{
-    type Reaction = EcDNAEvent;
-    fn advance_step(
-        &mut self,
-        reaction: NextReaction<Self::Reaction>,
-        rng: &mut impl Rng,
-    ) {
-        match reaction.event {
-            EcDNAEvent::ProliferateNPlus => {
-                if let Ok(is_uneven) = self.proliferation.increase_nplus(
-                    &mut self.data.distribution,
-                    &self.segregation,
-                    rng,
-                    self.verbosity,
-                ) {
-                    match is_uneven {
-                        IsUneven::False => {
-                            if self.verbosity > 1 {
-                                println!("IsUneven is false");
-                            }
-                        }
-                        IsUneven::True => {
-                            if self.verbosity > 1 {
-                                println!("IsUneven is true");
-                            }
-                        }
-                        IsUneven::TrueWithoutNMinusIncrease => {
-                            if self.verbosity > 1 {
-                                println!(
-                                    "IsUneven is true but w/o nminus increase"
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-            EcDNAEvent::ProliferateNMinus => {
-                self.proliferation
-                    .increase_nminus(&mut self.data.distribution);
-            }
-            EcDNAEvent::DeathNMinus => {
-                self.death.decrease_nminus(&mut self.data.distribution)
-            }
-
-            EcDNAEvent::DeathNPlus => self.death.decrease_nplus(
-                &mut self.data.distribution,
-                rng,
-                self.verbosity,
-            ),
-
-            _ => unreachable!(),
-        };
-        if self.verbosity > 1 {
-            println!("Distribution {:#?}", self.data.distribution);
-        }
-
-        // store absolute time
-        self.data.time += reaction.time;
-
-        match self.data.is_time_to_save(self.data.time, self.verbosity) {
-            SaveDynamic::DoNotSave => {}
-            SaveDynamic::SaveNewOne => {
-                self.data.update_nplus_nminus(
-                    self.data.distribution.compute_nplus(),
-                    *self.data.distribution.get_nminus(),
-                );
-            }
-            SaveDynamic::SavePreviousOne { times } => {
-                for _ in 0..times {
-                    self.data.update_nplus_nminus(
-                        self.data.distribution.compute_nplus(),
-                        *self.data.distribution.get_nminus(),
-                    );
-                }
-            }
-        };
-    }
-
-    fn update_state(&self, state: &mut CurrentState<4>) {
-        state.population[0] = *self.data.distribution.get_nminus();
-        state.population[1] = self.data.distribution.compute_nplus();
-        state.population[2] = *self.data.distribution.get_nminus();
-        state.population[3] = self.data.distribution.compute_nplus();
-        if self.verbosity > 1 {
-            println!(
-                "Update iteration after process update, population: {:#?}",
-                state.population
-            );
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct BirthDeathMean<P: EcDNAProliferation, S: Segregate> {
-    data: EcDNADynamics,
-    mean: Vec<f32>,
-    proliferation: P,
-    segregation: S,
-    death: EcDNADeath,
-    verbosity: u8,
-}
-
-impl<P: EcDNAProliferation, S: Segregate> BirthDeathMean<P, S> {
-    pub fn new(
-        proliferation: P,
-        segregation: S,
-        distribution: EcDNADistribution,
-        max_iter: usize,
-        timepoints: &[f32],
-        initial_time: f32,
-        verbosity: u8,
-    ) -> anyhow::Result<Self> {
-        ensure!(!distribution.is_empty());
-        let mut mean = Vec::with_capacity(max_iter);
-        mean.push(distribution.compute_mean());
-        Ok(Self {
-            data: EcDNADynamics::new(
-                distribution,
-                max_iter,
-                timepoints,
-                initial_time,
-            ),
-            proliferation,
-            death: EcDNADeath,
-            mean,
-            segregation,
-            verbosity,
-        })
-    }
-}
-
-impl<P, S> RandomSampling for BirthDeathMean<P, S>
-where
-    P: EcDNAProliferation,
-    S: Segregate,
-{
-    fn random_sample(
-        &self,
-        _nb_individuals: NbIndividuals,
-        _rng: &mut impl Rng,
-    ) -> anyhow::Result<EcDNADistribution> {
-        todo!()
-    }
-}
-
-impl<P, S> ToFile<4> for BirthDeathMean<P, S>
-where
-    P: EcDNAProliferation,
-    S: Segregate,
-{
-    fn save(
-        &self,
-        path2dir: &Path,
-        rates: &ReactionRates<4>,
-        id: usize,
-    ) -> anyhow::Result<()> {
-        fs::create_dir_all(path2dir).expect("Cannot create dir");
-
-        let filename = create_filename_birth_death(&rates.0, id);
-        if self.verbosity > 1 {
-            println!("Saving data in {:#?}", path2dir)
-        }
-
-        self.data.save(path2dir, &filename, self.verbosity)?;
-
-        let mut mean = path2dir.join("mean").join(filename);
-        mean.set_extension("csv");
-        if self.verbosity > 1 {
-            println!("Mean data in {:#?}", mean)
-        }
-        write2file(&self.mean, &mean, None, false)?;
-        Ok(())
-    }
-}
-
-impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<4>
-    for BirthDeathMean<P, S>
-{
-    type Reaction = EcDNAEvent;
-
-    fn advance_step(
-        &mut self,
-        reaction: NextReaction<Self::Reaction>,
-        rng: &mut impl Rng,
-    ) {
-        match reaction.event {
-            EcDNAEvent::ProliferateNPlus => {
-                if let Ok(is_uneven) = self.proliferation.increase_nplus(
-                    &mut self.data.distribution,
-                    &self.segregation,
-                    rng,
-                    self.verbosity,
-                ) {
-                    match is_uneven {
-                        IsUneven::False => {
-                            if self.verbosity > 1 {
-                                println!("IsUneven is false");
-                            }
-                        }
-                        IsUneven::True => {
-                            if self.verbosity > 1 {
-                                println!("IsUneven is true");
-                            }
-                        }
-                        IsUneven::TrueWithoutNMinusIncrease => {
-                            if self.verbosity > 1 {
-                                println!(
-                                    "IsUneven is true but w/o nminus increase"
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-            EcDNAEvent::ProliferateNMinus => {
-                self.proliferation
-                    .increase_nminus(&mut self.data.distribution);
-            }
-            EcDNAEvent::DeathNMinus => {
-                self.death.decrease_nminus(&mut self.data.distribution)
-            }
-            EcDNAEvent::DeathNPlus => self.death.decrease_nplus(
-                &mut self.data.distribution,
-                rng,
-                self.verbosity,
-            ),
-            _ => unreachable!(),
-        };
-        if self.verbosity > 1 {
-            println!("Distribution {:#?}", self.data.distribution);
-        }
-
-        // store absolute time
-        self.data.time += reaction.time;
-
-        match self.data.is_time_to_save(self.data.time, self.verbosity) {
-            SaveDynamic::DoNotSave => {}
-            SaveDynamic::SaveNewOne => {
-                self.mean.push(self.data.distribution.compute_mean());
-                self.data.update_nplus_nminus(
-                    self.data.distribution.compute_nplus(),
-                    *self.data.distribution.get_nminus(),
-                );
-            }
-            SaveDynamic::SavePreviousOne { times } => {
-                let mean = self.data.distribution.compute_mean();
-                for _ in 0..times {
-                    self.mean.push(mean);
-                    self.data.update_nplus_nminus(
-                        self.data.distribution.compute_nplus(),
-                        *self.data.distribution.get_nminus(),
-                    );
-                }
-            }
-        };
-    }
-
-    fn update_state(&self, state: &mut CurrentState<4>) {
-        state.population[0] = *self.data.distribution.get_nminus();
-        state.population[1] = self.data.distribution.compute_nplus();
-        state.population[2] = *self.data.distribution.get_nminus();
-        state.population[3] = self.data.distribution.compute_nplus();
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct BirthDeathMeanVariance<P: EcDNAProliferation, S: Segregate> {
-    data: EcDNADynamics,
-    mean: Vec<f32>,
-    variance: Vec<f32>,
-    proliferation: P,
-    segregation: S,
-    death: EcDNADeath,
-    verbosity: u8,
-}
-
-impl<P: EcDNAProliferation, S: Segregate> BirthDeathMeanVariance<P, S> {
-    pub fn new(
-        time: f32,
-        proliferation: P,
-        segregation: S,
-        distribution: EcDNADistribution,
-        max_iter: usize,
-        timepoints: &[f32],
-        verbosity: u8,
-    ) -> anyhow::Result<Self> {
-        ensure!(!distribution.is_empty());
-        let mut mean = Vec::with_capacity(max_iter);
-        mean.push(distribution.compute_mean());
-        let mut variance = Vec::with_capacity(max_iter);
-        variance.push(distribution.compute_variance());
-        Ok(Self {
-            data: EcDNADynamics::new(distribution, max_iter, timepoints, time),
-            mean,
-            variance,
-            proliferation,
-            death: EcDNADeath,
-            segregation,
-            verbosity,
-        })
-    }
-}
-
-impl<P, S> RandomSampling for BirthDeathMeanVariance<P, S>
-where
-    P: EcDNAProliferation,
-    S: Segregate,
-{
-    fn random_sample(
-        &self,
-        _nb_individuals: NbIndividuals,
-        _rng: &mut impl Rng,
-    ) -> anyhow::Result<EcDNADistribution> {
-        todo!();
-        // let (nplus, nminus) = (
-        //     self.data.distribution.compute_nplus(),
-        //     *self.data.distribution.get_nminus(),
-        // );
-        // self.data.nplus.push(nplus);
-        // self.data.nminus.push(nminus);
-        // self.data.time.push(0f32);
-        // self.mean.push(self.data.distribution.compute_mean());
-        // self.variance.push(self.data.distribution.compute_variance());
-
-        // if self.verbosity > 1 {
-        //     println!(
-        //         "NPlus/NMinus after subsampling {}, {}",
-        //         self.data.nplus.last().unwrap(),
-        //         self.data.nminus.last().unwrap()
-        //     );
-        // }
-    }
-}
-
-impl<P, S> ToFile<4> for BirthDeathMeanVariance<P, S>
-where
-    P: EcDNAProliferation,
-    S: Segregate,
-{
-    fn save(
-        &self,
-        path2dir: &Path,
-        rates: &ReactionRates<4>,
-        id: usize,
-    ) -> anyhow::Result<()> {
-        fs::create_dir_all(path2dir).expect("Cannot create dir");
-
-        let filename = create_filename_birth_death(&rates.0, id);
-        if self.verbosity > 1 {
-            println!("Saving data in {:#?}", path2dir)
-        }
-
-        self.data.save(path2dir, &filename, self.verbosity)?;
-
-        let mut mean = path2dir.join("mean").join(filename.clone());
-        mean.set_extension("csv");
-        if self.verbosity > 1 {
-            println!("Mean data in {:#?}", mean)
-        }
-        write2file(&self.mean, &mean, None, false)?;
-
-        let mut variance = path2dir.join("variance").join(filename);
-        variance.set_extension("csv");
-        if self.verbosity > 1 {
-            println!("Variance data in {:#?}", path2dir)
-        }
-        write2file(&self.variance, &variance, None, false)?;
-        Ok(())
-    }
-}
-
-impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<4>
-    for BirthDeathMeanVariance<P, S>
-{
-    type Reaction = EcDNAEvent;
-
-    fn advance_step(
-        &mut self,
-        reaction: NextReaction<Self::Reaction>,
-        rng: &mut impl Rng,
-    ) {
-        match reaction.event {
-            EcDNAEvent::ProliferateNPlus => {
-                if let Ok(is_uneven) = self.proliferation.increase_nplus(
-                    &mut self.data.distribution,
-                    &self.segregation,
-                    rng,
-                    self.verbosity,
-                ) {
-                    match is_uneven {
-                        IsUneven::False => {
-                            if self.verbosity > 1 {
-                                println!("IsUneven is false");
-                            }
-                        }
-                        IsUneven::True => {
-                            if self.verbosity > 1 {
-                                println!("IsUneven is true");
-                            }
-                        }
-                        IsUneven::TrueWithoutNMinusIncrease => {
-                            if self.verbosity > 1 {
-                                println!(
-                                    "IsUneven is true but w/o nminus increase"
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-            EcDNAEvent::ProliferateNMinus => {
-                self.proliferation
-                    .increase_nminus(&mut self.data.distribution);
-            }
-            EcDNAEvent::DeathNMinus => {
-                self.death.decrease_nminus(&mut self.data.distribution)
-            }
-            EcDNAEvent::DeathNPlus => self.death.decrease_nplus(
-                &mut self.data.distribution,
-                rng,
-                self.verbosity,
-            ),
-            _ => unreachable!(),
-        };
-        if self.verbosity > 1 {
-            println!("Distribution {:#?}", self.data.distribution);
-        }
-
-        // store absolute time
-        self.data.time += reaction.time;
-
-        match self.data.is_time_to_save(self.data.time, self.verbosity) {
-            SaveDynamic::DoNotSave => {}
-            SaveDynamic::SaveNewOne => {
-                self.mean.push(self.data.distribution.compute_mean());
-                self.variance.push(self.data.distribution.compute_variance());
-                self.data.update_nplus_nminus(
-                    self.data.distribution.compute_nplus(),
-                    *self.data.distribution.get_nminus(),
-                );
-            }
-            SaveDynamic::SavePreviousOne { times } => {
-                let mean = self.data.distribution.compute_mean();
-                let variance = self.data.distribution.compute_variance();
-                for _ in 0..times {
-                    self.mean.push(mean);
-                    self.variance.push(variance);
-                    self.data.update_nplus_nminus(
-                        self.data.distribution.compute_nplus(),
-                        *self.data.distribution.get_nminus(),
-                    );
-                }
-            }
-        };
-    }
-
-    fn update_state(&self, state: &mut CurrentState<4>) {
-        state.population[0] = *self.data.distribution.get_nminus();
-        state.population[1] = self.data.distribution.compute_nplus();
-        state.population[2] = *self.data.distribution.get_nminus();
-        state.population[3] = self.data.distribution.compute_nplus();
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct BirthDeathMeanVarianceEntropy<P: EcDNAProliferation, S: Segregate> {
-    data: EcDNADynamics,
-    mean: Vec<f32>,
-    variance: Vec<f32>,
-    entropy: Vec<f32>,
-    proliferation: P,
-    segregation: S,
-    death: EcDNADeath,
-    verbosity: u8,
-}
-
-impl<P: EcDNAProliferation, S: Segregate> BirthDeathMeanVarianceEntropy<P, S> {
-    pub fn new(
-        time: f32,
-        proliferation: P,
-        segregation: S,
-        distribution: EcDNADistribution,
-        max_iter: usize,
-        timepoints: &[f32],
-        verbosity: u8,
-    ) -> anyhow::Result<Self> {
-        ensure!(!distribution.is_empty());
-        let mut mean = Vec::with_capacity(max_iter);
-        mean.push(distribution.compute_mean());
-        let mut variance = Vec::with_capacity(max_iter);
-        variance.push(distribution.compute_variance());
-        let mut entropy = Vec::with_capacity(max_iter);
-        entropy.push(distribution.compute_entropy());
-        Ok(Self {
-            data: EcDNADynamics::new(distribution, max_iter, timepoints, time),
-            mean,
-            variance,
-            entropy,
-            proliferation,
-            death: EcDNADeath,
-            segregation,
-            verbosity,
-        })
-    }
-}
-
-impl<P, S> RandomSampling for BirthDeathMeanVarianceEntropy<P, S>
-where
-    P: EcDNAProliferation,
-    S: Segregate,
-{
-    fn random_sample(
-        &self,
-        _nb_individuals: NbIndividuals,
-        _rng: &mut impl Rng,
-    ) -> anyhow::Result<EcDNADistribution> {
-        todo!();
-        // let (nplus, nminus) = (
-        //     self.data.distribution.compute_nplus(),
-        //     *self.data.distribution.get_nminus(),
-        // );
-        // self.data.nplus.push(nplus);
-        // self.data.nminus.push(nminus);
-        // self.data.time.push(0f32);
-        // self.mean.push(self.data.distribution.compute_mean());
-        // self.variance.push(self.data.distribution.compute_variance());
-        // self.entropy.push(self.data.distribution.compute_entropy());
-
-        // if self.verbosity > 1 {
-        //     println!(
-        //         "NPlus/NMinus after subsampling {}, {}",
-        //         self.data.nplus.last().unwrap(),
-        //         self.data.nminus.last().unwrap()
-        //     );
-        // }
-    }
-}
-
-impl<P, S> ToFile<4> for BirthDeathMeanVarianceEntropy<P, S>
-where
-    P: EcDNAProliferation,
-    S: Segregate,
-{
-    fn save(
-        &self,
-        path2dir: &Path,
-        rates: &ReactionRates<4>,
-        id: usize,
-    ) -> anyhow::Result<()> {
-        fs::create_dir_all(path2dir).expect("Cannot create dir");
-
-        let filename = create_filename_birth_death(&rates.0, id);
-        if self.verbosity > 1 {
-            println!("Saving data in {:#?}", path2dir)
-        }
-
-        self.data.save(path2dir, &filename, self.verbosity)?;
-
-        let mut mean = path2dir.join("mean").join(filename.clone());
-        mean.set_extension("csv");
-        if self.verbosity > 1 {
-            println!("Mean data in {:#?}", mean)
-        }
-        write2file(&self.mean, &mean, None, false)?;
-
-        let mut variance = path2dir.join("variance").join(filename.clone());
-        variance.set_extension("csv");
-        if self.verbosity > 1 {
-            println!("Variance data in {:#?}", path2dir)
-        }
-        write2file(&self.variance, &variance, None, false)?;
-
-        let mut entropy = path2dir.join("entropy").join(filename);
-        entropy.set_extension("csv");
-        if self.verbosity > 1 {
-            println!("entropy data in {:#?}", path2dir)
-        }
-        write2file(&self.entropy, &entropy, None, false)?;
-        Ok(())
-    }
-}
-
-impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<4>
-    for BirthDeathMeanVarianceEntropy<P, S>
-{
-    type Reaction = EcDNAEvent;
-
-    fn advance_step(
-        &mut self,
-        reaction: NextReaction<Self::Reaction>,
-        rng: &mut impl Rng,
-    ) {
-        match reaction.event {
-            EcDNAEvent::ProliferateNPlus => {
-                if let Ok(is_uneven) = self.proliferation.increase_nplus(
-                    &mut self.data.distribution,
-                    &self.segregation,
-                    rng,
-                    self.verbosity,
-                ) {
-                    match is_uneven {
-                        IsUneven::False => {
-                            if self.verbosity > 1 {
-                                println!("IsUneven is false");
-                            }
-                        }
-                        IsUneven::True => {
-                            if self.verbosity > 1 {
-                                println!("IsUneven is true");
-                            }
-                        }
-                        IsUneven::TrueWithoutNMinusIncrease => {
-                            if self.verbosity > 1 {
-                                println!(
-                                    "IsUneven is true but w/o nminus increase"
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-            EcDNAEvent::ProliferateNMinus => {
-                self.proliferation
-                    .increase_nminus(&mut self.data.distribution);
-            }
-            EcDNAEvent::DeathNMinus => {
-                self.death.decrease_nminus(&mut self.data.distribution)
-            }
-            EcDNAEvent::DeathNPlus => self.death.decrease_nplus(
-                &mut self.data.distribution,
-                rng,
-                self.verbosity,
-            ),
-            _ => unreachable!(),
-        };
-        if self.verbosity > 1 {
-            println!("Distribution {:#?}", self.data.distribution);
-        }
-
-        // store absolute time
-        self.data.time += reaction.time;
-
-        match self.data.is_time_to_save(self.data.time, self.verbosity) {
-            SaveDynamic::DoNotSave => {}
-            SaveDynamic::SaveNewOne => {
-                self.mean.push(self.data.distribution.compute_mean());
-                self.variance.push(self.data.distribution.compute_variance());
-                self.entropy.push(self.data.distribution.compute_entropy());
-                self.data.update_nplus_nminus(
-                    self.data.distribution.compute_nplus(),
-                    *self.data.distribution.get_nminus(),
-                );
-            }
-            SaveDynamic::SavePreviousOne { times } => {
-                let mean = self.data.distribution.compute_mean();
-                let variance = self.data.distribution.compute_variance();
-                let entropy = self.data.distribution.compute_entropy();
-                for _ in 0..times {
-                    self.mean.push(mean);
-                    self.variance.push(variance);
-                    self.entropy.push(entropy);
-                    self.data.update_nplus_nminus(
-                        self.data.distribution.compute_nplus(),
-                        *self.data.distribution.get_nminus(),
-                    );
-                }
-            }
-        };
-    }
-
-    fn update_state(&self, state: &mut CurrentState<4>) {
-        state.population[0] = *self.data.distribution.get_nminus();
-        state.population[1] = self.data.distribution.compute_nplus();
-        state.population[2] = *self.data.distribution.get_nminus();
-        state.population[3] = self.data.distribution.compute_nplus();
     }
 }
 
@@ -1420,9 +371,8 @@ mod tests {
     use quickcheck_macros::quickcheck;
 
     #[quickcheck]
-    fn create_process_nplus_nminus_mean_time_test(
+    fn create_birth_death_process_test(
         distr: NonEmptyDistribtionWithNPlusCells,
-        max_iter: u8,
         verbosity: u8,
         time: u8,
     ) -> bool {
@@ -1430,19 +380,26 @@ mod tests {
         let nplus = distr.0.compute_nplus();
         let nminus = *distr.0.get_nminus();
         let mean = distr.0.compute_mean();
-        let p = BirthDeathMean::new(
+        let p = BirthDeath::new(
+            distr.0,
             Exponential {},
             Binomial,
-            distr.0,
-            max_iter as usize,
-            &[1., 2.],
+            CellDeath,
             time,
+            SavingOptions {
+                snapshots: VecDeque::from([Snapshot {
+                    cells2sample: 10,
+                    time: 2.,
+                }]),
+                path2dir: PathBuf::default(),
+                filename: String::from("filename"),
+            },
             verbosity,
         )
         .unwrap();
-        p.data.distribution.compute_nplus() == nplus
-            && p.data.distribution.get_nminus() == &nminus
-            && p.data.time == time
-            && p.data.distribution.compute_mean() == mean
+        p.distribution.compute_nplus() == nplus
+            && p.distribution.get_nminus() == &nminus
+            && p.time == time
+            && p.distribution.compute_mean() == mean
     }
 }

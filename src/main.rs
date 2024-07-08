@@ -1,35 +1,31 @@
-use app::Dynamics;
+use std::{collections::VecDeque, path::PathBuf};
+
 use chrono::Utc;
 use clap_app::{GrowthOptions, Segregation};
 use ecdna_evo::{
+    create_filename_birth_death, create_filename_pure_birth,
     distribution::EcDNADistribution,
-    process::{
-        BirthDeath, BirthDeathMean, BirthDeathMeanVariance,
-        BirthDeathMeanVarianceEntropy, BirthDeathNMinusNPlus, EcDNAEvent,
-        PureBirth, PureBirthMean, PureBirthNMinusNPlus,
-    },
-    proliferation::{EcDNADeath, Exponential},
+    process::{BirthDeath, EcDNAEvent, PureBirth},
+    proliferation::{CellDeath, Exponential},
+    SavingOptions, Snapshot,
 };
 use indicatif::ParallelProgressIterator;
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use sosa::{CurrentState, ReactionRates};
+use sosa::{simulate, CurrentState, Options, ReactionRates};
 
-use crate::{
-    app::Sampling,
-    clap_app::{BirthDeathType, Cli, Parallel, ProcessType, PureBirthType},
-};
+use crate::clap_app::{Cli, Parallel, ProcessType};
 
-mod app;
 mod clap_app;
 
 /// The number of max iterations that we max simulate compared to the cells.
 /// The max number of iterations will be MAX_ITER * cells.
 pub const MAX_ITER: usize = 10;
 
+#[derive(Debug)]
 pub struct SimulationOptions {
-    simulation: Dynamics,
     parallel: Parallel,
-    sampling: Option<Sampling>,
     process_type: ProcessType,
     b0: f32,
     b1: f32,
@@ -39,219 +35,135 @@ pub struct SimulationOptions {
     segregation: Segregation,
     growth: GrowthOptions,
     runs: usize,
+    seed: u64,
+    path2dir: PathBuf,
+    options: Options,
+    snapshots: VecDeque<Snapshot>,
 }
 
 fn main() {
-    let app = Cli::build();
+    let app = Cli::build().expect("cannot construct the app");
     let proliferation = match app.growth {
         GrowthOptions::Constant => todo!(),
         GrowthOptions::Exponential => Exponential {},
     };
 
     println!("{} Starting the simulation", Utc::now());
-    let timepoints: [f32; 300] = std::array::from_fn(|i| i as f32 * 0.1 + 0.1);
 
-    let my_closure = |idx| match app.process_type {
-        ProcessType::PureBirth(p_type) => {
-            let mut initial_state = CurrentState {
-                population: [
-                    *app.distribution.get_nminus(),
-                    app.distribution.compute_nplus(),
-                ],
-            };
-            let rates = ReactionRates([app.b0, app.b1]);
-            let reactions =
-                [EcDNAEvent::ProliferateNMinus, EcDNAEvent::ProliferateNPlus];
-            match p_type {
-                PureBirthType::NMinusNPlus => app
-                    .simulation
-                    .run(
-                        idx,
-                        PureBirthNMinusNPlus::with_distribution(
-                            proliferation,
-                            app.segregation,
-                            app.distribution.clone(),
-                            app.simulation.options.max_iter,
-                            &timepoints,
-                            0.,
-                            app.simulation.options.verbosity,
-                        )
-                        .unwrap(),
-                        &mut initial_state,
-                        &rates,
-                        &reactions,
-                        &app.sampling,
-                    )
-                    .unwrap(),
-                PureBirthType::PureBirth => app
-                    .simulation
-                    .run(
-                        idx,
-                        PureBirth::new(
-                            app.distribution.clone(),
-                            proliferation,
-                            app.segregation,
-                            app.simulation.options.verbosity,
-                        )
-                        .unwrap(),
-                        &mut initial_state,
-                        &rates,
-                        &reactions,
-                        &app.sampling,
-                    )
-                    .unwrap(),
-                PureBirthType::Mean => app
-                    .simulation
-                    .run(
-                        idx,
-                        PureBirthMean::new(
-                            proliferation,
-                            app.segregation,
-                            app.distribution.clone(),
-                            app.simulation.options.max_iter,
-                            &timepoints,
-                            0.,
-                            app.simulation.options.verbosity,
-                        )
-                        .unwrap(),
-                        &mut initial_state,
-                        &rates,
-                        &reactions,
-                        &app.sampling,
-                    )
-                    .unwrap(),
-            };
-        }
-        ProcessType::BirthDeath(p_type) => {
-            let mut initial_state = CurrentState {
-                population: [
-                    *app.distribution.get_nminus(),
-                    app.distribution.compute_nplus(),
-                    *app.distribution.get_nminus(),
-                    app.distribution.compute_nplus(),
-                ],
-            };
-            let rates = ReactionRates([app.b0, app.b1, app.d0, app.d1]);
-            let reactions = [
-                EcDNAEvent::ProliferateNMinus,
-                EcDNAEvent::ProliferateNPlus,
-                EcDNAEvent::DeathNMinus,
-                EcDNAEvent::DeathNPlus,
-            ];
-            match p_type {
-                BirthDeathType::BirthDeath => app
-                    .simulation
-                    .run(
-                        idx,
-                        BirthDeath::new(
-                            app.distribution.clone(),
-                            proliferation,
-                            app.segregation,
-                            EcDNADeath,
-                            app.simulation.options.verbosity,
-                        )
-                        .unwrap(),
-                        &mut initial_state,
-                        &rates,
-                        &reactions,
-                        &app.sampling,
-                    )
-                    .unwrap(),
-                BirthDeathType::NMinusNPlus => app
-                    .simulation
-                    .run(
-                        idx,
-                        BirthDeathNMinusNPlus::with_distribution(
-                            proliferation,
-                            app.segregation,
-                            app.distribution.clone(),
-                            app.simulation.options.max_iter,
-                            0.,
-                            &timepoints,
-                            app.simulation.options.verbosity,
-                        )
-                        .unwrap(),
-                        &mut initial_state,
-                        &rates,
-                        &reactions,
-                        &app.sampling,
-                    )
-                    .unwrap(),
-                BirthDeathType::Mean => app
-                    .simulation
-                    .run(
-                        idx,
-                        BirthDeathMean::new(
-                            proliferation,
-                            app.segregation,
-                            app.distribution.clone(),
-                            app.simulation.options.max_iter,
-                            &timepoints,
-                            0.,
-                            app.simulation.options.verbosity,
-                        )
-                        .unwrap(),
-                        &mut initial_state,
-                        &rates,
-                        &reactions,
-                        &app.sampling,
-                    )
-                    .unwrap(),
-                BirthDeathType::MeanVariance => app
-                    .simulation
-                    .run(
-                        idx,
-                        BirthDeathMeanVariance::new(
-                            0.,
-                            proliferation,
-                            app.segregation,
-                            app.distribution.clone(),
-                            app.simulation.options.max_iter,
-                            &timepoints,
-                            app.simulation.options.verbosity,
-                        )
-                        .unwrap(),
-                        &mut initial_state,
-                        &rates,
-                        &reactions,
-                        &app.sampling,
-                    )
-                    .unwrap(),
-                BirthDeathType::MeanVarianceEntropy => app
-                    .simulation
-                    .run(
-                        idx,
-                        BirthDeathMeanVarianceEntropy::new(
-                            0.,
-                            proliferation,
-                            app.segregation,
-                            app.distribution.clone(),
-                            app.simulation.options.max_iter,
-                            &timepoints,
-                            app.simulation.options.verbosity,
-                        )
-                        .unwrap(),
-                        &mut initial_state,
-                        &rates,
-                        &reactions,
-                        &app.sampling,
-                    )
-                    .unwrap(),
+    let run_simulations = |idx| {
+        let stream = idx as u64;
+        let mut rng = ChaCha8Rng::seed_from_u64(app.seed);
+        rng.set_stream(stream);
+        match app.process_type {
+            ProcessType::PureBirth => {
+                let mut initial_state = CurrentState {
+                    population: [
+                        *app.distribution.get_nminus(),
+                        app.distribution.compute_nplus(),
+                    ],
+                };
+                let rates = ReactionRates([app.b0, app.b1]);
+                let reactions = [
+                    EcDNAEvent::ProliferateNMinus,
+                    EcDNAEvent::ProliferateNPlus,
+                ];
+                let filename = create_filename_pure_birth(&rates.0, idx);
+
+                let mut process = PureBirth::new(
+                    app.distribution.clone(),
+                    proliferation,
+                    app.segregation,
+                    0.,
+                    SavingOptions {
+                        snapshots: app.snapshots.clone(),
+                        path2dir: app.path2dir.clone(),
+                        filename,
+                    },
+                    app.options.verbosity,
+                )
+                .unwrap();
+
+                if app.options.verbosity > 1 {
+                    println!("{:#?}", process);
+                }
+
+                let stop_reason = simulate(
+                    &mut initial_state,
+                    &rates,
+                    &reactions,
+                    &mut process,
+                    &app.options,
+                    &mut rng,
+                );
+
+                if app.options.verbosity > 0 {
+                    println!("stop reason: {:#?}", stop_reason);
+                }
             }
-        }
+            ProcessType::BirthDeath => {
+                let mut initial_state = CurrentState {
+                    population: [
+                        *app.distribution.get_nminus(),
+                        app.distribution.compute_nplus(),
+                        *app.distribution.get_nminus(),
+                        app.distribution.compute_nplus(),
+                    ],
+                };
+                let rates = ReactionRates([app.b0, app.b1, app.d0, app.d1]);
+                let reactions = [
+                    EcDNAEvent::ProliferateNMinus,
+                    EcDNAEvent::ProliferateNPlus,
+                    EcDNAEvent::DeathNMinus,
+                    EcDNAEvent::DeathNPlus,
+                ];
+                let filename = create_filename_birth_death(&rates.0, idx);
+
+                let mut process = BirthDeath::new(
+                    app.distribution.clone(),
+                    proliferation,
+                    app.segregation,
+                    CellDeath,
+                    0.,
+                    SavingOptions {
+                        snapshots: app.snapshots.clone(),
+                        path2dir: app.path2dir.clone(),
+                        filename,
+                    },
+                    app.options.verbosity,
+                )
+                .unwrap();
+                if app.options.verbosity > 1 {
+                    println!("{:#?}", process);
+                }
+
+                let stop_reason = simulate(
+                    &mut initial_state,
+                    &rates,
+                    &reactions,
+                    &mut process,
+                    &app.options,
+                    &mut rng,
+                );
+
+                if app.options.verbosity > 0 {
+                    println!("stop reason: {:#?}", stop_reason);
+                }
+            }
+        };
     };
     std::process::exit({
         // start from seed for the array job
-        let start = (app.simulation.seed * 10) as usize;
+        let start = (app.seed * 10) as usize;
         let start_end = start..app.runs + start;
+
         match app.parallel {
             Parallel::Debug | Parallel::False => {
-                (start_end).for_each(my_closure)
+                (start_end).for_each(run_simulations)
             }
             Parallel::True => (start_end)
                 .into_par_iter()
                 .progress_count(app.runs as u64)
-                .for_each(my_closure),
+                .for_each(run_simulations),
         }
         println!("{} End simulation", Utc::now());
         0

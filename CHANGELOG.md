@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.23.0
+Huge update to remove useless stuff and keep only the content relevant for the PhD thesis.
+Remove `abc` in rust, do it in python.
+
 ## 0.22.0
 change the way we save the data at the end of the simulations to simplify subsampling.
 

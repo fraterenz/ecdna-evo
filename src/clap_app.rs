@@ -1,32 +1,34 @@
-use anyhow::Context;
+use anyhow::{ensure, Context};
 use clap::{ArgAction, Parser, ValueEnum};
 use ecdna_evo::{
-    distribution::{EcDNADistribution, SamplingStrategy, Sigma},
+    distribution::EcDNADistribution,
     segregation::{
         Binomial, BinomialNoNminus, BinomialNoUneven, Deterministic, Segregate,
     },
+    Snapshot,
 };
 use rand::Rng;
-use sosa::{NbIndividuals, Options};
-use std::{collections::HashMap, path::PathBuf};
-
-use crate::{
-    app::{Dynamics, Sampling},
-    SimulationOptions, MAX_ITER,
+use sosa::{IterTime, NbIndividuals, Options};
+use std::{
+    collections::{HashMap, VecDeque},
+    path::PathBuf,
 };
 
+use crate::{SimulationOptions, MAX_ITER};
+
+#[derive(Debug)]
 pub enum Parallel {
     False,
     True,
     Debug,
 }
 
-#[derive(Debug, Parser)] // requires `derive` feature
+#[derive(Debug, Parser)]
 #[command(name = "Dynamics")]
 #[command(
     version,
-    about = "Mathematical modelling of the ecDNA dynamics",  // TODO
-    long_about = "Study the effect of the random segregation on the ecDNA dynamics using a stochastic simulation algorithm (SSA) aka Gillespie algorithm"
+    about = "Agent-based modelling of the ecDNA dynamics",
+    long_about = "Study the effect of the random segregation and positive selection on the ecDNA dynamics using a stochastic simulation algorithm (SSA) aka Gillespie algorithm"
 )]
 pub struct Cli {
     /// The ecDNA segregation type
@@ -51,9 +53,9 @@ pub struct Cli {
     /// process.
     #[arg(long, value_name = "RATE")]
     d1: Option<f32>,
-    /// Number of cells to simulate
-    #[arg(long, short, default_value_t = 100000, conflicts_with = "debug")]
-    cells: NbIndividuals,
+    /// Number of years to simulate
+    #[arg(long, short, default_value_t = 5, conflicts_with = "debug")]
+    years: NbIndividuals,
     /// Seed for reproducibility
     #[arg(long, default_value_t = 26)]
     seed: u64,
@@ -63,40 +65,6 @@ pub struct Cli {
     /// Run sequentially each run instead of using rayon for parallelisation
     #[arg(short, long, action = ArgAction::SetTrue, default_value_t = false, conflicts_with = "debug")]
     sequential: bool,
-    /// Whether to track over simulations the evolution of the cells with and
-    /// without any ecDNAs.
-    #[arg(short, long, action = ArgAction::SetTrue, default_value_t = false)]
-    nplus_nminus: bool,
-    /// Whether to track over simulations the evolution of the mean ecDNA
-    /// copies in the tumour population
-    #[arg(short, long, action = ArgAction::SetTrue, default_value_t = false)]
-    mean: bool,
-    /// Whether to track over simulations the evolution of the variance ecDNA
-    /// copies in the tumour population
-    #[arg(long, action = ArgAction::SetTrue, default_value_t = false)]
-    variance: bool,
-    /// Whether to track over simulations the evolution of the entropy ecDNA
-    /// copies in the tumour population
-    #[arg(long, action = ArgAction::SetTrue, default_value_t = false)]
-    entropy: bool,
-    /// Save the data also just before subsampling
-    #[arg(long, action = ArgAction::SetTrue, default_value_t = false, requires = "sample")]
-    sample_save_before: bool,
-    /// The number of cells kept after subsampling.
-    ///
-    /// To take the full distribution pass 0 as argument, e.g. when we want to
-    /// sample with a custom strategy the full ecDNA distribution (see
-    /// `--sampling-strategy`)
-    #[arg(long, num_args = 0.., value_name = "CELLS")]
-    sample: Option<Vec<NbIndividuals>>,
-    #[arg(
-        long,
-        value_enum,
-        requires = "sample",
-        required = false,
-        default_value_t
-    )]
-    sample_strategy: SamplingStrategyArg,
     /// Path to store the results of the simulations
     #[arg(value_name = "DIR")]
     path: PathBuf,
@@ -118,13 +86,122 @@ pub struct Cli {
     #[arg(short, long, default_value_t = 12, conflicts_with = "debug")]
     /// Number of independent realisations to simulate of the same stochastic process
     runs: usize,
+    #[arg(long, requires = "subsamples", value_delimiter = ',', require_equals = true, num_args = 0..)]
+    /// Snapshots to take to save the simulation, requires `subsamples`.
+    ///
+    /// The combination of `snapshots` with `subsamples` gives four different
+    /// behaviours:
+    ///
+    /// 1. when `snapshots.len() = 1` and `subsamples.len() = 1`: subsample once with the number of cells corresponding to `snapshots[0]`
+    ///
+    /// 2. when `snapshots.len() > 1` and `subsamples.len() = 1`: for every `s` in `snapshots`, subsample with the number of cells corresponding to `snapshots[0]`
+    ///
+    /// 3. when `snapshots.len() = 1` and `subsamples.len() > 1`: for every `c` in `subsamples`, subsample once with the number of cells corresponding to `c`
+    ///
+    /// 4. when `snapshots.len() > 1` and `subsamples.len() > 1`: for every pair `(s, c)` in `snapshots.zip(subsamples)`, subsample at time `s` with `c` cells
+    snapshots: Option<Vec<f32>>,
+    /// Number of cells to subsample before saving the measurements, leave
+    /// empty when no subsample is needed.
+    /// If subsampling is performed, the measurements of the whole population
+    /// will also be saved.
+    ///
+    /// See help for `snapshots` for more details.
+    #[arg(long, requires = "snapshots", num_args = 0.., value_delimiter = ',', require_equals = true)]
+    subsamples: Option<Vec<usize>>,
     #[arg(short, long, action = clap::ArgAction::Count, conflicts_with = "debug", default_value_t = 0)]
-    verbose: u8,
+    verbosity: u8,
+}
+
+fn build_snapshots_from_time(n_snapshots: usize, time: f32) -> Vec<f32> {
+    let dx = time / ((n_snapshots - 1) as f32);
+    let mut x = vec![0.; n_snapshots];
+    for i in 1..n_snapshots - 1 {
+        x[i] = x[i - 1] + dx;
+    }
+
+    x.shrink_to_fit();
+    x[n_snapshots - 1] = time;
+    x
 }
 
 impl Cli {
-    pub fn build() -> SimulationOptions {
+    pub fn build() -> anyhow::Result<SimulationOptions> {
         let cli = Cli::parse();
+
+        let (years, verbosity, parallel, runs) = if cli.debug {
+            (2, u8::MAX, Parallel::Debug, 1)
+        } else if cli.sequential {
+            (cli.years, cli.verbosity, Parallel::False, cli.runs)
+        } else {
+            (cli.years, cli.verbosity, Parallel::True, cli.runs)
+        };
+
+        let mut snapshots = match (cli.subsamples, cli.snapshots) {
+            (Some(sub), Some(snap)) => {
+                match (&sub[..], &snap[..]) {
+                    // subsample `unique_sub` once at `unique_snap` time
+                    ([unique_sub], [unique_snap]) => VecDeque::from_iter(
+                        [(unique_sub, unique_snap)].into_iter().map(
+                            |(&cells2sample, &time)| Snapshot {
+                                cells2sample,
+                                time,
+                            },
+                        ),
+                    ),
+                    // subsample `unique_sub` at several `snaps` times
+                    ([unique_sub], snaps) => VecDeque::from_iter(
+                        snaps.iter().zip(std::iter::repeat(unique_sub)).map(
+                            |(&time, &cells2sample)| Snapshot {
+                                cells2sample,
+                                time,
+                            },
+                        ),
+                    ),
+                    // subsample with different cells `unique_sub` once at `unique_snap` time
+                    (subs, [unique_snap]) => VecDeque::from_iter(
+                        subs.iter().zip(std::iter::repeat(unique_snap)).map(
+                            |(&cells2sample, &time)| Snapshot {
+                                cells2sample,
+                                time,
+                            },
+                        ),
+                    ),
+                    // subsample with many cells `subs` at specific `snaps`
+                    (subs, snaps) => {
+                        ensure!(
+                            subs.len() == snaps.len(),
+                            "the lenght of snapshots do not match the lenght of subsamples"
+                        );
+                        VecDeque::from_iter(subs.iter().zip(snaps).map(
+                            |(&cells2sample, &time)| Snapshot {
+                                cells2sample,
+                                time,
+                            },
+                        ))
+                    }
+                }
+            }
+            (None, None) => VecDeque::from_iter(
+                build_snapshots_from_time(
+                    10usize,
+                    if years > 1 { years as f32 - 1. } else { 0.9 },
+                )
+                .into_iter()
+                .map(|t| Snapshot { cells2sample: 10, time: t }),
+            ),
+            _ => unreachable!(),
+        };
+
+        snapshots.make_contiguous();
+        snapshots
+            .as_mut_slices()
+            .0
+            .sort_by(|s1, s2| s1.time.partial_cmp(&s2.time).unwrap());
+
+        ensure!(
+            snapshots.iter().all(|s| s.time < cli.years as f32),
+            "times to take `snapshots` must be smaller than total `years`"
+        );
 
         let segregation = cli.segregation.into();
 
@@ -140,120 +217,42 @@ impl Cli {
             None => (false, 0f32),
         };
         let is_birth_death = is_birth_death_d0 | is_birth_death_d1;
-        let cells = if cli.debug { 10 } else { cli.cells };
-        let iterations = if is_birth_death {
-            MAX_ITER * cells as usize
-        } else {
-            cells as usize
-        };
 
         // if no initial distribution, start with 1 cell with 1 ecDNA copy
         let distribution = match cli.initial {
-            Some(path) => EcDNADistribution::load(&path, iterations)
-                .with_context(|| {
-                    format!(
-                        "Cannot load the ecDNA distribution from {:#?}",
-                        cli.path
-                    )
-                })
-                .unwrap(),
+            Some(path) => EcDNADistribution::load(
+                &path, MAX_ITER, // TODO double check this
+            )
+            .with_context(|| {
+                format!(
+                    "Cannot load the ecDNA distribution from {:#?}",
+                    cli.path
+                )
+            })
+            .unwrap(),
             None => EcDNADistribution::new(
                 HashMap::<u16, NbIndividuals>::from([(1, 1)]),
-                iterations,
+                MAX_ITER, // TODO double check this
             ),
-        };
-        let verbose = if cli.debug { u8::MAX } else { cli.verbose };
-
-        let (parallel, runs) = if cli.debug {
-            (Parallel::Debug, 1)
-        } else if cli.sequential {
-            (Parallel::False, cli.runs)
-        } else {
-            (Parallel::True, cli.runs)
         };
 
         let process_type = {
-            match is_birth_death {
-                true => match cli.mean {
-                    true => {
-                        if cli.variance {
-                            if cli.entropy {
-                                ProcessType::BirthDeath(
-                                    BirthDeathType::MeanVarianceEntropy,
-                                )
-                            } else {
-                                ProcessType::BirthDeath(
-                                    BirthDeathType::MeanVariance,
-                                )
-                            }
-                        } else {
-                            ProcessType::BirthDeath(BirthDeathType::Mean)
-                        }
-                    }
-                    false => {
-                        if cli.nplus_nminus {
-                            ProcessType::BirthDeath(
-                                BirthDeathType::NMinusNPlus,
-                            )
-                        } else {
-                            ProcessType::BirthDeath(BirthDeathType::BirthDeath)
-                        }
-                    }
-                },
-                false => match cli.mean {
-                    true => ProcessType::PureBirth(PureBirthType::Mean),
-                    false => {
-                        if cli.nplus_nminus {
-                            ProcessType::PureBirth(PureBirthType::NMinusNPlus)
-                        } else {
-                            ProcessType::PureBirth(PureBirthType::PureBirth)
-                        }
-                    }
-                },
+            if is_birth_death {
+                ProcessType::BirthDeath
+            } else {
+                ProcessType::PureBirth
             }
         };
 
-        let sampling = if let Some(sampling_at) = cli.sample {
-            let sampling_strategy = match cli.sample_strategy {
-                SamplingStrategyArg::Uniform => SamplingStrategy::Uniform,
-                SamplingStrategyArg::Gaussian => {
-                    SamplingStrategy::Gaussian(Sigma::new(1.))
-                }
-            };
-            let (at, strategy) = {
-                let strategy = sampling_strategy;
-                // 0 means take the full ecDNA distribution which does not make
-                // sense with a uniform distribution
-                if sampling_at.len() == 1 && sampling_at[0] == 0 {
-                    assert_ne!(
-                        strategy,
-                        SamplingStrategy::Uniform,
-                        "It doesn't make sense to take the full ecDNA distribution as sample with an uniform sampling strategy"
-                        );
-                    (vec![cells], strategy)
-                } else {
-                    (sampling_at, strategy)
-                }
-            };
-            Some(Sampling { at, strategy })
-        } else {
-            assert!(cli.sample.is_none());
-            None
-        };
-
-        SimulationOptions {
-            simulation: Dynamics {
-                seed: cli.seed,
-                max_cells: cells,
-                options: Options {
-                    max_iter: iterations,
-                    init_iter: 0,
-                    max_cells: cells,
-                    verbosity: verbose,
-                },
-                path2dir: cli.path,
-                save_before_subsampling: cli.sample_save_before,
+        let options = SimulationOptions {
+            seed: cli.seed,
+            options: Options {
+                max_iter_time: IterTime { iter: MAX_ITER, time: years as f32 },
+                init_iter: 0,
+                max_cells: 1_000_000,
+                verbosity,
             },
+            path2dir: cli.path,
             process_type,
             b0: cli.b0,
             b1: cli.b1,
@@ -262,10 +261,15 @@ impl Cli {
             distribution,
             parallel,
             segregation,
-            sampling,
+            snapshots,
             growth: cli.growth,
             runs,
+        };
+        if verbosity > 0 {
+            println!("running sims with {:#?}", options);
         }
+
+        Ok(options)
     }
 }
 
@@ -348,26 +352,10 @@ impl std::fmt::Display for GrowthOptions {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum ProcessType {
-    PureBirth(PureBirthType),
-    BirthDeath(BirthDeathType),
-}
-
-#[derive(Clone, Copy)]
-pub enum PureBirthType {
     PureBirth,
-    NMinusNPlus,
-    Mean,
-}
-
-#[derive(Clone, Copy)]
-pub enum BirthDeathType {
     BirthDeath,
-    NMinusNPlus,
-    Mean,
-    MeanVariance,
-    MeanVarianceEntropy,
 }
 
 #[derive(

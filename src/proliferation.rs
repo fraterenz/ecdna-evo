@@ -4,7 +4,7 @@ use std::num::NonZeroU16;
 use crate::distribution::EcDNADistribution;
 use crate::segregation::{DNACopySegregating, IsUneven, Segregate};
 
-/// Update the [`EcDNADistribution`].
+/// Update the [`EcDNADistribution`] according to the random segregation.
 pub trait EcDNAProliferation {
     fn increase_nplus(
         &self,
@@ -16,6 +16,8 @@ pub trait EcDNAProliferation {
     fn increase_nminus(&self, distribution: &mut EcDNADistribution);
 }
 
+/// The ecDNA dynamics according to an exponential growth model with random
+/// segregation.
 #[derive(Debug, Clone, Copy)]
 pub struct Exponential {}
 
@@ -115,10 +117,12 @@ impl EcDNAProliferation for Exponential {
     }
 }
 
+/// Add cell death as an event in the model to simulate a birth-death process.
 #[derive(Debug, Clone)]
-pub struct EcDNADeath;
+pub struct CellDeath;
 
-impl EcDNADeath {
+/// Update the ecDNA distribution upon cell death.
+impl CellDeath {
     pub fn decrease_nplus(
         &self,
         distribution: &mut EcDNADistribution,
@@ -256,7 +260,7 @@ mod tests {
         seed: u64,
         distribution: NonEmptyDistribtionWithNPlusCells,
     ) -> bool {
-        let ecdna = EcDNADeath;
+        let ecdna = CellDeath;
         let mut distribution = distribution.0;
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let expected_nminus = *distribution.get_nminus();
@@ -271,7 +275,7 @@ mod tests {
     fn decrease_nminus_test(
         distribution: NonEmptyDistribtionWithNPlusCells,
     ) -> bool {
-        let ecdna = EcDNADeath;
+        let ecdna = CellDeath;
         let mut distribution = distribution.0;
         let expected_nminus = *distribution.get_nminus() - 1;
         let expected_nplus = distribution.compute_nplus();

@@ -241,9 +241,9 @@ mod tests {
 
     #[quickcheck]
     fn try_from_dna_copy_test(copy: DNACopySegregatingGreatherThanOne) {
-        let copy_segregating: DNACopy = (copy.0).try_into().unwrap();
+        let copy_segregating: DNACopy = (copy.0).into();
 
-        assert_eq!(u16::try_from(copy.0).unwrap(), copy_segregating.get());
+        assert_eq!(u16::from(copy.0), copy_segregating.get());
     }
 
     #[derive(Clone, Debug)]
@@ -269,7 +269,7 @@ mod tests {
             Deterministic {}.ecdna_segregation(copies.0, &mut rng, 0);
         // uneven numbers
         assert_eq!(k1, k2);
-        assert_eq!(u16::try_from(copies.0).unwrap() as u64, 2 * k1);
+        assert_eq!(u16::from(copies.0) as u64, 2 * k1);
         assert_eq!(is_uneven, IsUneven::False);
     }
 

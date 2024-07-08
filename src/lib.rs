@@ -1,38 +1,48 @@
-//! The two-type/k-type ecDNA simulation problem modelling the effect of the
-//! random segregation on the ecDNA dynamics.
-/// The ecDNA dynamics such as the mean in function of time.
-pub mod dynamics;
-/// The available ecDNA processes.
+//! A k-type population model to simulate the effect of the random segregation
+//! and positive selection on the ecDNA dynamics
+/// The pure-birth and birth-death processes simulating the ecDNA dynamics.
 pub mod process;
-/// EcDNA growth models
+/// EcDNA growth models.
 pub mod proliferation;
-/// EcDNA segregation models.
 pub mod segregation;
 
-use std::path::Path;
+use std::{collections::VecDeque, path::PathBuf};
 
-use ecdna_lib::distribution::EcDNADistribution;
-pub use ecdna_lib::{abc, distribution, DNACopy};
-use rand::Rng;
-use sosa::{NbIndividuals, ReactionRates};
+pub use ecdna_lib::{distribution, DNACopy};
 
-/// Save the results of the simulations.
-pub trait ToFile<const NB_REACTIONS: usize> {
-    fn save(
-        &self,
-        path2dir: &Path,
-        rates: &ReactionRates<NB_REACTIONS>,
-        id: usize,
-    ) -> anyhow::Result<()>;
+#[derive(Debug, Clone)]
+pub struct Snapshot {
+    /// The number of cells to subsample
+    pub cells2sample: usize,
+    /// The time at which we subsample
+    pub time: f32,
 }
 
-/// Undersample a process by randomly reducing the number of individuals.
-pub trait RandomSampling {
-    fn random_sample(
-        &self,
-        nb_individuals: NbIndividuals,
-        rng: &mut impl Rng,
-    ) -> anyhow::Result<EcDNADistribution>;
+#[derive(Debug, Clone)]
+pub struct SavingOptions {
+    pub snapshots: VecDeque<Snapshot>,
+    pub path2dir: PathBuf,
+    pub filename: String,
+}
+
+pub fn create_filename_birth_death(rates: &[f32; 4], id: usize) -> String {
+    format!(
+        "{}b0_{}b1_{}d0_{}d1_{}idx",
+        rates[0].to_string().replace('.', "dot"),
+        rates[1].to_string().replace('.', "dot"),
+        rates[2].to_string().replace('.', "dot"),
+        rates[3].to_string().replace('.', "dot"),
+        id,
+    )
+}
+
+pub fn create_filename_pure_birth(rates: &[f32; 2], id: usize) -> String {
+    format!(
+        "{}b0_{}b1_0d0_0d1_{}idx",
+        rates[0].to_string().replace('.', "dot"),
+        rates[1].to_string().replace('.', "dot"),
+        id,
+    )
 }
 
 #[cfg(test)]
