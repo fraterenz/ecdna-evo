@@ -21,7 +21,7 @@ mod clap_app;
 
 /// The number of max iterations that we max simulate compared to the cells.
 /// The max number of iterations will be MAX_ITER * cells.
-pub const MAX_ITER: usize = 10;
+pub const MAX_ITER: usize = 1_000_000_000;
 
 #[derive(Debug)]
 pub struct SimulationOptions {
@@ -98,6 +98,7 @@ fn main() {
 
                 if app.options.verbosity > 0 {
                     println!("stop reason: {:#?}", stop_reason);
+                    println!("{:#?}", initial_state);
                 }
             }
             ProcessType::BirthDeath => {

@@ -249,7 +249,7 @@ impl Cli {
             options: Options {
                 max_iter_time: IterTime { iter: MAX_ITER, time: years as f32 },
                 init_iter: 0,
-                max_cells: 1_000_000,
+                max_cells: 100_000_000,
                 verbosity,
             },
             path2dir: cli.path,
