@@ -14,7 +14,7 @@ use std::{
     path::PathBuf,
 };
 
-use crate::{SimulationOptions, MAX_ITER};
+use crate::{SimulationOptions, MAX_CELLS, MAX_ITER};
 
 #[derive(Debug)]
 pub enum Parallel {
@@ -53,9 +53,12 @@ pub struct Cli {
     /// process.
     #[arg(long, value_name = "RATE")]
     d1: Option<f32>,
-    /// Number of years to simulate
-    #[arg(long, short, default_value_t = 5, conflicts_with = "debug")]
-    years: NbIndividuals,
+    /// Number of years to simulate before stopping the simulation
+    #[arg(short, long, group = "stop", conflicts_with = "debug")]
+    years: Option<NbIndividuals>,
+    /// Number of cells to simulate before stopping the simulation
+    #[arg(short, long, group = "stop", conflicts_with = "debug")]
+    cells: Option<NbIndividuals>,
     /// Seed for reproducibility
     #[arg(long, default_value_t = 26)]
     seed: u64,
@@ -112,6 +115,76 @@ pub struct Cli {
     verbosity: u8,
 }
 
+fn build_snapshots(
+    years: u64,
+    cells: NbIndividuals,
+    subsamples: Option<Vec<usize>>,
+    snapshots: Option<Vec<f32>>,
+) -> anyhow::Result<VecDeque<Snapshot>> {
+    let mut snapshots = match (subsamples, snapshots) {
+        (Some(sub), Some(snap)) => {
+            match (&sub[..], &snap[..]) {
+                // subsample `unique_sub` once at `unique_snap` time
+                ([unique_sub], [unique_snap]) => VecDeque::from_iter(
+                    [(unique_sub, unique_snap)].into_iter().map(
+                        |(&cells2sample, &time)| Snapshot {
+                            cells2sample,
+                            time,
+                        },
+                    ),
+                ),
+                // subsample `unique_sub` at several `snaps` times
+                ([unique_sub], snaps) => VecDeque::from_iter(
+                    snaps.iter().zip(std::iter::repeat(unique_sub)).map(
+                        |(&time, &cells2sample)| Snapshot {
+                            cells2sample,
+                            time,
+                        },
+                    ),
+                ),
+                // subsample with different cells `unique_sub` once at `unique_snap` time
+                (subs, [unique_snap]) => VecDeque::from_iter(
+                    subs.iter().zip(std::iter::repeat(unique_snap)).map(
+                        |(&cells2sample, &time)| Snapshot {
+                            cells2sample,
+                            time,
+                        },
+                    ),
+                ),
+                // subsample with many cells `subs` at specific `snaps`
+                (subs, snaps) => {
+                    ensure!(
+                            subs.len() == snaps.len(),
+                            "the lenght of snapshots do not match the lenght of subsamples"
+                        );
+                    VecDeque::from_iter(subs.iter().zip(snaps).map(
+                        |(&cells2sample, &time)| Snapshot {
+                            cells2sample,
+                            time,
+                        },
+                    ))
+                }
+            }
+        }
+        (None, None) => VecDeque::from_iter(
+            build_snapshots_from_time(
+                10usize,
+                if years > 1 { years as f32 - 1. } else { 0.9 },
+            )
+            .into_iter()
+            .map(|t| Snapshot { cells2sample: cells as usize, time: t }),
+        ),
+        _ => unreachable!(),
+    };
+
+    snapshots.make_contiguous();
+    snapshots
+        .as_mut_slices()
+        .0
+        .sort_by(|s1, s2| s1.time.partial_cmp(&s2.time).unwrap());
+    Ok(snapshots)
+}
+
 fn build_snapshots_from_time(n_snapshots: usize, time: f32) -> Vec<f32> {
     let dx = time / ((n_snapshots - 1) as f32);
     let mut x = vec![0.; n_snapshots];
@@ -128,78 +201,30 @@ impl Cli {
     pub fn build() -> anyhow::Result<SimulationOptions> {
         let cli = Cli::parse();
 
-        let (years, verbosity, parallel, runs) = if cli.debug {
-            (2, u8::MAX, Parallel::Debug, 1)
-        } else if cli.sequential {
-            (cli.years, cli.verbosity, Parallel::False, cli.runs)
-        } else {
-            (cli.years, cli.verbosity, Parallel::True, cli.runs)
-        };
-
-        let mut snapshots = match (cli.subsamples, cli.snapshots) {
-            (Some(sub), Some(snap)) => {
-                match (&sub[..], &snap[..]) {
-                    // subsample `unique_sub` once at `unique_snap` time
-                    ([unique_sub], [unique_snap]) => VecDeque::from_iter(
-                        [(unique_sub, unique_snap)].into_iter().map(
-                            |(&cells2sample, &time)| Snapshot {
-                                cells2sample,
-                                time,
-                            },
-                        ),
-                    ),
-                    // subsample `unique_sub` at several `snaps` times
-                    ([unique_sub], snaps) => VecDeque::from_iter(
-                        snaps.iter().zip(std::iter::repeat(unique_sub)).map(
-                            |(&time, &cells2sample)| Snapshot {
-                                cells2sample,
-                                time,
-                            },
-                        ),
-                    ),
-                    // subsample with different cells `unique_sub` once at `unique_snap` time
-                    (subs, [unique_snap]) => VecDeque::from_iter(
-                        subs.iter().zip(std::iter::repeat(unique_snap)).map(
-                            |(&cells2sample, &time)| Snapshot {
-                                cells2sample,
-                                time,
-                            },
-                        ),
-                    ),
-                    // subsample with many cells `subs` at specific `snaps`
-                    (subs, snaps) => {
-                        ensure!(
-                            subs.len() == snaps.len(),
-                            "the lenght of snapshots do not match the lenght of subsamples"
-                        );
-                        VecDeque::from_iter(subs.iter().zip(snaps).map(
-                            |(&cells2sample, &time)| Snapshot {
-                                cells2sample,
-                                time,
-                            },
-                        ))
-                    }
-                }
+        let (cells, years, verbosity, parallel, runs) = if cli.debug {
+            (300, 2, u8::MAX, Parallel::Debug, 1)
+        } else if let Some(years) = cli.years {
+            if cli.sequential {
+                (MAX_CELLS, years, cli.verbosity, Parallel::False, cli.runs)
+            } else {
+                (MAX_CELLS, years, cli.verbosity, Parallel::True, cli.runs)
             }
-            (None, None) => VecDeque::from_iter(
-                build_snapshots_from_time(
-                    10usize,
-                    if years > 1 { years as f32 - 1. } else { 0.9 },
-                )
-                .into_iter()
-                .map(|t| Snapshot { cells2sample: 10, time: t }),
-            ),
-            _ => unreachable!(),
+        } else {
+            let cells = cli.cells.unwrap_or(1_000);
+            // approx. is it ok?
+            let years = (f32::log2(cells as f32) + 4f32) as u64;
+            if cli.sequential {
+                (cells, years, cli.verbosity, Parallel::False, cli.runs)
+            } else {
+                (cells, years, cli.verbosity, Parallel::True, cli.runs)
+            }
         };
 
-        snapshots.make_contiguous();
-        snapshots
-            .as_mut_slices()
-            .0
-            .sort_by(|s1, s2| s1.time.partial_cmp(&s2.time).unwrap());
-
+        let snapshots =
+            build_snapshots(years, cells, cli.subsamples, cli.snapshots)
+                .unwrap();
         ensure!(
-            snapshots.iter().all(|s| s.time < cli.years as f32),
+            snapshots.iter().all(|s| s.time < years as f32),
             "times to take `snapshots` must be smaller than total `years`"
         );
 
@@ -249,7 +274,7 @@ impl Cli {
             options: Options {
                 max_iter_time: IterTime { iter: MAX_ITER, time: years as f32 },
                 init_iter: 0,
-                max_cells: 100_000_000,
+                max_cells: cells,
                 verbosity,
             },
             path2dir: cli.path,

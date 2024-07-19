@@ -28,14 +28,14 @@ pub enum EcDNAEvent {
     SymmetricDifferentiation,
 }
 
-fn save(
+pub fn save(
     path2dir: &Path,
     filename: &str,
     time: f32,
     distribution: &EcDNADistribution,
     verbosity: u8,
 ) -> anyhow::Result<()> {
-    //! Helper fn to save the ecDNA distribution
+    //! Save the ecDNA distribution
     let cells = distribution.compute_nplus() + *distribution.get_nminus();
     let path2file = &path2dir.join(format!("{}cells/ecdna/", cells));
     let mut timepoint = format!("{:.1}", time).replace('.', "dot");
@@ -65,11 +65,11 @@ where
     distribution: EcDNADistribution,
     proliferation: P,
     segregation: S,
-    time: f32,
-    snapshots: VecDeque<Snapshot>,
-    path2dir: PathBuf,
-    filename: String,
-    verbosity: u8,
+    pub time: f32,
+    pub snapshots: VecDeque<Snapshot>,
+    pub path2dir: PathBuf,
+    pub filename: String,
+    pub verbosity: u8,
 }
 
 impl<P, S> PureBirth<P, S>
@@ -217,11 +217,11 @@ where
     proliferation: P,
     segregation: S,
     death: CellDeath,
-    time: f32,
-    snapshots: VecDeque<Snapshot>,
-    path2dir: PathBuf,
-    filename: String,
-    verbosity: u8,
+    pub time: f32,
+    pub snapshots: VecDeque<Snapshot>,
+    pub path2dir: PathBuf,
+    pub filename: String,
+    pub verbosity: u8,
 }
 
 impl<P, S> BirthDeath<P, S>

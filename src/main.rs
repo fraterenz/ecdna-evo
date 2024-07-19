@@ -5,7 +5,7 @@ use clap_app::{GrowthOptions, Segregation};
 use ecdna_evo::{
     create_filename_birth_death, create_filename_pure_birth,
     distribution::EcDNADistribution,
-    process::{BirthDeath, EcDNAEvent, PureBirth},
+    process::{save, BirthDeath, EcDNAEvent, PureBirth},
     proliferation::{CellDeath, Exponential},
     SavingOptions, Snapshot,
 };
@@ -19,9 +19,10 @@ use crate::clap_app::{Cli, Parallel, ProcessType};
 
 mod clap_app;
 
-/// The number of max iterations that we max simulate compared to the cells.
-/// The max number of iterations will be MAX_ITER * cells.
+/// The number of max iterations to simulate.
 pub const MAX_ITER: usize = 1_000_000_000;
+/// The number of cells to simulate.
+pub const MAX_CELLS: u64 = 1_000_000_000;
 
 #[derive(Debug)]
 pub struct SimulationOptions {
@@ -54,7 +55,7 @@ fn main() {
         let stream = idx as u64;
         let mut rng = ChaCha8Rng::seed_from_u64(app.seed);
         rng.set_stream(stream);
-        match app.process_type {
+        let (stop_reason, final_state, final_time) = match app.process_type {
             ProcessType::PureBirth => {
                 let mut initial_state = CurrentState {
                     population: [
@@ -95,11 +96,21 @@ fn main() {
                     &app.options,
                     &mut rng,
                 );
-
-                if app.options.verbosity > 0 {
-                    println!("stop reason: {:#?}", stop_reason);
-                    println!("{:#?}", initial_state);
-                }
+                save(
+                    &process.path2dir,
+                    &process.filename,
+                    process.time,
+                    process.get_ecdna_distribution(),
+                    process.verbosity,
+                )
+                .expect(
+                    "cannot save the ecDNA distribution at the end of the sim",
+                );
+                (
+                    stop_reason,
+                    [initial_state.population[0], initial_state.population[1]],
+                    process.time,
+                )
             }
             ProcessType::BirthDeath => {
                 let mut initial_state = CurrentState {
@@ -145,12 +156,29 @@ fn main() {
                     &app.options,
                     &mut rng,
                 );
-
-                if app.options.verbosity > 0 {
-                    println!("stop reason: {:#?}", stop_reason);
-                }
+                save(
+                    &process.path2dir,
+                    &process.filename,
+                    process.time,
+                    process.get_ecdna_distribution(),
+                    process.verbosity,
+                )
+                .expect(
+                    "cannot save the ecDNA distribution at the end of the sim",
+                );
+                (
+                    stop_reason,
+                    [initial_state.population[0], initial_state.population[1]],
+                    process.time,
+                )
             }
         };
+        if app.options.verbosity > 0 {
+            println!(
+                "stop reason: {:#?}\nnminus, nplus: {:#?}\ntime: {}",
+                stop_reason, final_state, final_time
+            );
+        }
     };
     std::process::exit({
         // start from seed for the array job
