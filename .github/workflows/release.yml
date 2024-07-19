@@ -1,7 +1,7 @@
 name: Release
 
 permissions:
-  contents: read
+  contents: write
 
 on:
   push:
@@ -23,12 +23,10 @@ defaults:
 
 jobs:
   create-release:
-    runs-on: ubuntu-20.04
-    timeout-minutes: 60
-    permissions:
-      contents: write
+    name: Create GitHub release
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Install Rust
@@ -39,7 +37,8 @@ jobs:
           changelog: CHANGELOG.md
           title: $version
           branch: master
-          token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   upload-assets:
     name: ${{ matrix.target }}
@@ -47,37 +46,34 @@ jobs:
       - create-release
     strategy:
       matrix:
-        # When updating this list, the reminder to update the target list in ci.yml.
         include:
           - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            build_tool: cross
           - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            build_tool: cross
           - target: x86_64-apple-darwin
-            os: macos-11
+            os: macos-latest
+            build_tool: cargo
           - target: x86_64-pc-windows-msvc
             os: windows-2019
+            build_tool: cargo
     runs-on: ${{ matrix.os || 'ubuntu-20.04' }}
-    timeout-minutes: 60
-    permissions:
-      contents: write
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Install Rust
         run: rustup update stable --no-self-update
-      - uses: taiki-e/setup-cross-toolchain-action@v1
-        with:
-          target: ${{ matrix.target }}
-        if: (matrix.os == '' || startsWith(matrix.os, 'ubuntu')) && !contains(matrix.target, '-musl')
-      - uses: taiki-e/install-action@cross
-        if: contains(matrix.target, '-musl')
-      - run: echo "RUSTFLAGS=${RUSTFLAGS} -C target-feature=+crt-static" >>"${GITHUB_ENV}"
-        if: endsWith(matrix.target, 'windows-msvc')
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
-          bin: abc,dynamics
+          bin: hsc
           target: ${{ matrix.target }}
+          build_tool: ${{ matrix.build_tool }}
           tar: unix
           zip: windows
-          archive: ecdna-$target
-          token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 1
+          CARGO_PROFILE_RELEASE_LTO: true
