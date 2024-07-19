@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.24.0
+- Increase the number of max iterations and cells
+- Save at the end of the simulation
+- Specify either years or cells to simulate in the app
+
 ## 0.23.0
 Huge update to remove useless stuff and keep only the content relevant for the PhD thesis.
 Remove `abc` in rust, do it in python.

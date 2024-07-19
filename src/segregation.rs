@@ -216,7 +216,6 @@ mod tests {
     use crate::test_util::DNACopySegregatingGreatherThanOne;
 
     use super::*;
-    use quickcheck::{Arbitrary, Gen};
     use quickcheck_macros::quickcheck;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
@@ -244,19 +243,6 @@ mod tests {
         let copy_segregating: DNACopy = (copy.0).into();
 
         assert_eq!(u16::from(copy.0), copy_segregating.get());
-    }
-
-    #[derive(Clone, Debug)]
-    struct AvoidOverflowDNACopy(DNACopy);
-
-    impl Arbitrary for AvoidOverflowDNACopy {
-        fn arbitrary(g: &mut Gen) -> AvoidOverflowDNACopy {
-            let mut copy = DNACopy::arbitrary(g);
-            while copy >= NonZeroU16::new(u16::MAX / 2).unwrap() {
-                copy = DNACopy::arbitrary(g);
-            }
-            AvoidOverflowDNACopy(copy)
-        }
     }
 
     #[quickcheck]

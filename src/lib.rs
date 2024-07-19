@@ -57,19 +57,6 @@ pub mod test_util {
     use quickcheck::{Arbitrary, Gen};
 
     #[derive(Clone, Debug)]
-    struct DNACopyGreaterOne(DNACopy);
-
-    impl Arbitrary for DNACopyGreaterOne {
-        fn arbitrary(g: &mut Gen) -> DNACopyGreaterOne {
-            let mut copy = NonZeroU16::arbitrary(g);
-            if copy == NonZeroU16::new(1).unwrap() {
-                copy = NonZeroU16::new(2).unwrap();
-            }
-            DNACopyGreaterOne(copy)
-        }
-    }
-
-    #[derive(Clone, Debug)]
     pub struct NonEmptyDistribtionWithNPlusCells(pub EcDNADistribution);
 
     impl Arbitrary for NonEmptyDistribtionWithNPlusCells {
