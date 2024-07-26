@@ -11,16 +11,14 @@ use std::{collections::VecDeque, path::PathBuf};
 pub use ecdna_lib::{distribution, DNACopy};
 
 #[derive(Debug, Clone)]
-pub struct Snapshot {
-    /// The number of cells to subsample
-    pub cells2sample: usize,
-    /// The time at which we subsample
-    pub time: f32,
+/// Save the ecDNA distribution when the number of cells in the system is equal
+/// to `cells`
+pub struct SnapshotCells {
+    pub cells: usize,
 }
 
-#[derive(Debug, Clone)]
 pub struct SavingOptions {
-    pub snapshots: VecDeque<Snapshot>,
+    pub snapshots: VecDeque<SnapshotCells>,
     pub path2dir: PathBuf,
     pub filename: String,
 }

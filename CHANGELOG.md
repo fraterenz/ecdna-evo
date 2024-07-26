@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.25.0
+- Save based on the number of cells not time
+
 ## 0.24.0
 - Increase the number of max iterations and cells
 - Save at the end of the simulation

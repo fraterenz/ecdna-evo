@@ -1,11 +1,11 @@
-use anyhow::{ensure, Context};
+use anyhow::Context;
 use clap::{ArgAction, Parser, ValueEnum};
 use ecdna_evo::{
     distribution::EcDNADistribution,
     segregation::{
         Binomial, BinomialNoNminus, BinomialNoUneven, Deterministic, Segregate,
     },
-    Snapshot,
+    SnapshotCells,
 };
 use rand::Rng;
 use sosa::{IterTime, NbIndividuals, Options};
@@ -89,112 +89,45 @@ pub struct Cli {
     #[arg(short, long, default_value_t = 12, conflicts_with = "debug")]
     /// Number of independent realisations to simulate of the same stochastic process
     runs: usize,
-    #[arg(long, requires = "subsamples", value_delimiter = ',', require_equals = true, num_args = 0..)]
-    /// Snapshots to take to save the simulation, requires `subsamples`.
-    ///
-    /// The combination of `snapshots` with `subsamples` gives four different
-    /// behaviours:
-    ///
-    /// 1. when `snapshots.len() = 1` and `subsamples.len() = 1`: subsample once with the number of cells corresponding to `snapshots[0]`
-    ///
-    /// 2. when `snapshots.len() > 1` and `subsamples.len() = 1`: for every `s` in `snapshots`, subsample with the number of cells corresponding to `snapshots[0]`
-    ///
-    /// 3. when `snapshots.len() = 1` and `subsamples.len() > 1`: for every `c` in `subsamples`, subsample once with the number of cells corresponding to `c`
-    ///
-    /// 4. when `snapshots.len() > 1` and `subsamples.len() > 1`: for every pair `(s, c)` in `snapshots.zip(subsamples)`, subsample at time `s` with `c` cells
-    snapshots: Option<Vec<f32>>,
-    /// Number of cells to subsample before saving the measurements, leave
-    /// empty when no subsample is needed.
-    /// If subsampling is performed, the measurements of the whole population
-    /// will also be saved.
-    ///
-    /// See help for `snapshots` for more details.
-    #[arg(long, requires = "snapshots", num_args = 0.., value_delimiter = ',', require_equals = true)]
-    subsamples: Option<Vec<usize>>,
+    #[arg(long, value_delimiter = ',', require_equals = true, num_args = 0..)]
+    /// Number of cells that will trigger the saving of the ecDNA distribution.
+    snapshots: Option<Vec<usize>>,
     #[arg(short, long, action = clap::ArgAction::Count, conflicts_with = "debug", default_value_t = 0)]
     verbosity: u8,
 }
 
 fn build_snapshots(
-    years: u64,
     cells: NbIndividuals,
-    subsamples: Option<Vec<usize>>,
-    snapshots: Option<Vec<f32>>,
-) -> anyhow::Result<VecDeque<Snapshot>> {
-    let mut snapshots = match (subsamples, snapshots) {
-        (Some(sub), Some(snap)) => {
-            match (&sub[..], &snap[..]) {
-                // subsample `unique_sub` once at `unique_snap` time
-                ([unique_sub], [unique_snap]) => VecDeque::from_iter(
-                    [(unique_sub, unique_snap)].into_iter().map(
-                        |(&cells2sample, &time)| Snapshot {
-                            cells2sample,
-                            time,
-                        },
-                    ),
-                ),
-                // subsample `unique_sub` at several `snaps` times
-                ([unique_sub], snaps) => VecDeque::from_iter(
-                    snaps.iter().zip(std::iter::repeat(unique_sub)).map(
-                        |(&time, &cells2sample)| Snapshot {
-                            cells2sample,
-                            time,
-                        },
-                    ),
-                ),
-                // subsample with different cells `unique_sub` once at `unique_snap` time
-                (subs, [unique_snap]) => VecDeque::from_iter(
-                    subs.iter().zip(std::iter::repeat(unique_snap)).map(
-                        |(&cells2sample, &time)| Snapshot {
-                            cells2sample,
-                            time,
-                        },
-                    ),
-                ),
-                // subsample with many cells `subs` at specific `snaps`
-                (subs, snaps) => {
-                    ensure!(
-                            subs.len() == snaps.len(),
-                            "the lenght of snapshots do not match the lenght of subsamples"
-                        );
-                    VecDeque::from_iter(subs.iter().zip(snaps).map(
-                        |(&cells2sample, &time)| Snapshot {
-                            cells2sample,
-                            time,
-                        },
-                    ))
-                }
-            }
-        }
-        (None, None) => VecDeque::from_iter(
-            build_snapshots_from_time(
-                10usize,
-                if years > 1 { years as f32 - 1. } else { 0.9 },
-            )
-            .into_iter()
-            .map(|t| Snapshot { cells2sample: cells as usize, time: t }),
+    snapshots: Option<Vec<usize>>,
+) -> anyhow::Result<VecDeque<SnapshotCells>> {
+    let mut snapshots = match snapshots {
+        Some(s) => VecDeque::from_iter(
+            s.into_iter().map(|cells| SnapshotCells { cells }),
         ),
-        _ => unreachable!(),
+        None => VecDeque::from(build_snapshots_from_cells(11, cells as usize)),
     };
 
     snapshots.make_contiguous();
     snapshots
         .as_mut_slices()
         .0
-        .sort_by(|s1, s2| s1.time.partial_cmp(&s2.time).unwrap());
+        .sort_by(|s1, s2| s1.cells.partial_cmp(&s2.cells).unwrap());
     Ok(snapshots)
 }
 
-fn build_snapshots_from_time(n_snapshots: usize, time: f32) -> Vec<f32> {
-    let dx = time / ((n_snapshots - 1) as f32);
-    let mut x = vec![0.; n_snapshots];
+fn build_snapshots_from_cells(
+    n_snapshots: usize,
+    cells: usize,
+) -> Vec<SnapshotCells> {
+    let dx = cells / (n_snapshots - 1);
+    let mut x = vec![1; n_snapshots];
     for i in 1..n_snapshots - 1 {
         x[i] = x[i - 1] + dx;
     }
 
     x.shrink_to_fit();
-    x[n_snapshots - 1] = time;
-    x
+    x[n_snapshots - 1] = cells;
+    x.into_iter().map(|v| SnapshotCells { cells: v }).collect()
 }
 
 impl Cli {
@@ -220,14 +153,7 @@ impl Cli {
             }
         };
 
-        let snapshots =
-            build_snapshots(years, cells, cli.subsamples, cli.snapshots)
-                .unwrap();
-        ensure!(
-            snapshots.iter().all(|s| s.time < years as f32),
-            "times to take `snapshots` must be smaller than total `years`"
-        );
-
+        let snapshots = build_snapshots(cells, cli.snapshots).unwrap();
         let segregation = cli.segregation.into();
 
         // if both d0, d1 are either unset or equal to 0, pure birth,

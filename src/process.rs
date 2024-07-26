@@ -9,7 +9,7 @@ use std::{
 
 use crate::{
     distribution::EcDNADistribution, segregation::Segregate, SavingOptions,
-    Snapshot,
+    SnapshotCells,
 };
 
 use super::{
@@ -66,7 +66,7 @@ where
     proliferation: P,
     segregation: S,
     pub time: f32,
-    pub snapshots: VecDeque<Snapshot>,
+    pub snapshots: VecDeque<SnapshotCells>,
     pub path2dir: PathBuf,
     pub filename: String,
     pub verbosity: u8,
@@ -116,41 +116,28 @@ impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<2> for PureBirth<P, S> {
         rng: &mut impl Rng,
     ) {
         while !self.snapshots.is_empty()
-            && self.snapshots.iter().any(|s| self.time >= s.time)
+            && self.snapshots.iter().any(|s| {
+                *self.distribution.get_nminus()
+                    + self.distribution.compute_nplus()
+                    == s.cells as u64
+            })
         {
             let snapshot = self.snapshots.pop_front().unwrap();
             if self.verbosity > 0 {
                 println!(
-                    "saving state for timepoint at time {:#?} at simulation's time {} with {} cells",
-                    snapshot.time, self.time, snapshot.cells2sample
+                    "saving state for timepoint at time {:#?} with cells {} ",
+                    self.time, snapshot.cells,
                 );
             }
-            let cells = (*self.distribution.get_nminus()
-                + self.distribution.compute_nplus())
-                as usize;
 
-            if snapshot.cells2sample == cells || cells < snapshot.cells2sample
-            {
-                save(
-                    &self.path2dir,
-                    &self.filename,
-                    snapshot.time,
-                    &self.distribution,
-                    self.verbosity,
-                )
-                .expect("cannot save snapshot");
-            } else {
-                save(
-                    &self.path2dir,
-                    &self.filename,
-                    snapshot.time,
-                    &self
-                        .distribution
-                        .into_subsampled(snapshot.cells2sample as u64, rng),
-                    self.verbosity,
-                )
-                .expect("cannot save snapshot");
-            }
+            save(
+                &self.path2dir,
+                &self.filename,
+                self.time,
+                &self.distribution,
+                self.verbosity,
+            )
+            .expect("cannot save snapshot");
         }
 
         match reaction.event {
@@ -218,7 +205,7 @@ where
     segregation: S,
     death: CellDeath,
     pub time: f32,
-    pub snapshots: VecDeque<Snapshot>,
+    pub snapshots: VecDeque<SnapshotCells>,
     pub path2dir: PathBuf,
     pub filename: String,
     pub verbosity: u8,
@@ -270,40 +257,28 @@ impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<4> for BirthDeath<P, S> {
         rng: &mut impl Rng,
     ) {
         while !self.snapshots.is_empty()
-            && self.snapshots.iter().any(|s| self.time >= s.time)
+            && self.snapshots.iter().any(|s| {
+                *self.distribution.get_nminus()
+                    + self.distribution.compute_nplus()
+                    == s.cells as u64
+            })
         {
             let snapshot = self.snapshots.pop_front().unwrap();
             if self.verbosity > 0 {
                 println!(
-                    "saving state for timepoint at time {:#?} at simulation's time {} with {} cells",
-                    snapshot.time, self.time, snapshot.cells2sample
+                    "saving state for timepoint at time {:#?} with {} cells",
+                    self.time, snapshot.cells
                 );
             }
-            let cells = (*self.distribution.get_nminus()
-                + self.distribution.compute_nplus())
-                as usize;
 
-            if snapshot.cells2sample == cells {
-                save(
-                    &self.path2dir,
-                    &self.filename,
-                    snapshot.time,
-                    &self.distribution,
-                    self.verbosity,
-                )
-                .expect("cannot save snapshot");
-            } else {
-                save(
-                    &self.path2dir,
-                    &self.filename,
-                    snapshot.time,
-                    &self
-                        .distribution
-                        .into_subsampled(snapshot.cells2sample as u64, rng),
-                    self.verbosity,
-                )
-                .expect("cannot save snapshot");
-            }
+            save(
+                &self.path2dir,
+                &self.filename,
+                self.time,
+                &self.distribution,
+                self.verbosity,
+            )
+            .expect("cannot save snapshot");
         }
         match reaction.event {
             EcDNAEvent::ProliferateNPlus => {
@@ -387,10 +362,7 @@ mod tests {
             CellDeath,
             time,
             SavingOptions {
-                snapshots: VecDeque::from([Snapshot {
-                    cells2sample: 10,
-                    time: 2.,
-                }]),
+                snapshots: VecDeque::from([SnapshotCells { cells: 2 }]),
                 path2dir: PathBuf::default(),
                 filename: String::from("filename"),
             },

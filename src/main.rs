@@ -7,7 +7,7 @@ use ecdna_evo::{
     distribution::EcDNADistribution,
     process::{save, BirthDeath, EcDNAEvent, PureBirth},
     proliferation::{CellDeath, Exponential},
-    SavingOptions, Snapshot,
+    SavingOptions, SnapshotCells,
 };
 use indicatif::ParallelProgressIterator;
 use rand::SeedableRng;
@@ -39,7 +39,7 @@ pub struct SimulationOptions {
     seed: u64,
     path2dir: PathBuf,
     options: Options,
-    snapshots: VecDeque<Snapshot>,
+    snapshots: VecDeque<SnapshotCells>,
 }
 
 fn main() {
