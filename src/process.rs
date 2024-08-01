@@ -105,6 +105,10 @@ where
     pub fn get_ecdna_distribution(&self) -> &EcDNADistribution {
         &self.distribution
     }
+
+    pub fn ecdna_distribution(self) -> EcDNADistribution {
+        self.distribution
+    }
 }
 
 impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<2> for PureBirth<P, S> {
@@ -119,7 +123,7 @@ impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<2> for PureBirth<P, S> {
             && self.snapshots.iter().any(|s| {
                 *self.distribution.get_nminus()
                     + self.distribution.compute_nplus()
-                    == s.cells as u64
+                    == s.cells
             })
         {
             let snapshot = self.snapshots.pop_front().unwrap();
@@ -246,6 +250,10 @@ where
     pub fn get_ecdna_distribution(&self) -> &EcDNADistribution {
         &self.distribution
     }
+
+    pub fn ecdna_distribution(self) -> EcDNADistribution {
+        self.distribution
+    }
 }
 
 impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<4> for BirthDeath<P, S> {
@@ -260,7 +268,7 @@ impl<P: EcDNAProliferation, S: Segregate> AdvanceStep<4> for BirthDeath<P, S> {
             && self.snapshots.iter().any(|s| {
                 *self.distribution.get_nminus()
                     + self.distribution.compute_nplus()
-                    == s.cells as u64
+                    == s.cells
             })
         {
             let snapshot = self.snapshots.pop_front().unwrap();

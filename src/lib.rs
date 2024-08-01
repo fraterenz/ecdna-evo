@@ -9,12 +9,13 @@ pub mod segregation;
 use std::{collections::VecDeque, path::PathBuf};
 
 pub use ecdna_lib::{distribution, DNACopy};
+use sosa::NbIndividuals;
 
 #[derive(Debug, Clone)]
 /// Save the ecDNA distribution when the number of cells in the system is equal
 /// to `cells`
 pub struct SnapshotCells {
-    pub cells: usize,
+    pub cells: NbIndividuals,
 }
 
 pub struct SavingOptions {

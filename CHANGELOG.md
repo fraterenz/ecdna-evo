@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.26.0
+- Subsample the ecDNA distribution at the end of the simulation
+
 ## 0.25.0
 - Save based on the number of cells not time
 

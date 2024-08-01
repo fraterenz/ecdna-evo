@@ -90,21 +90,24 @@ pub struct Cli {
     /// Number of independent realisations to simulate of the same stochastic process
     runs: usize,
     #[arg(long, value_delimiter = ',', require_equals = true, num_args = 0..)]
+    /// Subsample the ecDNA distribution at the end of the simulation
+    subsamples: Option<Vec<u64>>,
+    #[arg(long, value_delimiter = ',', require_equals = true, num_args = 0..)]
     /// Number of cells that will trigger the saving of the ecDNA distribution.
-    snapshots: Option<Vec<usize>>,
+    snapshots: Option<Vec<u64>>,
     #[arg(short, long, action = clap::ArgAction::Count, conflicts_with = "debug", default_value_t = 0)]
     verbosity: u8,
 }
 
 fn build_snapshots(
     cells: NbIndividuals,
-    snapshots: Option<Vec<usize>>,
+    snapshots: Option<Vec<NbIndividuals>>,
 ) -> anyhow::Result<VecDeque<SnapshotCells>> {
     let mut snapshots = match snapshots {
         Some(s) => VecDeque::from_iter(
             s.into_iter().map(|cells| SnapshotCells { cells }),
         ),
-        None => VecDeque::from(build_snapshots_from_cells(11, cells as usize)),
+        None => VecDeque::from(build_snapshots_from_cells(11, cells)),
     };
 
     snapshots.make_contiguous();
@@ -117,9 +120,9 @@ fn build_snapshots(
 
 fn build_snapshots_from_cells(
     n_snapshots: usize,
-    cells: usize,
+    cells: NbIndividuals,
 ) -> Vec<SnapshotCells> {
-    let dx = cells / (n_snapshots - 1);
+    let dx = cells / (n_snapshots as NbIndividuals - 1);
     let mut x = vec![1; n_snapshots];
     for i in 1..n_snapshots - 1 {
         x[i] = x[i - 1] + dx;
@@ -155,6 +158,7 @@ impl Cli {
 
         let snapshots = build_snapshots(cells, cli.snapshots).unwrap();
         let segregation = cli.segregation.into();
+        let subsamples = cli.subsamples;
 
         // if both d0, d1 are either unset or equal to 0, pure birth,
         // else birthdeath
@@ -214,6 +218,7 @@ impl Cli {
             segregation,
             snapshots,
             growth: cli.growth,
+            subsamples,
             runs,
         };
         if verbosity > 0 {

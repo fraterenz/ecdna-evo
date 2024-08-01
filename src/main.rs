@@ -13,7 +13,7 @@ use indicatif::ParallelProgressIterator;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use sosa::{simulate, CurrentState, Options, ReactionRates};
+use sosa::{simulate, CurrentState, NbIndividuals, Options, ReactionRates};
 
 use crate::clap_app::{Cli, Parallel, ProcessType};
 
@@ -40,6 +40,7 @@ pub struct SimulationOptions {
     path2dir: PathBuf,
     options: Options,
     snapshots: VecDeque<SnapshotCells>,
+    subsamples: Option<Vec<NbIndividuals>>,
 }
 
 fn main() {
@@ -106,6 +107,20 @@ fn main() {
                 .expect(
                     "cannot save the ecDNA distribution at the end of the sim",
                 );
+                if let Some(samples) = app.subsamples.as_ref() {
+                    for nb_cells in samples.iter() {
+                        save(
+                    &process.path2dir,
+                    &process.filename,
+                    process.time,
+                    &process.get_ecdna_distribution().into_subsampled(*nb_cells, &mut rng),
+                    process.verbosity,
+                )
+                .expect(
+                    "cannot save the subsampled ecDNA distribution at the end of the sim",
+                );
+                    }
+                }
                 (
                     stop_reason,
                     [initial_state.population[0], initial_state.population[1]],
@@ -166,6 +181,20 @@ fn main() {
                 .expect(
                     "cannot save the ecDNA distribution at the end of the sim",
                 );
+                if let Some(samples) = app.subsamples.as_ref() {
+                    for nb_cells in samples.iter() {
+                        save(
+                    &process.path2dir,
+                    &process.filename,
+                    process.time,
+                    &process.get_ecdna_distribution().into_subsampled(*nb_cells, &mut rng),
+                    process.verbosity,
+                )
+                .expect(
+                    "cannot save the subsampled ecDNA distribution at the end of the sim",
+                );
+                    }
+                }
                 (
                     stop_reason,
                     [initial_state.population[0], initial_state.population[1]],
